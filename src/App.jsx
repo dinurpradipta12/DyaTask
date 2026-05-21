@@ -149,6 +149,7 @@ function App() {
   const [newTaskPriority, setNewTaskPriority] = useState('medium')
   const [newTaskColor, setNewTaskColor] = useState('#8B5CF6')
   const [newTaskTime, setNewTaskTime] = useState('18:00')
+  const [newTaskDate, setNewTaskDate] = useState(todayString)
 
   // Booking state
   const [appointments, setAppointments] = useState(initialAppointments)
@@ -247,6 +248,9 @@ function App() {
   const [notificationNowMs, setNotificationNowMs] = useState(Date.now())
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
   const [floatingTaskTitle, setFloatingTaskTitle] = useState('')
+  const [quickLauncherMenuOpen, setQuickLauncherMenuOpen] = useState(false)
+  const [showQuickTaskModal, setShowQuickTaskModal] = useState(false)
+  const [showQuickBookingModal, setShowQuickBookingModal] = useState(false)
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -255,12 +259,8 @@ function App() {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(true)
   const [syncStatus, setSyncStatus] = useState('Terhubung')
 
-  // Integration config state (persisted to localStorage)
-  const [integrationConfigs, setIntegrationConfigs] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('dyatask_integration_configs') || '{}')
-    } catch { return {} }
-  })
+  // Integration config state (synced with Supabase per user; localStorage used only as temporary fallback)
+  const [integrationConfigs, setIntegrationConfigs] = useState({})
   const [activeIntegrationModal, setActiveIntegrationModal] = useState(null) // 'google_calendar' | 'notion' | 'email' | 'google_sheets'
   const [activeTutorialModal, setActiveTutorialModal] = useState(null)
   const [integrationFormData, setIntegrationFormData] = useState({})
@@ -273,10 +273,23 @@ function App() {
   const publicBookingToken = searchParams.get('booking')
   const isPublicBookingMode = !!publicBookingToken
 
-  const saveIntegrationConfig = () => {
+  const saveIntegrationConfig = async () => {
+    if (!session?.user?.id || !activeIntegrationModal) return
     const updated = { ...integrationConfigs, [activeIntegrationModal]: integrationFormData }
     setIntegrationConfigs(updated)
-    localStorage.setItem('dyatask_integration_configs', JSON.stringify(updated))
+
+    const { error } = await supabase
+      .from('user_integration_configs')
+      .upsert({
+        user_id: session.user.id,
+        configs: updated
+      }, { onConflict: 'user_id' })
+
+    if (error) {
+      alert(`Gagal menyimpan konfigurasi integrasi: ${error.message}`)
+      return
+    }
+
     setActiveIntegrationModal(null)
     setIntegrationFormData({})
   }
@@ -701,6 +714,17 @@ function App() {
       ]
     }
   }
+
+  const activeIntegrationLabels = integrationDefs
+    .filter(def => isConfigured(def.key))
+    .map(def => def.label)
+
+  const realtimeStatusText = activeIntegrationLabels.length
+    ? `${activeIntegrationLabels.join(', ')} tersambung`
+    : 'Belum ada integrasi tersambung'
+
+  const securityStatusText = twoFactorEnabled ? '2FA aktif' : '2FA nonaktif'
+
   const [syncLogs, setSyncLogs] = useState([
     '⚡ Koneksi database PostgreSQL Supabase berhasil.',
     '📧 Parser Email IMAP aktif - Menyimak jadwal rapat masuk...',
@@ -757,6 +781,57 @@ function App() {
   }, [session])
 
   useEffect(() => {
+    if (!session?.user?.id) return
+
+    const loadIntegrationConfigs = async () => {
+      const { data, error } = await supabase
+        .from('user_integration_configs')
+        .select('configs')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Error loading integration configs:', error)
+        return
+      }
+
+      // Backward compatibility: migrate old localStorage config once if DB is empty.
+      if (!data?.configs) {
+        let legacy = {}
+        try {
+          legacy = JSON.parse(localStorage.getItem('dyatask_integration_configs') || '{}')
+        } catch {
+          legacy = {}
+        }
+
+        if (legacy && Object.keys(legacy).length > 0) {
+          const { error: migrateError } = await supabase
+            .from('user_integration_configs')
+            .upsert({
+              user_id: session.user.id,
+              configs: legacy
+            }, { onConflict: 'user_id' })
+
+          if (migrateError) {
+            console.error('Error migrating local integration configs:', migrateError)
+          } else {
+            setIntegrationConfigs(legacy)
+            localStorage.removeItem('dyatask_integration_configs')
+          }
+        } else {
+          setIntegrationConfigs({})
+        }
+
+        return
+      }
+
+      setIntegrationConfigs(data.configs || {})
+    }
+
+    loadIntegrationConfigs()
+  }, [session?.user?.id])
+
+  useEffect(() => {
     if (!availableTimeSlotsForSelectedDate.length) return
     if (!availableTimeSlotsForSelectedDate.includes(bookingTime)) {
       setBookingTime(availableTimeSlotsForSelectedDate[0])
@@ -785,7 +860,7 @@ function App() {
           status: t.status,
           dueTime: t.due_time,
           hasReminder: t.has_reminder,
-          calendarDate: t.created_at ? t.created_at.slice(0, 10) : todayString
+          calendarDate: t.task_date || (t.created_at ? t.created_at.slice(0, 10) : todayString)
         })));
       }
     };
@@ -960,14 +1035,24 @@ function App() {
       color_label: newTaskColor,
       status: 'todo',
       due_time: newTaskTime,
+      task_date: newTaskDate,
       has_reminder: true,
       user_id: session?.user?.id
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('tasks')
       .insert([taskObj])
       .select();
+
+    // Backward compatibility when database belum punya kolom task_date.
+    if (error && String(error.message || '').toLowerCase().includes('task_date')) {
+      const fallbackTaskObj = { ...taskObj }
+      delete fallbackTaskObj.task_date
+      const retry = await supabase.from('tasks').insert([fallbackTaskObj]).select()
+      data = retry.data
+      error = retry.error
+    }
 
     if (error) {
       alert('Gagal menambahkan tugas ke Supabase: ' + error.message)
@@ -984,7 +1069,7 @@ function App() {
         status: data[0].status,
         dueTime: data[0].due_time,
         hasReminder: data[0].has_reminder,
-        calendarDate: data[0].created_at ? data[0].created_at.slice(0, 10) : todayString
+        calendarDate: data[0].task_date || newTaskDate || (data[0].created_at ? data[0].created_at.slice(0, 10) : todayString)
       }
       setTasks([createdTask, ...tasks])
 
@@ -995,6 +1080,8 @@ function App() {
     }
 
     setNewTaskTitle('')
+    setNewTaskDate(todayString)
+    setShowQuickTaskModal(false)
     
     // Log sync Sheets
     const timestamp = new Date().toLocaleTimeString('id-ID')
@@ -1181,7 +1268,8 @@ function App() {
           title: calendarEditForm.title.trim(),
           category: calendarEditForm.category,
           priority: calendarEditForm.priority,
-          due_time: calendarEditForm.dueTime
+          due_time: calendarEditForm.dueTime,
+          task_date: calendarEditForm.date || null
         })
         .eq('id', activeCalendarEditItem.id)
 
@@ -1279,6 +1367,7 @@ function App() {
     setBookingClient('')
     setBookingTitle('')
     setBookingEmail('')
+    setShowQuickBookingModal(false)
 
     // Log sync
     const timestamp = new Date().toLocaleTimeString('id-ID')
@@ -2096,25 +2185,52 @@ function App() {
             
             {/* Realtime Badges */}
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-300 text-xs font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Google & Notion Calendar: Aktif
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold ${
+                activeIntegrationLabels.length
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-300'
+                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/50 dark:border-amber-900/30 text-amber-600 dark:text-amber-300'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${activeIntegrationLabels.length ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                {realtimeStatusText} • {securityStatusText}
               </div>
 
-              {twoFactorEnabled && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-950/40 border border-purple-200/50 dark:border-purple-900/30 text-purple-600 dark:text-purple-300 text-xs font-bold">
-                  <ShieldCheck size={14} />
-                  2FA Aktif
-                </div>
-              )}
+              <div className="relative">
+                <button
+                  onClick={() => setQuickLauncherMenuOpen(prev => !prev)}
+                  className="pulse-glow-button px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm flex items-center gap-2 shadow-lg hover:shadow-purple-500/20 active:scale-95 transition-all"
+                >
+                  <Plus size={16} />
+                  Quick Launcher
+                  <ChevronDown size={14} />
+                </button>
 
-              <button 
-                onClick={() => setFloatingQuickAdd(!floatingQuickAdd)}
-                className="pulse-glow-button px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm flex items-center gap-2 shadow-lg hover:shadow-purple-500/20 active:scale-95 transition-all"
-              >
-                <Plus size={16} />
-                Quick Launcher
-              </button>
+                {quickLauncherMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-44 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-slate-900 shadow-xl z-40 p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowQuickTaskModal(true)
+                        setQuickLauncherMenuOpen(false)
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold text-purple-700 dark:text-purple-200 hover:bg-purple-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                    >
+                      <Plus size={14} />
+                      Add Task
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowQuickBookingModal(true)
+                        setQuickLauncherMenuOpen(false)
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold text-purple-700 dark:text-purple-200 hover:bg-purple-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                    >
+                      <Calendar size={14} />
+                      Add Jadwal
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </header>
 
@@ -2419,121 +2535,38 @@ function App() {
                   ))}
                 </div>
 
-                {/* View toggle */}
-                <div className="flex items-center gap-2 p-1 rounded-xl bg-purple-100/60 dark:bg-indigo-950/40 border border-purple-200/20">
+                {/* View toggle + add task */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 p-1 rounded-xl bg-purple-100/60 dark:bg-indigo-950/40 border border-purple-200/20">
+                    <button
+                      onClick={() => setTaskView('list')}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                        taskView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-purple-700 dark:text-purple-300'
+                      }`}
+                    >
+                      List View
+                    </button>
+                    <button
+                      onClick={() => setTaskView('grid')}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                        taskView === 'grid' ? 'bg-purple-600 text-white shadow' : 'text-purple-700 dark:text-purple-300'
+                      }`}
+                    >
+                      Project Board
+                    </button>
+                  </div>
                   <button
-                    onClick={() => setTaskView('list')}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                      taskView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-purple-700 dark:text-purple-300'
-                    }`}
+                    onClick={() => setShowQuickTaskModal(true)}
+                    className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md"
                   >
-                    List View
-                  </button>
-                  <button
-                    onClick={() => setTaskView('grid')}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                      taskView === 'grid' ? 'bg-purple-600 text-white shadow' : 'text-purple-700 dark:text-purple-300'
-                    }`}
-                  >
-                    Project Board
+                    <Plus size={13} />
+                    Add Task
                   </button>
                 </div>
               </div>
 
-              {/* Two Panel Layout: Add task & Tasks view */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Left panel: Add task Form */}
-                <div className="glass-panel p-6 h-fit">
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                    <CheckSquare size={18} className="text-purple-500" />
-                    Tambah Tugas Baru
-                  </h3>
-
-                  <form onSubmit={handleAddTask} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Nama Tugas</label>
-                      <input 
-                        type="text" 
-                        placeholder="Contoh: Kirim laporan mingguan"
-                        value={newTaskTitle}
-                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 focus:outline-none focus:border-purple-500 text-sm"
-                        required
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Kategori</label>
-                        <select 
-                          value={newTaskCategory}
-                          onChange={(e) => setNewTaskCategory(e.target.value)}
-                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-sm focus:outline-none focus:border-purple-500"
-                        >
-                          <option value="Work">Pekerjaan</option>
-                          <option value="Meeting">Rapat</option>
-                          <option value="Personal">Pribadi</option>
-                          <option value="Security">Keamanan</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Prioritas</label>
-                        <select 
-                          value={newTaskPriority}
-                          onChange={(e) => setNewTaskPriority(e.target.value)}
-                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-sm focus:outline-none focus:border-purple-500"
-                        >
-                          <option value="low">Rendah</option>
-                          <option value="medium">Sedang</option>
-                          <option value="high">Tinggi</option>
-                          <option value="critical">Kritis</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Label Warna</label>
-                        <div className="flex items-center gap-2 mt-1">
-                          {['#8B5CF6', '#EC4899', '#10B981', '#F59E0B', '#EF4444'].map(color => (
-                            <button
-                              key={color}
-                              type="button"
-                              onClick={() => setNewTaskColor(color)}
-                              className={`w-6 h-6 rounded-full border-2 transition-all ${
-                                newTaskColor === color ? 'border-purple-700 scale-110 shadow-sm' : 'border-transparent'
-                              }`}
-                              style={{ backgroundColor: color }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Waktu Pengingat</label>
-                        <input 
-                          type="time" 
-                          value={newTaskTime}
-                          onChange={(e) => setNewTaskTime(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-sm focus:outline-none focus:border-purple-500"
-                        />
-                      </div>
-                    </div>
-
-                    <button 
-                      type="submit"
-                      className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all mt-6 shadow-md hover:shadow-purple-500/10"
-                    >
-                      <Plus size={16} />
-                      Tambahkan ke Jadwal
-                    </button>
-                  </form>
-                </div>
-
-                {/* Right panel: Tasks Display */}
-                <div className="lg:col-span-2 space-y-4">
+              {/* Tasks view */}
+              <div className="space-y-4">
                   {taskView === 'list' ? (
                     // List View
                     <div className="glass-panel p-6 space-y-3">
@@ -2589,6 +2622,14 @@ function App() {
                               }`}>
                                 {task.priority}
                               </span>
+
+                              <button
+                                onClick={() => openCalendarEditModal({ ...task, itemType: 'task' })}
+                                className="w-8 h-8 rounded-lg hover:bg-purple-50 dark:hover:bg-indigo-950/20 text-purple-400 hover:text-purple-600 dark:hover:text-purple-300 flex items-center justify-center transition-colors"
+                                title="Edit task"
+                              >
+                                <Pencil size={14} />
+                              </button>
                               
                               <button 
                                 onClick={() => deleteTask(task.id)}
@@ -2703,8 +2744,6 @@ function App() {
                     </div>
                   )}
                 </div>
-
-              </div>
             </div>
           )}
 
@@ -3279,14 +3318,14 @@ function App() {
           {activeIntegrationModal && (() => {
             const def = integrationDefs.find(d => d.key === activeIntegrationModal)
             return (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setActiveIntegrationModal(null)}>
-                <div className="w-full max-w-lg glass-panel p-8 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-                  <div className="flex items-center justify-between">
+              <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setActiveIntegrationModal(null)}>
+                <div className="w-full max-w-lg rounded-[2rem] bg-white dark:bg-slate-900 p-8 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50 space-y-5" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="text-lg font-bold">{def?.label}</h3>
-                      <p className="text-xs text-purple-400 dark:text-purple-300 mt-0.5">Masukkan kredensial API untuk koneksi nyata</p>
+                      <h3 className="text-4xl font-extrabold text-purple-600 dark:text-purple-300 tracking-tight">{def?.label}</h3>
+                      <p className="text-sm text-slate-400 dark:text-slate-300 mt-2">Masukkan kredensial API untuk koneksi nyata</p>
                     </div>
-                    <button onClick={() => setActiveIntegrationModal(null)} className="w-8 h-8 rounded-lg hover:bg-purple-100 dark:hover:bg-indigo-900/50 flex items-center justify-center text-purple-400">
+                    <button onClick={() => setActiveIntegrationModal(null)} className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-purple-400">
                       ✕
                     </button>
                   </div>
@@ -3294,14 +3333,14 @@ function App() {
                   <div className="space-y-4">
                     {def?.fields.map(field => (
                       <div key={field.id}>
-                        <label className="block text-[10px] uppercase font-bold tracking-wider text-purple-400 dark:text-purple-300 mb-1.5">{field.label}</label>
+                        <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">{field.label}</label>
                         {field.type === 'textarea' ? (
                           <textarea
                             rows={4}
                             placeholder={field.placeholder}
                             value={integrationFormData[field.id] || ''}
                             onChange={e => setIntegrationFormData(prev => ({ ...prev, [field.id]: e.target.value }))}
-                            className="w-full px-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none font-mono"
+                            className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all resize-none font-mono"
                           />
                         ) : (
                           <input
@@ -3309,7 +3348,7 @@ function App() {
                             placeholder={field.placeholder}
                             value={integrationFormData[field.id] || ''}
                             onChange={e => setIntegrationFormData(prev => ({ ...prev, [field.id]: e.target.value }))}
-                            className="w-full px-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all"
                           />
                         )}
                       </div>
@@ -3317,7 +3356,7 @@ function App() {
                   </div>
 
                   <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/40 dark:border-amber-800/30 text-amber-700 dark:text-amber-400 text-[10px] leading-relaxed">
-                    ⚠️ Kredensial disimpan secara lokal di browser Anda (localStorage). Tidak dikirim ke server mana pun. Gunakan variabel lingkungan di production.
+                    ⚠️ Kredensial disimpan per akun Anda di database Supabase (dengan RLS). Untuk production, tetap disarankan memakai secret manager/server-side vault.
                   </div>
 
                   {activeIntegrationModal === 'google_calendar' && (
@@ -3325,7 +3364,7 @@ function App() {
                       <button
                         onClick={testGoogleCalendarConnection}
                         disabled={testingGoogleConnection}
-                        className="w-full py-2.5 rounded-xl border border-blue-200 dark:border-blue-900/40 text-blue-600 dark:text-blue-300 text-xs font-bold hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all disabled:opacity-60"
+                        className="w-full py-3 rounded-2xl border border-blue-200 dark:border-blue-900/40 text-blue-600 dark:text-blue-300 text-sm font-bold hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all disabled:opacity-60"
                       >
                         {testingGoogleConnection ? 'Menguji Koneksi...' : 'Test Connection'}
                       </button>
@@ -3341,22 +3380,35 @@ function App() {
                     </div>
                   )}
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 pt-1">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
+                        if (!session?.user?.id || !activeIntegrationModal) return
                         const updated = { ...integrationConfigs }
                         delete updated[activeIntegrationModal]
                         setIntegrationConfigs(updated)
-                        localStorage.setItem('dyatask_integration_configs', JSON.stringify(updated))
+
+                        const { error } = await supabase
+                          .from('user_integration_configs')
+                          .upsert({
+                            user_id: session.user.id,
+                            configs: updated
+                          }, { onConflict: 'user_id' })
+
+                        if (error) {
+                          alert(`Gagal menghapus konfigurasi integrasi: ${error.message}`)
+                          return
+                        }
+
                         setActiveIntegrationModal(null)
                       }}
-                      className="flex-1 py-2.5 rounded-xl border border-red-200 dark:border-red-900/40 text-red-500 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
+                      className="flex-1 py-3 rounded-2xl border border-red-200 dark:border-red-900/40 text-red-500 text-[11px] tracking-[0.14em] uppercase font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
                     >
                       Hapus Koneksi
                     </button>
                     <button
                       onClick={saveIntegrationConfig}
-                      className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-md"
+                      className="flex-1 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] tracking-[0.14em] uppercase font-bold transition-all shadow-md"
                     >
                       Simpan & Hubungkan
                     </button>
@@ -3774,6 +3826,103 @@ function App() {
         </main>
         
       </div>
+
+      {showQuickTaskModal && (
+        <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowQuickTaskModal(false)}>
+          <div className="w-full max-w-lg rounded-[2rem] bg-white dark:bg-slate-900 p-8 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-6">
+              <h3 className="text-4xl font-extrabold text-purple-600 dark:text-purple-300 tracking-tight">Add Task</h3>
+              <p className="text-sm text-slate-400 dark:text-slate-300 mt-2">Tambah task baru dari halaman mana pun.</p>
+            </div>
+            <form onSubmit={handleAddTask} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Judul Task</label>
+                <input value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Masukkan judul task..." className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Kategori</label>
+                  <select value={newTaskCategory} onChange={(e) => setNewTaskCategory(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all">
+                    <option value="Work">Pekerjaan</option>
+                    <option value="Meeting">Rapat</option>
+                    <option value="Personal">Pribadi</option>
+                    <option value="Security">Keamanan</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Prioritas</label>
+                  <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all">
+                    <option value="low">Rendah</option>
+                    <option value="medium">Sedang</option>
+                    <option value="high">Tinggi</option>
+                    <option value="critical">Kritis</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Tanggal</label>
+                  <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Jam</label>
+                  <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" />
+                </div>
+              </div>
+              <div className="pt-2 space-y-3">
+                <button type="submit" className="w-full py-3 rounded-2xl bg-purple-300 hover:bg-purple-400 text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Simpan Task</button>
+                <button type="button" onClick={() => setShowQuickTaskModal(false)} className="w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showQuickBookingModal && (
+        <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowQuickBookingModal(false)}>
+          <div className="w-full max-w-lg rounded-[2rem] bg-white dark:bg-slate-900 p-8 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-6">
+              <h3 className="text-4xl font-extrabold text-purple-600 dark:text-purple-300 tracking-tight">Add Jadwal</h3>
+              <p className="text-sm text-slate-400 dark:text-slate-300 mt-2">Tambah reservasi/appointment manual dari halaman mana pun.</p>
+            </div>
+            <form onSubmit={handleAddBooking} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Nama Klien</label>
+                <input value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} placeholder="Nama klien" className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Topik Agenda</label>
+                <input value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} placeholder="Topik konsultasi / appointment" className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Tanggal</label>
+                  <input type="date" value={bookingDate} onChange={(e) => setBookingDate(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Jam</label>
+                  <select value={bookingTime} onChange={(e) => setBookingTime(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" disabled={!availableTimeSlotsForSelectedDate.length}>
+                    {availableTimeSlotsForSelectedDate.map(slot => (
+                      <option key={slot} value={slot}>{slot}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {!availableTimeSlotsForSelectedDate.length && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">Tidak ada slot jam tersedia untuk tanggal ini.</p>
+              )}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Email</label>
+                <input type="email" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} placeholder="nama@email.com (opsional)" className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" />
+              </div>
+              <div className="pt-2 space-y-3">
+                <button type="submit" disabled={!availableTimeSlotsForSelectedDate.length} className="w-full py-3 rounded-2xl bg-purple-300 hover:bg-purple-400 disabled:opacity-50 text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Simpan Jadwal</button>
+                <button type="button" onClick={() => setShowQuickBookingModal(false)} className="w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 🚀 SIMULATED MAC PUSH NOTIFICATION TOAST */}
       {notifications.length > 0 && (

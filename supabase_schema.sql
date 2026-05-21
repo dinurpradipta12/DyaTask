@@ -45,6 +45,7 @@ CREATE TABLE public.tasks (
     priority TEXT DEFAULT 'medium' NOT NULL,
     color_label TEXT DEFAULT '#8B5CF6' NOT NULL,
     status TEXT DEFAULT 'todo' NOT NULL,
+    task_date DATE,
     due_time TEXT,
     has_reminder BOOLEAN DEFAULT TRUE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -105,3 +106,32 @@ CREATE POLICY "Pengguna dapat mengakses catatan mereka sendiri"
 CREATE INDEX idx_tasks_user ON public.tasks(user_id);
 CREATE INDEX idx_appointments_user ON public.appointments(user_id);
 CREATE INDEX idx_secure_notes_user ON public.secure_notes(user_id);
+
+-- 5. Tabel Konfigurasi Integrasi Eksternal Per User
+CREATE TABLE public.user_integration_configs (
+    user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+    configs JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.user_integration_configs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Pengguna dapat melihat konfigurasi integrasi mereka sendiri"
+    ON public.user_integration_configs FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Pengguna dapat menambah konfigurasi integrasi mereka sendiri"
+    ON public.user_integration_configs FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Pengguna dapat memperbarui konfigurasi integrasi mereka sendiri"
+    ON public.user_integration_configs FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Pengguna dapat menghapus konfigurasi integrasi mereka sendiri"
+    ON public.user_integration_configs FOR DELETE
+    USING (auth.uid() = user_id);
+
+CREATE INDEX idx_user_integration_configs_user ON public.user_integration_configs(user_id);
