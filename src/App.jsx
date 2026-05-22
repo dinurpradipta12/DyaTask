@@ -2676,23 +2676,47 @@ function App() {
       <div className="auth-page">
         <div className="auth-shell">
           <section className="auth-visual-panel" aria-hidden="true">
-            <div className="auth-orb auth-orb-striped"></div>
-            <div className="auth-orb auth-orb-blue"></div>
-            <div className="auth-orb auth-orb-yellow"></div>
-            <div className="auth-orb auth-orb-purple"></div>
-            <div className="auth-cube"></div>
-            <div className="auth-glass auth-glass-one"></div>
-            <div className="auth-glass auth-glass-two"></div>
-            <div className="auth-flower">
-              {Array.from({ length: 18 }).map((_, index) => (
-                <span key={index} style={{ transform: `rotate(${index * 20}deg) translateY(-54px)` }} />
-              ))}
-              <div className="auth-flower-face">
-                <i></i>
-                <i></i>
-                <b></b>
-              </div>
+            <div className="desk-sun"></div>
+            <div className="desk-wall-card desk-wall-card-one"></div>
+            <div className="desk-wall-card desk-wall-card-two"></div>
+            <div className="desk-lamp">
+              <span></span>
+              <i></i>
+              <b></b>
             </div>
+            <div className="desk-plant">
+              <span></span>
+              <span></span>
+              <span></span>
+              <i></i>
+            </div>
+            <div className="desk-board">
+              <div className="desk-board-top">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div className="desk-board-line"></div>
+              <div className="desk-board-line short"></div>
+              <div className="desk-board-task done"></div>
+              <div className="desk-board-task"></div>
+            </div>
+            <div className="desk-laptop">
+              <div className="desk-laptop-screen">
+                <div className="desk-window-bar"></div>
+                <div className="desk-chart">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+              <div className="desk-laptop-base"></div>
+            </div>
+            <div className="desk-coffee">
+              <span></span>
+            </div>
+            <div className="desk-pencil"></div>
             <div className="auth-visual-caption">
               <img src={dyataskMiniLogo} alt="" />
               <div>
