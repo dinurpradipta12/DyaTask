@@ -1,10 +1,11 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, dialog } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, dialog, Notification } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 
 let mainWindow;
 let tray;
+let isQuitting = false;
 const APP_NAME = 'Dyatask Manager - Superapp for Freelancer';
 
 function getTrayIconPath() {
@@ -41,9 +42,34 @@ function createWindow() {
     mainWindow.show();
   });
 
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function showNativeNotification({ title, body, silent = false } = {}) {
+  if (!Notification.isSupported()) return;
+
+  const notification = new Notification({
+    title: title || APP_NAME,
+    body: body || '',
+    icon: getTrayIconPath(),
+    silent
+  });
+
+  notification.on('click', () => {
+    if (!mainWindow) createWindow();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  notification.show();
 }
 
 function setupAutoUpdater() {
@@ -155,11 +181,18 @@ app.whenReady().then(() => {
   const contextMenu = Menu.buildFromTemplate([
     { label: `Buka ${APP_NAME}`, click: () => { if (mainWindow) mainWindow.show(); else createWindow(); } },
     { label: 'Uji Alarm / Alert', click: () => {
+        showNativeNotification({
+          title: 'DyaTask Notification Aktif',
+          body: 'Native notification macOS berhasil dikirim.'
+        });
         if (mainWindow) mainWindow.webContents.send('trigger-alert-demo');
       } 
     },
     { type: 'separator' },
-    { label: 'Keluar', click: () => { app.quit(); } }
+    { label: 'Keluar', click: () => {
+      isQuitting = true;
+      app.quit();
+    } }
   ]);
   tray.setToolTip(APP_NAME);
   tray.setContextMenu(contextMenu);
@@ -178,6 +211,10 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -188,4 +225,14 @@ app.on('window-all-closed', () => {
 ipcMain.on('set-autostart', (event, enable) => {
   setupMacAutostart(enable);
   event.reply('autostart-status', enable);
+});
+
+ipcMain.on('show-native-notification', (_event, payload) => {
+  showNativeNotification(payload);
+});
+
+ipcMain.on('focus-main-window', () => {
+  if (!mainWindow) createWindow();
+  mainWindow.show();
+  mainWindow.focus();
 });

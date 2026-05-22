@@ -186,6 +186,7 @@ function App() {
   const [nationalHolidays, setNationalHolidays] = useState([])
   const seenGoogleCalendarEventIdsRef = useRef(new Set())
   const googleCalendarBaselineReadyRef = useRef(false)
+  const reminderNotificationKeysRef = useRef(new Set())
 
   // Helper function to get chart data points based on metric (after state is defined)
   const getChartDataPoints = () => {
@@ -462,6 +463,31 @@ function App() {
     if (isConfigured('google_sheets')) logs.push('🟢 Google Sheets: update baris aktivitas aktif.')
     logs.push('🛡️ Supabase RLS: pemindaian berkala aman.')
     return logs
+  }
+
+  const getElectronIpcRenderer = () => {
+    try {
+      if (typeof window === 'undefined' || typeof window.require !== 'function') return null
+      return window.require('electron')?.ipcRenderer || null
+    } catch {
+      return null
+    }
+  }
+
+  const sendNativeNotification = (title, body, meta = {}) => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (!ipcRenderer) return
+    ipcRenderer.send('show-native-notification', {
+      title,
+      body,
+      ...meta
+    })
+  }
+
+  const focusElectronWindow = () => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (!ipcRenderer) return
+    ipcRenderer.send('focus-main-window')
   }
 
   const buildTimeSlots = (dateStr) => {
@@ -1567,13 +1593,94 @@ function App() {
       meta,
       createdAt: Date.now()
     }, ...prev].slice(0, 10))
+    sendNativeNotification(title, body, meta)
     
     // Automatically open app if autoOpenOnAlert is set
     if (autoOpenOnAlert) {
-      // Mock alert wake
+      focusElectronWindow()
       console.log('App automatically focused due to alerts!')
     }
   }
+
+  const extractReminderStartDate = (dateValue, timeValue) => {
+    const date = String(dateValue || '').slice(0, 10)
+    const timeText = String(timeValue || '').trim()
+    const match = timeText.match(/(\d{1,2}):(\d{2})/)
+    if (!date || !match) return null
+
+    const hour = match[1].padStart(2, '0')
+    const minute = match[2]
+    const startDate = new Date(`${date}T${hour}:${minute}:00`)
+    return Number.isNaN(startDate.getTime()) ? null : startDate
+  }
+
+  const getReminderCandidates = () => {
+    const taskItems = tasks
+      .filter(task => task.status !== 'done')
+      .map(task => ({
+        key: `task-${task.id}`,
+        title: task.title || 'Task DyaTask',
+        typeLabel: 'Task',
+        date: task.calendarDate || task.date || todayString,
+        time: task.dueTime
+      }))
+
+    const appointmentItems = appointments.map(appt => ({
+      key: `appointment-${appt.id}`,
+      title: appt.title || appt.clientName || 'Agenda DyaTask',
+      typeLabel: 'Meeting',
+      date: appt.date,
+      time: appt.time
+    }))
+
+    const googleItems = googleCalendarEvents.map(event => ({
+      key: `google-${event.id}`,
+      title: event.title || 'Google Calendar Event',
+      typeLabel: /^task\s*:/i.test(event.title || '') || /task|tugas/i.test(event.title || '') ? 'Task Google Calendar' : 'Google Calendar',
+      date: event.date,
+      time: event.time
+    }))
+
+    return [...taskItems, ...appointmentItems, ...googleItems]
+  }
+
+  useEffect(() => {
+    const checkUpcomingReminders = () => {
+      const now = new Date()
+      getReminderCandidates().forEach(item => {
+        const startDate = extractReminderStartDate(item.date, item.time)
+        if (!startDate) return
+
+        const msUntilStart = startDate.getTime() - now.getTime()
+        const minutesUntilStart = Math.ceil(msUntilStart / 60000)
+        if (minutesUntilStart > 30 || minutesUntilStart <= 0) return
+
+        const reminderKey = `${item.key}-${startDate.getTime()}`
+        if (reminderNotificationKeysRef.current.has(reminderKey)) return
+        reminderNotificationKeysRef.current.add(reminderKey)
+
+        triggerMockNotification(
+          `${item.typeLabel} dimulai ${minutesUntilStart} menit lagi`,
+          `${item.title} • ${item.date} ${item.time}`,
+          'reminder',
+          {
+            reminderKey,
+            date: item.date,
+            time: item.time,
+            startsAt: startDate.toISOString()
+          }
+        )
+      })
+
+      if (reminderNotificationKeysRef.current.size > 250) {
+        reminderNotificationKeysRef.current = new Set(Array.from(reminderNotificationKeysRef.current).slice(-150))
+      }
+    }
+
+    checkUpcomingReminders()
+    const interval = setInterval(checkUpcomingReminders, 60000)
+    return () => clearInterval(interval)
+  }, [tasks, appointments, googleCalendarEvents, autoOpenOnAlert])
 
   // Toggle light/dark mode
   const toggleTheme = () => {
@@ -4904,7 +5011,7 @@ function App() {
                   <div className="flex items-center justify-between p-4 rounded-xl bg-purple-50/20 dark:bg-indigo-950/10 border border-purple-100/50 dark:border-indigo-950/50">
                     <div>
                       <h4 className="text-sm font-semibold">Buka Otomatis Saat Ada Alarm / Notifikasi</h4>
-                      <p className="text-xs text-purple-400 dark:text-purple-300 mt-0.5">Fokus otomatis jendela aplikasi DyaTask saat alarm jadwal pertemuan berbunyi.</p>
+                      <p className="text-xs text-purple-400 dark:text-purple-300 mt-0.5">Fokus otomatis jendela aplikasi DyaTask saat alarm berbunyi. Native notification macOS dikirim lewat Electron.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input 
@@ -4995,16 +5102,19 @@ function App() {
                   <button 
                     onClick={() => {
                       triggerMockNotification(
-                        'Alarm Uji Coba!',
-                        'Evaluasi kesiapan notifikasi real-time macOS berhasil.',
+                        'DyaTask Notification Aktif',
+                        'Jika banner ini muncul di macOS, izin notifikasi sudah aktif.',
                         'local'
                       )
                     }}
                     className="w-full py-2.5 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
                   >
                     <BellRing size={12} />
-                    Uji Notifikasi macOS
+                    Uji / Aktifkan Izin Notifikasi macOS
                   </button>
+                  <p className="mt-2 text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
+                    Jika macOS meminta izin, pilih Allow. Kalau tidak muncul, aktifkan manual di System Settings &gt; Notifications &gt; DyaTask.
+                  </p>
                 </div>
               </div>
 
