@@ -1,4 +1,5 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 
@@ -43,6 +44,51 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update DyaTask tersedia',
+      message: `Versi ${info.version} tersedia.`,
+      detail: 'Download update sekarang? App akan meminta restart setelah download selesai.',
+      buttons: ['Download', 'Nanti'],
+      defaultId: 0,
+      cancelId: 1
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.downloadUpdate();
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update siap diinstal',
+      message: `DyaTask ${info.version} sudah selesai diunduh.`,
+      detail: 'Restart app sekarang untuk memasang update.',
+      buttons: ['Restart & Install', 'Nanti'],
+      defaultId: 0,
+      cancelId: 1
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    console.error('Auto update error:', error);
+  });
+
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(error => {
+      console.error('Update check failed:', error);
+    });
+  }, 6000);
 }
 
 // Function to handle macOS autostart via LaunchAgent plist programmatically
@@ -120,6 +166,7 @@ app.whenReady().then(() => {
 
   // Default autostart enabled
   setupMacAutostart(true);
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
