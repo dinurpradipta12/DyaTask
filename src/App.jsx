@@ -2673,121 +2673,130 @@ function App() {
 
   if (!session) {
     return (
-      <div className={`app-wrapper ${theme === 'dark' ? 'dark' : ''} flex items-center justify-center p-6 min-h-screen`} style={{ background: 'var(--bg-app)' }}>
-        <div className="w-full max-w-md glass-panel p-8 space-y-6 relative overflow-hidden transition-all duration-300 shadow-2xl border border-purple-100 dark:border-indigo-950/60">
-          
-          {/* Header Brand */}
-          <div className="flex flex-col items-center text-center space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-[#8f75d8] flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-[#8f75d8]/20 glow-primary">
-              D
-            </div>
-            <h1 className="text-2xl font-extrabold tracking-tight mt-2 text-purple-700 dark:text-purple-300">{appHeaderTitle || 'Dyatask Manager'}</h1>
-            <p className="text-xs text-purple-400 dark:text-purple-300 font-medium">Sistem Produktivitas Berenkripsi & Sinkronisasi macOS</p>
-          </div>
-
-          {/* Tab Selector */}
-          <div className="flex rounded-xl bg-purple-50 dark:bg-indigo-950/40 p-1 border border-purple-100/50 dark:border-indigo-950/30">
-            <button 
-              onClick={() => { setAuthTab('signin'); setAuthError(null); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authTab === 'signin' ? 'bg-[#8f75d8] text-white shadow' : 'text-purple-400 hover:text-purple-600'}`}
-            >
-              Masuk
-            </button>
-            <button 
-              onClick={() => { setAuthTab('signup'); setAuthError(null); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authTab === 'signup' ? 'bg-[#8f75d8] text-white shadow' : 'text-purple-400 hover:text-purple-600'}`}
-            >
-              Daftar
-            </button>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {authError && (
-              <div className="p-3.5 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-medium flex items-center gap-2">
-                <AlertCircle size={14} />
-                <span>{authError}</span>
+      <div className="auth-page">
+        <div className="auth-shell">
+          <section className="auth-visual-panel" aria-hidden="true">
+            <div className="auth-orb auth-orb-striped"></div>
+            <div className="auth-orb auth-orb-blue"></div>
+            <div className="auth-orb auth-orb-yellow"></div>
+            <div className="auth-orb auth-orb-purple"></div>
+            <div className="auth-cube"></div>
+            <div className="auth-glass auth-glass-one"></div>
+            <div className="auth-glass auth-glass-two"></div>
+            <div className="auth-flower">
+              {Array.from({ length: 18 }).map((_, index) => (
+                <span key={index} style={{ transform: `rotate(${index * 20}deg) translateY(-54px)` }} />
+              ))}
+              <div className="auth-flower-face">
+                <i></i>
+                <i></i>
+                <b></b>
               </div>
-            )}
+            </div>
+            <div className="auth-visual-caption">
+              <img src={dyataskMiniLogo} alt="" />
+              <div>
+                <p>DyaTask Workspace</p>
+                <span>Tasks, calendar, reminders, and project folders in one quiet flow.</span>
+              </div>
+            </div>
+          </section>
 
-            {authTab === 'signup' && (
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-purple-400 dark:text-purple-300">Nama Lengkap</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-purple-400"><User size={14} /></span>
-                  <input 
-                    type="text" 
-                    placeholder="Nama Lengkap Anda"
+          <section className="auth-form-panel">
+            <div className="auth-brand-pill">
+              <img src={dyataskMiniLogo} alt="DyaTask" />
+              <span>{appHeaderTitle || 'Dyatask Manager'}</span>
+            </div>
+
+            <div className="auth-copy">
+              <p>{authTab === 'signin' ? 'Welcome Back!' : 'Create Account'}</p>
+              <span>{authTab === 'signin' ? 'Enter your details below' : 'Start managing your freelance work today'}</span>
+            </div>
+
+            <form onSubmit={handleAuthSubmit} className="auth-form">
+              {authError && (
+                <div className="auth-error">
+                  <AlertCircle size={15} />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {authTab === 'signup' && (
+                <label className="auth-field">
+                  <span>Full Name</span>
+                  <input
+                    type="text"
+                    placeholder="Dinur Pradipta"
                     value={authFullName}
                     onChange={(e) => setAuthFullName(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
                     required
                   />
-                </div>
-              </div>
-            )}
+                </label>
+              )}
 
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold tracking-wider text-purple-400 dark:text-purple-300">Nama Pengguna (Username)</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-purple-400"><User size={14} /></span>
-                <input 
-                  type="text" 
+              <label className="auth-field">
+                <span>Username</span>
+                <input
+                  type="text"
                   placeholder="arunika"
                   value={authUsername}
                   onChange={(e) => setAuthUsername(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
                   required
                 />
+              </label>
+
+              <label className="auth-field">
+                <span>Password</span>
+                <div className="auth-password-row">
+                  <input
+                    type={showAuthPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowAuthPassword(!showAuthPassword)} aria-label="Toggle password visibility">
+                    {showAuthPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </label>
+
+              <div className="auth-options">
+                <label>
+                  <input type="checkbox" defaultChecked />
+                  <span>Remember me</span>
+                </label>
+                <button type="button">Forgot password?</button>
               </div>
+
+              <button type="submit" disabled={loadingAuth} className="auth-primary-button">
+                {loadingAuth ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    Processing...
+                  </>
+                ) : authTab === 'signin' ? 'Log in' : 'Sign up'}
+              </button>
+
+              <button type="button" className="auth-google-button" disabled>
+                <span>G</span>
+                Google login coming soon
+              </button>
+            </form>
+
+            <div className="auth-switcher">
+              {authTab === 'signin' ? "Don't have an account?" : 'Already have an account?'}
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab(authTab === 'signin' ? 'signup' : 'signin')
+                  setAuthError(null)
+                }}
+              >
+                {authTab === 'signin' ? 'Sign Up' : 'Log In'}
+              </button>
             </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold tracking-wider text-purple-400 dark:text-purple-300">Kata Sandi</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-purple-400"><Lock size={14} /></span>
-                <input 
-                  type={showAuthPassword ? "text" : "password"} 
-                  placeholder="••••••••"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  required
-                />
-                <button 
-                  type="button"
-                  onClick={() => setShowAuthPassword(!showAuthPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-purple-400 hover:text-purple-600"
-                >
-                  {showAuthPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-
-            <button 
-              type="submit"
-              disabled={loadingAuth}
-              className="w-full py-3 mt-2 bg-[#8f75d8] hover:bg-[#8069c8] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#8f75d8]/20 active:scale-95 disabled:opacity-50"
-            >
-              {loadingAuth ? (
-                <>
-                  <RefreshCw size={14} className="animate-spin" />
-                  <span>Sedang memproses...</span>
-                </>
-              ) : (
-                <>
-                  <ShieldCheck size={14} />
-                  <span>{authTab === 'signin' ? 'Masuk ke Dasbor' : 'Daftar Akun Baru'}</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Footer Info */}
-          <div className="text-center pt-2">
-            <span className="text-[9px] text-purple-400 dark:text-purple-300 font-semibold">Tersertifikasi SSL & Keamanan RLS Supabase Aktif</span>
-          </div>
-
+          </section>
         </div>
       </div>
     )
