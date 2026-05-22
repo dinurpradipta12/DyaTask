@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
 import { supabase, supabaseAdmin } from './supabaseClient'
 import {
@@ -137,6 +137,19 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState('dark')
   const [searchQuery, setSearchQuery] = useState('')
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
+  const [chartMetric, setChartMetric] = useState('productivity') // 'productivity', 'tasks', 'bookings', 'completionRate'
+  const [chartHoverIndex, setChartHoverIndex] = useState(null)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [profileFormData, setProfileFormData] = useState({ 
+    full_name: '', 
+    avatar_url: '', 
+    avatar_file: null,
+    tanggal_lahir: '', 
+    email: '', 
+    nomer_hp: '' 
+  })
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   
   // Tasks state
   const [tasks, setTasks] = useState(initialTasks)
@@ -153,6 +166,53 @@ function App() {
 
   // Booking state
   const [appointments, setAppointments] = useState(initialAppointments)
+
+  // Helper function to get chart data points based on metric (after state is defined)
+  const getChartDataPoints = () => {
+    const daysOfWeek = [0, 1, 2, 3, 4, 5, 6] // Sun to Sat
+    
+    if (chartMetric === 'productivity') {
+      // Simulate productivity based on task activity this week
+      const tasksByDay = daysOfWeek.map(day => {
+        const dayDate = new Date(todayDate)
+        dayDate.setDate(todayDate.getDate() - (todayDate.getDay() - day))
+        const dateStr = formatDateLocal(dayDate)
+        return tasks.filter(t => t.date === dateStr).length
+      })
+      return tasksByDay.map(v => Math.min(100, (v || 0) * 15))
+    } else if (chartMetric === 'tasks') {
+      // Tasks created per day of week
+      return daysOfWeek.map(day => {
+        const dayDate = new Date(todayDate)
+        dayDate.setDate(todayDate.getDate() - (todayDate.getDay() - day))
+        const dateStr = formatDateLocal(dayDate)
+        return Math.min(100, tasks.filter(t => t.date === dateStr).length * 20)
+      })
+    } else if (chartMetric === 'bookings') {
+      // Appointments per day
+      return daysOfWeek.map(day => {
+        const dayDate = new Date(todayDate)
+        dayDate.setDate(todayDate.getDate() - (todayDate.getDay() - day))
+        const dateStr = formatDateLocal(dayDate)
+        return Math.min(100, appointments.filter(a => a.date === dateStr).length * 30)
+      })
+    } else if (chartMetric === 'completionRate') {
+      // Task completion rate per day
+      return daysOfWeek.map(day => {
+        const dayDate = new Date(todayDate)
+        dayDate.setDate(todayDate.getDate() - (todayDate.getDay() - day))
+        const dateStr = formatDateLocal(dayDate)
+        const dayTasks = tasks.filter(t => t.date === dateStr)
+        if (dayTasks.length === 0) return 0
+        return Math.round((dayTasks.filter(t => t.status === 'done').length / dayTasks.length) * 100)
+      })
+    }
+    return [0, 0, 0, 0, 0, 0, 0]
+  }
+
+  // Use useMemo to calculate chart data points safely
+  const chartDataPoints = useMemo(() => getChartDataPoints(), [tasks, appointments, chartMetric])
+  const maxValue = Math.max(...chartDataPoints, 1)
   const [bookingClient, setBookingClient] = useState('')
   const [bookingTitle, setBookingTitle] = useState('')
   const [bookingEmail, setBookingEmail] = useState('')
@@ -731,6 +791,8 @@ function App() {
     '🔄 Google Calendar API sinkron bidirectional secara real-time.',
     '📅 Notion Calendar API terhubung secara real-time.'
   ])
+  const [dbConnectionStatus, setDbConnectionStatus] = useState('connected') // 'connected', 'disconnected', 'syncing'
+  const [lastSyncTime, setLastSyncTime] = useState(new Date())
 
   // Handle Supabase Authentication Session
   useEffect(() => {
@@ -744,6 +806,88 @@ function App() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // Monitor Supabase Connection Status & Real-time Sync Events
+  useEffect(() => {
+    let connectionCheckInterval
+    let taskChannel, appointmentChannel, noteChannel
+
+    const checkConnection = async () => {
+      try {
+        const { data, error } = await supabase.from('tasks').select('count', { count: 'exact', head: true })
+        if (error) {
+          setDbConnectionStatus('disconnected')
+          setSyncLogs(prev => [`[${new Date().toLocaleTimeString('id-ID')}] ❌ Database offline - ${error.message}`, ...prev.slice(0, 9)])
+        } else {
+          if (dbConnectionStatus !== 'connected') {
+            setDbConnectionStatus('connected')
+            setSyncLogs(prev => [`[${new Date().toLocaleTimeString('id-ID')}] ✅ Database terhubung kembali.`, ...prev.slice(0, 9)])
+          }
+          setLastSyncTime(new Date())
+        }
+      } catch (err) {
+        setDbConnectionStatus('disconnected')
+        setSyncLogs(prev => [`[${new Date().toLocaleTimeString('id-ID')}] ❌ Koneksi error: ${err.message}`, ...prev.slice(0, 9)])
+      }
+    }
+
+    // Check connection immediately
+    checkConnection()
+    
+    // Check connection every 30 seconds
+    connectionCheckInterval = setInterval(checkConnection, 30000)
+
+    // Subscribe to real-time updates
+    try {
+      taskChannel = supabase
+        .channel('public:tasks')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+          const timestamp = new Date().toLocaleTimeString('id-ID')
+          if (payload.eventType === 'INSERT') {
+            setSyncLogs(prev => [`[${timestamp}] ✅ Tugas baru ditambahkan ke database.`, ...prev.slice(0, 9)])
+          } else if (payload.eventType === 'UPDATE') {
+            setSyncLogs(prev => [`[${timestamp}] 🔄 Tugas diperbarui di database.`, ...prev.slice(0, 9)])
+          } else if (payload.eventType === 'DELETE') {
+            setSyncLogs(prev => [`[${timestamp}] 🗑️ Tugas dihapus dari database.`, ...prev.slice(0, 9)])
+          }
+          setLastSyncTime(new Date())
+        })
+        .subscribe()
+
+      appointmentChannel = supabase
+        .channel('public:appointments')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload) => {
+          const timestamp = new Date().toLocaleTimeString('id-ID')
+          if (payload.eventType === 'INSERT') {
+            setSyncLogs(prev => [`[${timestamp}] 📅 Konsultasi baru dijadwalkan di database.`, ...prev.slice(0, 9)])
+          } else if (payload.eventType === 'UPDATE') {
+            setSyncLogs(prev => [`[${timestamp}] 📝 Konsultasi diperbarui di database.`, ...prev.slice(0, 9)])
+          }
+          setLastSyncTime(new Date())
+        })
+        .subscribe()
+
+      noteChannel = supabase
+        .channel('public:notes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, (payload) => {
+          const timestamp = new Date().toLocaleTimeString('id-ID')
+          if (payload.eventType === 'INSERT') {
+            setSyncLogs(prev => [`[${timestamp}] 🔐 Catatan terenkripsi disimpan di database.`, ...prev.slice(0, 9)])
+          }
+          setLastSyncTime(new Date())
+        })
+        .subscribe()
+    } catch (err) {
+      console.warn('Real-time subscription setup failed:', err)
+    }
+
+    return () => {
+      clearInterval(connectionCheckInterval)
+      if (taskChannel) taskChannel.unsubscribe()
+      if (appointmentChannel) appointmentChannel.unsubscribe()
+      if (noteChannel) noteChannel.unsubscribe()
+    }
+  }, [dbConnectionStatus])
 
   useEffect(() => {
     localStorage.setItem('dyatask_booking_availability', JSON.stringify(bookingAvailability))
@@ -1773,6 +1917,101 @@ function App() {
     setNotes([])
   }
 
+  // Update user profile to Supabase
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault()
+    if (!session?.user?.id) return
+
+    try {
+      let avatarUrl = profileFormData.avatar_url
+
+      // Upload avatar file to Supabase storage if provided
+      if (profileFormData.avatar_file) {
+        setUploadingAvatar(true)
+        try {
+          const fileExt = profileFormData.avatar_file.name.split('.').pop()
+          const fileName = `${session.user.id}-${Date.now()}.${fileExt}`
+          
+          const { error: uploadError, data } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, profileFormData.avatar_file, { upsert: true })
+          
+          if (uploadError) {
+            console.warn('Upload warning:', uploadError.message)
+          } else {
+            const { data: publicData } = supabase.storage
+              .from('avatars')
+              .getPublicUrl(fileName)
+            
+            avatarUrl = publicData.publicUrl
+          }
+        } catch (uploadErr) {
+          console.warn('Upload error:', uploadErr.message)
+        }
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        data: { 
+          full_name: profileFormData.full_name, 
+          avatar_url: avatarUrl,
+          tanggal_lahir: profileFormData.tanggal_lahir,
+          email: profileFormData.email,
+          nomer_hp: profileFormData.nomer_hp
+        }
+      })
+
+      if (error) {
+        alert('Gagal memperbarui profil: ' + error.message)
+        return
+      }
+
+      // Force refresh session data from server
+      const { data: { user: updatedUser }, error: fetchError } = await supabase.auth.getUser()
+      
+      if (!fetchError && updatedUser) {
+        // Update session with fresh user data
+        setSession(prev => prev ? { ...prev, user: updatedUser } : null)
+        
+        // Force re-initialize profile form to show new data
+        setTimeout(() => {
+          setProfileFormData({
+            full_name: updatedUser.user_metadata?.full_name || '',
+            avatar_url: updatedUser.user_metadata?.avatar_url || '',
+            avatar_file: null,
+            tanggal_lahir: updatedUser.user_metadata?.tanggal_lahir || '',
+            email: updatedUser.user_metadata?.email || '',
+            nomer_hp: updatedUser.user_metadata?.nomer_hp || ''
+          })
+        }, 100)
+      }
+      
+      setSyncLogs(prev => [
+        `[${new Date().toLocaleTimeString('id-ID')}] 👤 Profil pengguna berhasil diperbarui & tersinkron.`,
+        ...prev.slice(0, 9)
+      ])
+      
+      setUploadingAvatar(false)
+      setIsProfileModalOpen(false)
+    } catch (err) {
+      alert('Error: ' + err.message)
+      setUploadingAvatar(false)
+    }
+  }
+
+  // Initialize profile form data when modal opens
+  useEffect(() => {
+    if (isProfileModalOpen && session?.user) {
+      setProfileFormData({
+        full_name: session.user.user_metadata?.full_name || '',
+        avatar_url: session.user.user_metadata?.avatar_url || '',
+        avatar_file: null,
+        tanggal_lahir: session.user.user_metadata?.tanggal_lahir || '',
+        email: session.user.user_metadata?.email || '',
+        nomer_hp: session.user.user_metadata?.nomer_hp || ''
+      })
+    }
+  }, [isProfileModalOpen, session])
+
   if (isPublicBookingMode && publicBookingToken === shareToken) {
     if (publicBookingSuccess && publicBookingSummary) {
       const waNumber = '6289619941101'
@@ -2135,22 +2374,25 @@ function App() {
           {/* User profile section in Sidebar footer */}
           {!sidebarCollapsed && <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto">
             <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-purple-200 dark:bg-indigo-900 flex items-center justify-center">
-                  <User size={18} className="text-purple-600 dark:text-purple-300" />
+              <button 
+                onClick={() => setIsProfileModalOpen(true)}
+                className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-br from-purple-400 to-purple-600 hover:from-purple-500 hover:to-purple-700 transition-all active:scale-95 cursor-pointer group"
+              >
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-all">
+                  <User size={18} className="text-white" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-semibold truncate flex items-center gap-1.5">
-                    {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Pradipta Dev'}
+                <div className="flex-1 min-w-0 text-left">
+                  <h4 className="text-sm font-semibold truncate flex items-center gap-1.5 text-white">
+                    {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Pengguna'}
                     {session?.user?.email?.startsWith('arunika.dyatask@') && (
-                      <span className="bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 text-[8px] px-1 py-0.5 rounded font-extrabold uppercase tracking-wider scale-90 origin-left">
+                      <span className="bg-yellow-400/30 text-yellow-100 border border-yellow-300/50 text-[8px] px-1 py-0.5 rounded font-extrabold uppercase tracking-wider scale-90 origin-left">
                         DEV
                       </span>
                     )}
                   </h4>
-                  <p className="text-xs text-white/75 dark:text-purple-300 truncate">{session?.user?.email}</p>
+                  <p className="text-xs text-white/70 truncate">{session?.user?.email}</p>
                 </div>
-              </div>
+              </button>
               <div className="flex gap-2">
                 <button 
                   onClick={toggleTheme}
@@ -2168,6 +2410,7 @@ function App() {
               </div>
             </div>
           </div>}
+
         </aside>
 
         {/* 2. Main Content Area */}
@@ -2277,14 +2520,14 @@ function App() {
                 <div className="glass-panel p-6 glass-panel-hover transition-all">
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest">Total Konsultasi</span>
-                    <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-indigo-900 flex items-center justify-center text-purple-600 dark:text-purple-300">
-                      <Calendar size={16} />
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-purple-50 dark:from-indigo-900 dark:to-indigo-950 flex items-center justify-center text-purple-600 dark:text-purple-300">
+                      <Calendar size={18} />
                     </div>
                   </div>
-                  <h3 className="text-2xl font-bold tracking-tight">{appointments.length} Aktif</h3>
-                  <p className="text-xs text-purple-400 dark:text-purple-300 mt-1 flex items-center gap-1">
-                    <TrendingUp size={12} className="text-emerald-500" />
-                    <span>+2 Baru hari ini</span>
+                  <h3 className="text-3xl font-bold tracking-tight">{appointments.length}</h3>
+                  <p className="text-xs text-purple-500 dark:text-purple-400 mt-2 flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>{appointments.filter(a => a.status === 'confirmed').length} Terkonfirmasi</span>
                   </p>
                 </div>
 
@@ -2292,47 +2535,55 @@ function App() {
                 <div className="glass-panel p-6 glass-panel-hover transition-all">
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest">Tugas Selesai</span>
-                    <div className="w-8 h-8 rounded-lg bg-pink-100 dark:bg-pink-950/40 flex items-center justify-center text-pink-600 dark:text-pink-300">
-                      <CheckSquare size={16} />
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-100 to-pink-50 dark:from-pink-950/40 dark:to-pink-900/20 flex items-center justify-center text-pink-600 dark:text-pink-300">
+                      <CheckSquare size={18} />
                     </div>
                   </div>
-                  <h3 className="text-2xl font-bold tracking-tight">
-                    {tasks.filter(t => t.status === 'done').length} / {tasks.length}
+                  <h3 className="text-3xl font-bold tracking-tight">
+                    {tasks.filter(t => t.status === 'done').length}/{tasks.length}
                   </h3>
                   {/* Progress bar */}
-                  <div className="w-full bg-purple-100 dark:bg-indigo-950 h-1.5 rounded-full mt-3 overflow-hidden">
+                  <div className="w-full bg-purple-100 dark:bg-indigo-950 h-2 rounded-full mt-3 overflow-hidden">
                     <div 
-                      className="bg-purple-600 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${(tasks.filter(t => t.status === 'done').length / tasks.length) * 100}%` }}
+                      className="bg-gradient-to-r from-pink-500 to-purple-600 h-full rounded-full transition-all duration-500"
+                      style={{ width: `${tasks.length > 0 ? (tasks.filter(t => t.status === 'done').length / tasks.length) * 100 : 0}%` }}
                     ></div>
                   </div>
-                </div>
-
-                {/* Stat 3: Email Meetings */}
-                <div className="glass-panel p-6 glass-panel-hover transition-all">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest">Email Terkoneksi</span>
-                    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-300">
-                      <Mail size={16} />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold tracking-tight">Parser Aktif</h3>
-                  <p className="text-xs text-emerald-500 mt-1 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                    <span>1 Jadwal Rapat diimpor</span>
+                  <p className="text-xs text-purple-400 dark:text-purple-400 mt-2">
+                    {tasks.filter(t => t.status === 'pending').length} tugas tertunda
                   </p>
                 </div>
 
-                {/* Stat 4: Security Mode */}
+                {/* Stat 3: Encrypted Notes */}
                 <div className="glass-panel p-6 glass-panel-hover transition-all">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest">Enkripsi Notes</span>
-                    <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center text-amber-600 dark:text-amber-300">
-                      <Lock size={16} />
+                    <span className="text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest">Catatan Aman</span>
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-950/40 dark:to-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-300">
+                      <Lock size={18} />
                     </div>
                   </div>
-                  <h3 className="text-2xl font-bold tracking-tight">AES-256-GCM</h3>
-                  <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">Kunci dekripsi lokal aman</p>
+                  <h3 className="text-3xl font-bold tracking-tight">{notes.length}</h3>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>AES-256-GCM Aktif</span>
+                  </p>
+                </div>
+
+                {/* Stat 4: Schedule Bookings */}
+                <div className="glass-panel p-6 glass-panel-hover transition-all">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest">Jadwal Hari Ini</span>
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-950/40 dark:to-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-300">
+                      <Clock size={18} />
+                    </div>
+                  </div>
+                  <h3 className="text-3xl font-bold tracking-tight">
+                    {tasks.filter(t => t.date === formatDateLocal(new Date())).length}
+                  </h3>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>Tugas hari ini</span>
+                  </p>
                 </div>
 
               </div>
@@ -2340,74 +2591,153 @@ function App() {
               {/* Graphical Trend & Live Logs */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
                 
-                {/* Minimalist SVG Productivity Graph */}
+                {/* Minimalist SVG Productivity Graph with Metric Selector */}
                 <div className="glass-panel p-6 lg:col-span-2">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h3 className="text-lg font-bold">Tren Produktivitas & Booking Harian</h3>
-                      <p className="text-xs text-purple-400 dark:text-purple-300">Analisis tren booking kalender seminggu terakhir</p>
+                      <h3 className="text-lg font-bold">Analytics & Metrics Harian</h3>
+                      <p className="text-xs text-purple-400 dark:text-purple-300">Pilih metrik untuk analisis detail</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded bg-purple-500"></span>
-                      <span className="text-xs text-purple-400 dark:text-purple-300">Tugas</span>
-                      <span className="w-3 h-3 rounded bg-emerald-500 ml-2"></span>
-                      <span className="text-xs text-purple-400 dark:text-purple-300">Booking</span>
-                    </div>
+                    <select
+                      value={chartMetric}
+                      onChange={(e) => { setChartMetric(e.target.value); setChartHoverIndex(null); }}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white transition-all cursor-pointer border-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="productivity">Produktivitas</option>
+                      <option value="tasks">Tugas</option>
+                      <option value="bookings">Konsultasi</option>
+                      <option value="completionRate">Selesai</option>
+                    </select>
                   </div>
 
-                  {/* SVG Minimalist Graphic */}
-                  <div className="chart-container">
-                    <svg viewBox="0 0 500 200" width="100%" height="100%" className="overflow-visible">
-                      {/* Grid lines */}
-                      <line x1="0" y1="50" x2="500" y2="50" stroke="var(--border)" strokeWidth="0.5" />
-                      <line x1="0" y1="100" x2="500" y2="100" stroke="var(--border)" strokeWidth="0.5" />
-                      <line x1="0" y1="150" x2="500" y2="150" stroke="var(--border)" strokeWidth="0.5" />
-
-                      {/* Productivity Trend Line (Purple) */}
-                      <path 
-                        d="M 10 150 Q 80 120, 160 80 T 320 110 T 480 30" 
-                        fill="none" 
-                        stroke="#8B5CF6" 
-                        strokeWidth="3.5"
-                        className="trend-line"
-                      />
+                  {/* Dynamic SVG Chart based on selected metric */}
+                  <div className="chart-container flex justify-center py-8 relative">
+                    <svg viewBox="0 0 650 220" width="100%" height="280" className="overflow-visible">
+                      {/* Y-Axis */}
+                      <line x1="50" y1="20" x2="50" y2="180" stroke="var(--border)" strokeWidth="1" />
                       
-                      {/* Booking Trend Line (Emerald) */}
-                      <path 
-                        d="M 10 170 Q 80 140, 160 110 T 320 90 T 480 70" 
-                        fill="none" 
-                        stroke="#10B981" 
-                        strokeWidth="3.5"
-                        strokeDasharray="5,5"
-                        className="trend-line"
-                      />
+                      {/* Y-Axis Labels */}
+                      <text x="45" y="185" fill="var(--text-muted)" fontSize="10" textAnchor="end">0</text>
+                      <text x="45" y="140" fill="var(--text-muted)" fontSize="10" textAnchor="end">25</text>
+                      <text x="45" y="95" fill="var(--text-muted)" fontSize="10" textAnchor="end">50</text>
+                      <text x="45" y="50" fill="var(--text-muted)" fontSize="10" textAnchor="end">75</text>
+                      <text x="45" y="25" fill="var(--text-muted)" fontSize="10" textAnchor="end">100</text>
 
-                      {/* Points */}
-                      <circle cx="160" cy="80" r="5" fill="#8B5CF6" />
-                      <circle cx="320" cy="110" r="5" fill="#8B5CF6" />
-                      <circle cx="480" cy="30" r="5" fill="#8B5CF6" />
+                      {/* Grid lines */}
+                      <line x1="50" y1="40" x2="620" y2="40" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
+                      <line x1="50" y1="85" x2="620" y2="85" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
+                      <line x1="50" y1="130" x2="620" y2="130" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
+                      <line x1="50" y1="175" x2="620" y2="175" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
 
-                      <circle cx="160" cy="110" r="5" fill="#10B981" />
-                      <circle cx="320" cy="90" r="5" fill="#10B981" />
-                      <circle cx="480" cy="70" r="5" fill="#10B981" />
+                      {/* Conditional Chart Rendering */}
+                      {chartMetric === 'productivity' && (
+                        <>
+                          <path 
+                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
+                            fill="none" 
+                            stroke="#8B5CF6" 
+                            strokeWidth="3.5"
+                            className="trend-line hover:stroke-purple-700 transition-all cursor-pointer"
+                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
+                          />
+                          {chartDataPoints.map((v, i) => (
+                            <g key={i}>
+                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#8B5CF6" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
+                              {chartHoverIndex === i && (
+                                <>
+                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#8B5CF6" opacity="0.9" />
+                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}</text>
+                                </>
+                              )}
+                            </g>
+                          ))}
+                        </>
+                      )}
+
+                      {chartMetric === 'tasks' && (
+                        <>
+                          <path 
+                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
+                            fill="none" 
+                            stroke="#EC4899" 
+                            strokeWidth="3.5"
+                            className="trend-line hover:stroke-pink-700 transition-all cursor-pointer"
+                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
+                          />
+                          {chartDataPoints.map((v, i) => (
+                            <g key={i}>
+                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#EC4899" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
+                              {chartHoverIndex === i && (
+                                <>
+                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#EC4899" opacity="0.9" />
+                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}</text>
+                                </>
+                              )}
+                            </g>
+                          ))}
+                        </>
+                      )}
+
+                      {chartMetric === 'bookings' && (
+                        <>
+                          <path 
+                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
+                            fill="none" 
+                            stroke="#10B981" 
+                            strokeWidth="3.5"
+                            className="trend-line hover:stroke-emerald-700 transition-all cursor-pointer"
+                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
+                          />
+                          {chartDataPoints.map((v, i) => (
+                            <g key={i}>
+                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#10B981" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
+                              {chartHoverIndex === i && (
+                                <>
+                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#10B981" opacity="0.9" />
+                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}</text>
+                                </>
+                              )}
+                            </g>
+                          ))}
+                        </>
+                      )}
+
+                      {chartMetric === 'completionRate' && (
+                        <>
+                          <path 
+                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
+                            fill="none" 
+                            stroke="#F59E0B" 
+                            strokeWidth="3.5"
+                            className="trend-line hover:stroke-amber-700 transition-all cursor-pointer"
+                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
+                          />
+                          {chartDataPoints.map((v, i) => (
+                            <g key={i}>
+                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#F59E0B" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
+                              {chartHoverIndex === i && (
+                                <>
+                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#F59E0B" opacity="0.9" />
+                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}%</text>
+                                </>
+                              )}
+                            </g>
+                          ))}
+                        </>
+                      )}
+
+                      {/* X-Axis */}
+                      <line x1="50" y1="180" x2="620" y2="180" stroke="var(--border)" strokeWidth="1" />
 
                       {/* Labels */}
-                      <text x="10" y="190" fill="var(--text-muted)" fontSize="10">Sen</text>
-                      <text x="90" y="190" fill="var(--text-muted)" fontSize="10">Sel</text>
-                      <text x="170" y="190" fill="var(--text-muted)" fontSize="10">Rab</text>
-                      <text x="250" y="190" fill="var(--text-muted)" fontSize="10">Kam</text>
-                      <text x="330" y="190" fill="var(--text-muted)" fontSize="10">Jum</text>
-                      <text x="410" y="190" fill="var(--text-muted)" fontSize="10">Sab</text>
-                      <text x="470" y="190" fill="var(--text-muted)" fontSize="10">Min</text>
+                      <text x="90" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Sen</text>
+                      <text x="170" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Sel</text>
+                      <text x="250" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Rab</text>
+                      <text x="330" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Kam</text>
+                      <text x="410" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Jum</text>
+                      <text x="490" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Sab</text>
+                      <text x="570" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Min</text>
                     </svg>
-                  </div>
-                  
-                  {/* Analytic insight advice */}
-                  <div className="mt-4 p-3 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-indigo-950/50 rounded-xl flex items-start gap-2.5">
-                    <Sparkles size={16} className="text-purple-600 dark:text-purple-300 mt-0.5" />
-                    <p className="text-xs text-purple-600 dark:text-purple-300">
-                      <strong>Rekomendasi Produktivitas:</strong> Booking jam tersibuk Anda terjadi pada hari Rabu sore. Mengalokasikan 2 jam fokus-kerja mandiri pada Rabu pagi akan memaksimalkan efisiensi Anda!
-                    </p>
                   </div>
                 </div>
 
@@ -2416,16 +2746,42 @@ function App() {
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold">Sinkronisasi Realtime</h3>
-                      <span className="flex h-2.5 w-2.5 relative">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {dbConnectionStatus === 'connected' ? (
+                          <>
+                            <span className="flex h-2.5 w-2.5 relative">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                            </span>
+                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Terhubung</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                            <span className="text-xs font-semibold text-red-600 dark:text-red-400">Offline</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Connection Status Card */}
+                    <div className={`p-3 rounded-lg mb-4 border text-xs ${
+                      dbConnectionStatus === 'connected'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300'
+                    }`}>
+                      <div className="font-semibold mb-1">
+                        {dbConnectionStatus === 'connected' ? '✅ Database Terhubung' : '⚠️ Database Offline'}
+                      </div>
+                      <div className="text-[10px] opacity-80">
+                        Sinkronisasi terakhir: {lastSyncTime.toLocaleTimeString('id-ID')}
+                      </div>
                     </div>
 
                     {/* Interactive Logs List */}
-                    <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
                       {syncLogs.map((log, index) => (
-                        <div key={index} className="text-xs font-mono p-2.5 rounded-lg bg-purple-50/40 dark:bg-indigo-950/40 border border-purple-100/30 dark:border-indigo-950/30 text-purple-600 dark:text-purple-300 break-words">
+                        <div key={index} className="text-xs font-mono p-2.5 rounded-lg bg-purple-50/40 dark:bg-indigo-950/40 border border-purple-100/30 dark:border-indigo-950/30 text-purple-600 dark:text-purple-300 break-words leading-relaxed">
                           {log}
                         </div>
                       ))}
@@ -3046,66 +3402,98 @@ function App() {
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
-                {/* Left panel: Add Secure note */}
+                {/* Left panel: Add Secure note (moved into modal) */}
                 <div className="glass-panel p-6">
                   <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                     <Lock size={18} className="text-purple-500" />
                     Amankan Catatan Baru
                   </h3>
 
-                  <form onSubmit={handleEncryptNote} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Judul Catatan</label>
-                      <input 
-                        type="text" 
-                        placeholder="Contoh: Kode Rahasia atau Keuangan"
-                        value={noteInputTitle}
-                        onChange={(e) => setNoteInputTitle(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-sm focus:outline-none focus:border-purple-500"
-                        required
-                      />
-                    </div>
+                  <p className="text-sm text-purple-500 mb-4">Klik tombol berikut untuk membuka form catatan terenkripsi.</p>
 
-                    <div>
-                      <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Isi Rahasia Catatan</label>
-                      <textarea 
-                        rows="4"
-                        placeholder="Masukkan pesan atau dokumen yang ingin dirahasiakan..."
-                        value={noteInputContent}
-                        onChange={(e) => setNoteInputContent(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-sm focus:outline-none focus:border-purple-500"
-                        required
-                      ></textarea>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1.5">Master Password (Kunci Dekripsi)</label>
-                      <input 
-                        type="password" 
-                        placeholder="Masukkan sandi kunci dekripsi..."
-                        value={masterPassword}
-                        onChange={(e) => setMasterPassword(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-sm focus:outline-none focus:border-purple-500"
-                        required
-                      />
-                    </div>
-
-                    {scrambleProgress && (
-                      <div className="encryption-matrix animate-scramble my-3">
-                        ⚡ {scrambledText}
-                      </div>
-                    )}
-
-                    <button 
-                      type="submit"
-                      disabled={scrambleProgress}
-                      className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-purple-500/10 disabled:opacity-50"
-                    >
-                      <Lock size={16} />
-                      Enkripsi & Simpan ke Supabase
-                    </button>
-                  </form>
+                  <button
+                    type="button"
+                    onClick={() => setIsNoteModalOpen(true)}
+                    className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-purple-500/10"
+                  >
+                    <Lock size={16} />
+                    Tambah Catatan Aman
+                  </button>
                 </div>
+
+                {/* Modal: Secure note form */}
+                {isNoteModalOpen && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsNoteModalOpen(false)}></div>
+                    <div className="relative bg-white dark:bg-indigo-950/95 rounded-3xl p-8 w-full max-w-xl z-50 shadow-2xl border border-purple-100/20 dark:border-indigo-900/50">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-2xl font-bold flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                            <Lock size={20} className="text-purple-600 dark:text-purple-400" />
+                          </div>
+                          Amankan Catatan Baru
+                        </h3>
+                        <button onClick={() => setIsNoteModalOpen(false)} className="text-purple-400 hover:text-purple-600 dark:hover:text-purple-300 font-bold text-2xl transition-colors">✕</button>
+                      </div>
+
+                      <form onSubmit={(e) => { handleEncryptNote(e); setIsNoteModalOpen(false); }} className="space-y-5">
+                        <div>
+                          <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Judul Catatan</label>
+                          <input 
+                            type="text" 
+                            placeholder="Contoh: Kode Rahasia atau Keuangan"
+                            value={noteInputTitle}
+                            onChange={(e) => setNoteInputTitle(e.target.value)}
+                            className="w-full px-4 py-3 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Isi Rahasia Catatan</label>
+                          <textarea 
+                            rows="5"
+                            placeholder="Masukkan pesan atau dokumen yang ingin dirahasiakan..."
+                            value={noteInputContent}
+                            onChange={(e) => setNoteInputContent(e.target.value)}
+                            className="w-full px-4 py-3 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all resize-none"
+                            required
+                          ></textarea>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Master Password (Kunci Dekripsi)</label>
+                          <input 
+                            type="password" 
+                            placeholder="Masukkan sandi kunci dekripsi..."
+                            value={masterPassword}
+                            onChange={(e) => setMasterPassword(e.target.value)}
+                            className="w-full px-4 py-3 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            required
+                          />
+                        </div>
+
+                        {scrambleProgress && (
+                          <div className="encryption-matrix animate-scramble py-3 px-4 bg-purple-100/50 dark:bg-purple-900/20 rounded-lg text-center text-sm font-semibold text-purple-600 dark:text-purple-300">
+                            ⚡ {scrambledText}
+                          </div>
+                        )}
+
+                        <div className="flex gap-3 pt-4">
+                          <button 
+                            type="submit"
+                            disabled={scrambleProgress}
+                            className="flex-1 py-3.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-purple-600/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Lock size={16} />
+                            Enkripsi & Simpan
+                          </button>
+                          <button type="button" onClick={() => setIsNoteModalOpen(false)} className="flex-1 py-3.5 bg-gray-200 dark:bg-indigo-800 hover:bg-gray-300 dark:hover:bg-indigo-700 text-gray-800 dark:text-white font-semibold rounded-lg text-sm transition-all">Batal</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
 
                 {/* Right panel: Notes List with Decryptor */}
                 <div className="lg:col-span-2 space-y-4">
@@ -4045,6 +4433,120 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Profile Edit Modal - Rendered at Top Level (Outside Sidebar) */}
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIsProfileModalOpen(false)}></div>
+          <div className="relative bg-white dark:bg-indigo-950/95 rounded-3xl p-6 w-full max-w-2xl z-[9999] shadow-2xl border border-purple-100/20 dark:border-indigo-900/50 animate-in fade-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                  <User size={18} className="text-purple-600 dark:text-purple-400" />
+                </div>
+                Edit Profil
+              </h3>
+              <button onClick={() => setIsProfileModalOpen(false)} className="text-purple-400 hover:text-purple-600 dark:hover:text-purple-300 font-bold text-2xl transition-colors">✕</button>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+              {/* Nama Lengkap */}
+              <div>
+                <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Nama Lengkap</label>
+                <input 
+                  type="text" 
+                  placeholder="Masukkan nama lengkap Anda"
+                  value={profileFormData.full_name}
+                  onChange={(e) => setProfileFormData(prev => ({ ...prev, full_name: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                />
+              </div>
+
+              {/* Avatar Upload */}
+              <div>
+                <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Foto Profil</label>
+                <div className="relative">
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        setProfileFormData(prev => ({ ...prev, avatar_file: file }))
+                      }
+                    }}
+                    disabled={uploadingAvatar}
+                    className="w-full px-4 py-2.5 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+                {(profileFormData.avatar_file || profileFormData.avatar_url) && (
+                  <div className="mt-2 flex justify-center">
+                    <img 
+                      src={profileFormData.avatar_file ? URL.createObjectURL(profileFormData.avatar_file) : profileFormData.avatar_url} 
+                      alt="Preview" 
+                      className="w-16 h-16 rounded-lg object-cover border border-purple-200 dark:border-indigo-800" 
+                      onError={(e) => e.target.style.display = 'none'} 
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Tanggal Lahir */}
+              <div>
+                <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Tanggal Lahir</label>
+                <input 
+                  type="date"
+                  value={profileFormData.tanggal_lahir}
+                  onChange={(e) => setProfileFormData(prev => ({ ...prev, tanggal_lahir: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Email</label>
+                <input 
+                  type="email"
+                  placeholder="Masukkan email Anda"
+                  value={profileFormData.email}
+                  onChange={(e) => setProfileFormData(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                />
+              </div>
+
+              {/* Nomor HP */}
+              <div>
+                <label className="block text-xs font-bold text-purple-500 dark:text-purple-400 uppercase tracking-widest mb-2">Nomor HP</label>
+                <input 
+                  type="tel"
+                  placeholder="Masukkan nomor HP Anda"
+                  value={profileFormData.nomer_hp}
+                  onChange={(e) => setProfileFormData(prev => ({ ...prev, nomer_hp: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-lg border border-purple-200 dark:border-indigo-800 bg-white dark:bg-indigo-900/40 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                />
+              </div>
+
+              <div className="pt-1 space-y-2">
+                <div className="text-xs text-purple-600 dark:text-purple-300 p-2.5 bg-purple-50 dark:bg-indigo-900/20 rounded-lg border border-purple-100 dark:border-indigo-900/50 leading-relaxed">
+                  <span className="font-semibold">💾</span> Perubahan akan disimpan secara real-time ke Supabase.
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button 
+                  type="submit"
+                  disabled={uploadingAvatar}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-purple-600/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <User size={14} />
+                  {uploadingAvatar ? 'Menyimpan...' : 'Simpan'}
+                </button>
+                <button type="button" onClick={() => setIsProfileModalOpen(false)} disabled={uploadingAvatar} className="flex-1 py-2.5 bg-gray-200 dark:bg-indigo-800 hover:bg-gray-300 dark:hover:bg-indigo-700 text-gray-800 dark:text-white font-semibold rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">Batal</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
