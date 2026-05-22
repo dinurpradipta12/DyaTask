@@ -2,40 +2,17 @@
 <html lang="id" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/src/minilogo-dyatask.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
     <!-- SEO Meta Tags -->
-    <title>DyaTask Manager - Modern & Structured Task, Schedule, and Appointment Organizer</title>
+    <title>Dyatask Manager - Superapp for Freelancer</title>
     <meta name="description" content="DyaTask Manager adalah aplikasi produktivitas premium yang terstruktur dengan pencatat tugas, reservasi jadwal real-time, sinkronisasi kalender Google & Notion, enkripsi AES-256-GCM, dan asisten menu melayang untuk macOS." />
     <meta name="keywords" content="dyatask, task manager, calendar sync, google calendar, notion calendar, secure notes, productivity dashboard, macos app" />
     <meta name="author" content="Aruneeka Pro" />
-    
-    <!-- Tailwind CSS Play CDN for utility classes -->
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              purple: {
-                50: '#F5F3FF',
-                100: '#EDE9FE',
-                200: '#DDD6FE',
-                300: '#C4B5FD',
-                400: '#A78BFA',
-                500: '#8B5CF6',
-                600: '#7C3AED',
-                700: '#6D28D9',
-                800: '#5B21B6',
-                900: '#4C1D95',
-                950: '#1E1B4B',
-              }
-            }
-          }
-        }
-      }
+      const savedTheme = localStorage.getItem('dyatask_theme')
+      document.documentElement.classList.toggle('dark', savedTheme ? savedTheme === 'dark' : true)
     </script>
   </head>
   <body>

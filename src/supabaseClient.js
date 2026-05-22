@@ -8,6 +8,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 export const supabaseAdmin = supabaseServiceRole ? createClient(supabaseUrl, supabaseServiceRole, {
   auth: {
     autoRefreshToken: false,
-    persistSession: false
+    detectSessionInUrl: false,
+    persistSession: false,
+    storageKey: 'dyatask-admin-auth-token'
   }
 }) : null

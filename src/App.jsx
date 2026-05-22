@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
+import dyataskLogo from './logo-dyatask.png'
+import dyataskMiniLogo from './minilogo-dyatask.png'
 import { supabase, supabaseAdmin } from './supabaseClient'
 import {
   LayoutDashboard,
@@ -34,7 +36,9 @@ import {
   Eye,
   EyeOff,
   BellRing,
-  AlertCircle
+  AlertCircle,
+  Folder,
+  FolderOpen
 } from 'lucide-react'
 
 // Mock initial data
@@ -135,7 +139,12 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [theme, setTheme] = useState('dark')
+  const [appHeaderTagline, setAppHeaderTagline] = useState(() => localStorage.getItem('dyatask_header_tagline') || 'Modern Soft Minimalist Amethyst')
+  const [appHeaderTitle, setAppHeaderTitle] = useState(() => localStorage.getItem('dyatask_header_title') || 'Dyatask Manager - Superapp for Freelancer')
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('dyatask_theme')
+    return savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark'
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
   const [chartMetric, setChartMetric] = useState('productivity') // 'productivity', 'tasks', 'bookings', 'completionRate'
@@ -163,13 +172,23 @@ function App() {
   const [newTaskColor, setNewTaskColor] = useState('#8B5CF6')
   const [newTaskTime, setNewTaskTime] = useState('18:00')
   const [newTaskDate, setNewTaskDate] = useState(todayString)
+  const [newTaskSubtasks, setNewTaskSubtasks] = useState('')
+  const [projectFolderRecords, setProjectFolderRecords] = useState([])
+  const [selectedProjectName, setSelectedProjectName] = useState('')
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderColor, setNewFolderColor] = useState('#8B5CF6')
 
   // Booking state
   const [appointments, setAppointments] = useState(initialAppointments)
+  const [googleCalendarEvents, setGoogleCalendarEvents] = useState([])
+  const [nationalHolidays, setNationalHolidays] = useState([])
+  const seenGoogleCalendarEventIdsRef = useRef(new Set())
+  const googleCalendarBaselineReadyRef = useRef(false)
 
   // Helper function to get chart data points based on metric (after state is defined)
   const getChartDataPoints = () => {
-    const daysOfWeek = [0, 1, 2, 3, 4, 5, 6] // Sun to Sat
+    const daysOfWeek = [1, 2, 3, 4, 5, 6, 0] // Mon to Sun
     
     if (chartMetric === 'productivity') {
       // Simulate productivity based on task activity this week
@@ -212,7 +231,27 @@ function App() {
 
   // Use useMemo to calculate chart data points safely
   const chartDataPoints = useMemo(() => getChartDataPoints(), [tasks, appointments, chartMetric])
-  const maxValue = Math.max(...chartDataPoints, 1)
+  const chartMetricMeta = {
+    productivity: { label: 'Produktivitas', color: '#7C3AED', unit: '' },
+    tasks: { label: 'Tugas', color: '#DB2777', unit: '' },
+    bookings: { label: 'Konsultasi', color: '#059669', unit: '' },
+    completionRate: { label: 'Selesai', color: '#D97706', unit: '%' }
+  }
+  const activeChartMeta = chartMetricMeta[chartMetric] || chartMetricMeta.productivity
+  const chartLabels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
+  const chartCoordinates = chartDataPoints.map((value, index) => {
+    const safeValue = Math.max(0, Math.min(100, Number(value) || 0))
+    return {
+      label: chartLabels[index],
+      value: safeValue,
+      x: 48 + index * 100,
+      y: 178 - (safeValue / 100) * 122
+    }
+  })
+  const chartLinePath = chartCoordinates.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+  const chartAreaPath = chartCoordinates.length
+    ? `${chartLinePath} L ${chartCoordinates[chartCoordinates.length - 1].x} 178 L ${chartCoordinates[0].x} 178 Z`
+    : ''
   const [bookingClient, setBookingClient] = useState('')
   const [bookingTitle, setBookingTitle] = useState('')
   const [bookingEmail, setBookingEmail] = useState('')
@@ -290,6 +329,7 @@ function App() {
     if (saved) return saved
     return 'Ketentuan reservasi:\n- Harap hadir 10 menit sebelum jadwal.\n- Jadwal dapat dijadwalkan ulang maksimal 1x.\n- Link meeting akan dikirim via email/WhatsApp setelah konfirmasi.'
   })
+  const [publicShareBaseUrl, setPublicShareBaseUrl] = useState(() => localStorage.getItem('dyatask_public_share_base_url') || '')
 
   // Encryption simulation state
   const [notes, setNotes] = useState(initialNotes)
@@ -307,8 +347,8 @@ function App() {
   const [showNotificationList, setShowNotificationList] = useState(false)
   const [notificationNowMs, setNotificationNowMs] = useState(Date.now())
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
+  const [showNotificationHistory, setShowNotificationHistory] = useState(false)
   const [floatingTaskTitle, setFloatingTaskTitle] = useState('')
-  const [quickLauncherMenuOpen, setQuickLauncherMenuOpen] = useState(false)
   const [showQuickTaskModal, setShowQuickTaskModal] = useState(false)
   const [showQuickBookingModal, setShowQuickBookingModal] = useState(false)
 
@@ -354,6 +394,13 @@ function App() {
     setIntegrationFormData({})
   }
 
+  useEffect(() => {
+    const safeTitle = appHeaderTitle.trim() || 'Dyatask Manager'
+    localStorage.setItem('dyatask_header_tagline', appHeaderTagline)
+    localStorage.setItem('dyatask_header_title', appHeaderTitle)
+    document.title = safeTitle
+  }, [appHeaderTagline, appHeaderTitle])
+
   const openIntegrationModal = (key) => {
     setIntegrationFormData(integrationConfigs[key] || {})
     setGoogleConnectionStatus(null)
@@ -367,6 +414,21 @@ function App() {
   const isConfigured = (key) => {
     const cfg = integrationConfigs[key]
     return cfg && Object.values(cfg).some(v => v && v.trim() !== '')
+  }
+
+  const isGoogleCalendarReady = () => {
+    const cfg = integrationConfigs.google_calendar || {}
+    return ['client_id', 'client_secret', 'refresh_token'].every(key => (cfg[key] || '').trim())
+  }
+
+  const getConfiguredIntegrationSyncLogs = () => {
+    const logs = []
+    if (isConfigured('google_calendar')) logs.push('🔄 Google Calendar: sinkronisasi event aktif.')
+    if (isConfigured('notion')) logs.push('📅 Notion: sinkronisasi database aktif.')
+    if (isConfigured('email')) logs.push('📧 Email Parser: pemindaian inbox aktif.')
+    if (isConfigured('google_sheets')) logs.push('🟢 Google Sheets: update baris aktivitas aktif.')
+    logs.push('🛡️ Supabase RLS: pemindaian berkala aman.')
+    return logs
   }
 
   const buildTimeSlots = (dateStr) => {
@@ -415,8 +477,12 @@ function App() {
     return !!bookingAvailability.daySchedules?.[dateObj.getDay()]?.enabled
   }
 
-  const sharedFormLink = `${window.location.origin}${window.location.pathname}?booking=${shareToken}`
+  const normalizedPublicShareBaseUrl = publicShareBaseUrl.trim().replace(/\/+$/, '')
+  const currentAppBaseUrl = `${window.location.origin}${window.location.pathname}`.replace(/\/+$/, '')
+  const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
   const calendarTitle = calendarMonthDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
+  const calendarYear = calendarMonthDate.getFullYear()
+  const calendarMonth = calendarMonthDate.getMonth()
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const offsetMinutes = -new Date().getTimezoneOffset()
   const offsetSign = offsetMinutes >= 0 ? '+' : '-'
@@ -447,10 +513,164 @@ function App() {
   const calendarDays = getCalendarDays()
   const selectedDateAppointments = appointments.filter(app => app.date === selectedCalendarDate)
   const selectedDateTasks = tasks.filter(task => (task.calendarDate || todayString) === selectedCalendarDate)
+  const selectedDateGoogleEvents = googleCalendarEvents.filter(event => event.date === selectedCalendarDate)
+  const selectedDateHolidays = nationalHolidays.filter(holiday => holiday.date === selectedCalendarDate)
   const selectedDateItems = [
     ...selectedDateAppointments.map(item => ({ ...item, itemType: 'appointment' })),
-    ...selectedDateTasks.map(item => ({ ...item, itemType: 'task' }))
+    ...selectedDateTasks.map(item => ({ ...item, itemType: 'task' })),
+    ...selectedDateGoogleEvents.map(item => ({ ...item, itemType: 'google_event' })),
+    ...selectedDateHolidays.map(item => ({ ...item, itemType: 'holiday' }))
   ]
+
+  const taskMatchesSearch = (task) => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return true
+    return [task.title, task.category, task.priority]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(query))
+  }
+
+  const getTaskProgress = (task, childSubtasks = []) => {
+    if (childSubtasks.length === 0) {
+      return {
+        completed: task.status === 'done' ? 1 : 0,
+        total: 1,
+        percent: task.status === 'done' ? 100 : 0
+      }
+    }
+
+    const completed = childSubtasks.filter(subtask => subtask.status === 'done').length
+    return {
+      completed,
+      total: childSubtasks.length,
+      percent: Math.round((completed / childSubtasks.length) * 100)
+    }
+  }
+
+  const subtasksByParent = tasks.reduce((groups, task) => {
+    if (!task.parentTaskId) return groups
+    return {
+      ...groups,
+      [task.parentTaskId]: [...(groups[task.parentTaskId] || []), task]
+    }
+  }, {})
+
+  const allProjectFolders = Object.values(
+    tasks.reduce((groups, task) => {
+      const projectName = task.category || 'Uncategorized'
+      const existing = groups[projectName] || {
+        name: projectName,
+        color: task.colorLabel || '#8B5CF6',
+        tasks: [],
+        subtasks: []
+      }
+
+      if (task.parentTaskId) {
+        existing.subtasks.push(task)
+      } else {
+        existing.tasks.push(task)
+      }
+
+      groups[projectName] = existing
+      return groups
+    }, projectFolderRecords.reduce((groups, folder) => {
+      groups[folder.name] = {
+        name: folder.name,
+        color: folder.color || '#8B5CF6',
+        tasks: [],
+        subtasks: [],
+        folderId: folder.id
+      }
+      return groups
+    }, {}))
+  )
+    .map(folder => {
+      const folderTaskIds = new Set(folder.tasks.map(task => task.id))
+      const orphanSubtasks = folder.subtasks.filter(subtask => !folderTaskIds.has(subtask.parentTaskId))
+      return { ...folder, tasks: [...folder.tasks, ...orphanSubtasks] }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const projectFolders = allProjectFolders
+    .filter(folder => {
+      const projectMatches = taskFilter === 'All' || folder.name === taskFilter
+      const queryMatches = folder.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+        || folder.tasks.some(task => taskMatchesSearch(task))
+        || folder.subtasks.some(task => taskMatchesSearch(task))
+      return projectMatches && queryMatches
+    })
+
+  const allProjectOptions = ['All', ...Array.from(new Set([
+    ...projectFolderRecords.map(folder => folder.name),
+    ...tasks.map(task => task.category || 'Uncategorized')
+  ])).sort()]
+  const selectedProjectFolder = allProjectFolders.find(folder => folder.name === selectedProjectName) || allProjectFolders[0] || null
+  const selectedFolderTasks = selectedProjectFolder
+    ? selectedProjectFolder.tasks.filter(task => !task.parentTaskId && taskMatchesSearch(task))
+    : []
+  const todayLocalAppointments = appointments.filter(appt => appt.date === todayString)
+  const todayGoogleEvents = googleCalendarEvents.filter(event => event.date === todayString)
+  const todayHolidays = nationalHolidays.filter(holiday => holiday.date === todayString)
+  const todayTasks = tasks.filter(task => (task.calendarDate || todayString) === todayString)
+  const todayCalendarItems = [
+    ...todayTasks.map(task => ({ ...task, source: 'task', sortDate: `${task.calendarDate || todayString} ${task.dueTime || '23:59'}` })),
+    ...todayLocalAppointments.map(appt => ({ ...appt, source: 'appointment', sortDate: `${appt.date} ${appt.time || '23:59'}` })),
+    ...todayGoogleEvents.map(event => ({ ...event, source: 'google_event', sortDate: `${event.date} ${event.time || '23:59'}` })),
+    ...todayHolidays.map(holiday => ({ ...holiday, source: 'holiday', sortDate: `${holiday.date} 00:00` }))
+  ].sort((a, b) => a.sortDate.localeCompare(b.sortDate))
+  const overdueTasks = tasks.filter(task => task.status !== 'done' && (task.calendarDate || todayString) < todayString)
+  const completedTodayTasks = todayTasks.filter(task => task.status === 'done')
+  const upcomingCalendarItems = [
+    ...appointments.map(appt => ({ ...appt, source: 'appointment', sortDate: `${appt.date} ${appt.time || '23:59'}` })),
+    ...googleCalendarEvents.map(event => ({ ...event, source: 'google_event', sortDate: `${event.date} ${event.time || '23:59'}` })),
+    ...nationalHolidays.map(holiday => ({ ...holiday, source: 'holiday', time: 'All day', sortDate: `${holiday.date} 00:00` }))
+  ]
+    .filter(item => item.date >= todayString)
+    .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
+  const nextCalendarItem = upcomingCalendarItems[0]
+  const weeklyWorkload = [1, 2, 3, 4, 5, 6, 0].map((day, index) => {
+    const dayDate = new Date(todayDate)
+    dayDate.setDate(todayDate.getDate() - (todayDate.getDay() - day))
+    const dateStr = formatDateLocal(dayDate)
+    const taskCount = tasks.filter(task => (task.calendarDate || todayString) === dateStr).length
+    const appointmentCount = appointments.filter(appt => appt.date === dateStr).length
+    const googleEventCount = googleCalendarEvents.filter(event => event.date === dateStr).length
+    const holidayCount = nationalHolidays.filter(holiday => holiday.date === dateStr).length
+    return {
+      label: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'][index],
+      total: taskCount + appointmentCount + googleEventCount + holidayCount,
+      tasks: taskCount,
+      appointments: appointmentCount,
+      googleEvents: googleEventCount,
+      holidays: holidayCount
+    }
+  })
+  const maxWeeklyWorkload = Math.max(...weeklyWorkload.map(day => day.total), 1)
+  const projectProgressOverview = allProjectFolders.slice(0, 4).map(folder => {
+    const folderItems = [...folder.tasks, ...folder.subtasks]
+    const completedItems = folderItems.filter(task => task.status === 'done').length
+    const totalItems = folderItems.length || 1
+    return {
+      ...folder,
+      completed: completedItems,
+      total: folderItems.length,
+      percent: Math.round((completedItems / totalItems) * 100)
+    }
+  })
+  const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 }
+  const focusQueue = tasks
+    .filter(task => task.status !== 'done' && !task.parentTaskId)
+    .sort((a, b) => {
+      const dateCompare = (a.calendarDate || todayString).localeCompare(b.calendarDate || todayString)
+      if (dateCompare !== 0) return dateCompare
+      return (priorityRank[a.priority] ?? 4) - (priorityRank[b.priority] ?? 4)
+    })
+    .slice(0, 3)
+
+  useEffect(() => {
+    if (selectedProjectName && allProjectFolders.some(folder => folder.name === selectedProjectName)) return
+    setSelectedProjectName(allProjectFolders[0]?.name || '')
+  }, [allProjectFolders, selectedProjectName])
 
   const parseBookingTimeRange = (timeText) => {
     const raw = (timeText || '').trim()
@@ -545,6 +765,114 @@ function App() {
     }
 
     return { ok: true, eventId: eventData.id, htmlLink: eventData.htmlLink }
+  }
+
+  const fetchGoogleCalendarEventsForMonth = async ({ notifyNew = false } = {}) => {
+    const cfg = integrationConfigs.google_calendar || {}
+    const clientId = (cfg.client_id || '').trim()
+    const clientSecret = (cfg.client_secret || '').trim()
+    const refreshToken = (cfg.refresh_token || '').trim()
+    const calendarId = (cfg.calendar_id || 'primary').trim() || 'primary'
+
+    if (!clientId || !clientSecret || !refreshToken) {
+      setGoogleCalendarEvents([])
+      seenGoogleCalendarEventIdsRef.current = new Set()
+      googleCalendarBaselineReadyRef.current = false
+      return
+    }
+
+    try {
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token'
+        })
+      })
+
+      const tokenData = await tokenResponse.json()
+      if (!tokenResponse.ok || !tokenData.access_token) throw new Error(tokenData?.error_description || tokenData?.error || 'Gagal autentikasi Google Calendar.')
+
+      const rangeStart = `${formatDateLocal(new Date(calendarYear, calendarMonth, 1))}T00:00:00+08:00`
+      const rangeEnd = `${formatDateLocal(new Date(calendarYear, calendarMonth + 1, 1))}T00:00:00+08:00`
+      const params = new URLSearchParams({
+        timeMin: rangeStart,
+        timeMax: rangeEnd,
+        singleEvents: 'true',
+        orderBy: 'startTime',
+        maxResults: '250'
+      })
+
+      const eventResponse = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      })
+      const eventData = await eventResponse.json()
+      if (!eventResponse.ok) throw new Error(eventData?.error?.message || 'Gagal membaca event Google Calendar.')
+
+      const externalEvents = (eventData.items || [])
+        .filter(event => event.status !== 'cancelled')
+        .filter(event => !(event.description || '').includes('Dibuat dari DyaTask Manager'))
+        .map(event => {
+          const startValue = event.start?.date || event.start?.dateTime || ''
+          const endValue = event.end?.date || event.end?.dateTime || ''
+          const date = startValue.slice(0, 10)
+          const startTime = event.start?.dateTime ? startValue.slice(11, 16) : 'All day'
+          const endTime = event.end?.dateTime ? endValue.slice(11, 16) : ''
+          return {
+            id: event.id,
+            title: event.summary || '(Tanpa judul)',
+            date,
+            time: endTime && startTime !== 'All day' ? `${startTime} - ${endTime}` : startTime,
+            htmlLink: event.htmlLink,
+            calendarName: calendarId
+          }
+        })
+        .filter(event => event.date)
+
+      const incomingIds = new Set(externalEvents.map(event => event.id))
+      const newExternalEvents = externalEvents.filter(event => !seenGoogleCalendarEventIdsRef.current.has(event.id))
+
+      if (!googleCalendarBaselineReadyRef.current) {
+        seenGoogleCalendarEventIdsRef.current = incomingIds
+        googleCalendarBaselineReadyRef.current = true
+      } else {
+        if (notifyNew && newExternalEvents.length > 0) {
+          const timestamp = new Date().toLocaleTimeString('id-ID')
+          newExternalEvents.slice(0, 4).forEach(event => {
+            const isTaskEvent = /^task\s*:/i.test(event.title) || /task|tugas/i.test(event.title)
+            triggerMockNotification(
+              isTaskEvent ? 'Task Google Calendar Baru' : 'Event Google Calendar Baru',
+              `${event.title} • ${event.date} ${event.time || 'All day'}`,
+              'google-cal',
+              {
+                source: 'google_calendar',
+                eventId: event.id,
+                title: event.title,
+                date: event.date,
+                time: event.time,
+                htmlLink: event.htmlLink
+              }
+            )
+          })
+          setSyncLogs(prev => [
+            `[${timestamp}] 🔔 Google Calendar: ${newExternalEvents.length} event/task baru terdeteksi dari luar aplikasi.`,
+            ...prev.slice(0, 9)
+          ])
+        }
+        newExternalEvents.forEach(event => seenGoogleCalendarEventIdsRef.current.add(event.id))
+        Array.from(seenGoogleCalendarEventIdsRef.current).forEach(eventId => {
+          if (!incomingIds.has(eventId)) seenGoogleCalendarEventIdsRef.current.delete(eventId)
+        })
+      }
+
+      setGoogleCalendarEvents(externalEvents)
+    } catch (err) {
+      setGoogleCalendarEvents([])
+      setSyncLogs(prev => [`[${new Date().toLocaleTimeString('id-ID')}] ⚠️ Google Calendar external events gagal dimuat: ${err.message}`, ...prev.slice(0, 9)])
+    }
   }
 
   const syncTaskToGoogleCalendar = async (task) => {
@@ -778,18 +1106,16 @@ function App() {
   const activeIntegrationLabels = integrationDefs
     .filter(def => isConfigured(def.key))
     .map(def => def.label)
+  const calendarIntegrationActive = isGoogleCalendarReady()
 
-  const realtimeStatusText = activeIntegrationLabels.length
-    ? `${activeIntegrationLabels.join(', ')} tersambung`
-    : 'Belum ada integrasi tersambung'
+  const realtimeStatusText = calendarIntegrationActive
+    ? 'Calendar: Active'
+    : 'Calendar: Off'
 
-  const securityStatusText = twoFactorEnabled ? '2FA aktif' : '2FA nonaktif'
+  const securityStatusText = twoFactorEnabled ? '2FA: Active' : '2FA: Off'
 
   const [syncLogs, setSyncLogs] = useState([
-    '⚡ Koneksi database PostgreSQL Supabase berhasil.',
-    '📧 Parser Email IMAP aktif - Menyimak jadwal rapat masuk...',
-    '🔄 Google Calendar API sinkron bidirectional secara real-time.',
-    '📅 Notion Calendar API terhubung secara real-time.'
+    '⚡ Koneksi database PostgreSQL Supabase berhasil.'
   ])
   const [dbConnectionStatus, setDbConnectionStatus] = useState('connected') // 'connected', 'disconnected', 'syncing'
   const [lastSyncTime, setLastSyncTime] = useState(new Date())
@@ -902,6 +1228,10 @@ function App() {
   }, [publicBookingNotes])
 
   useEffect(() => {
+    localStorage.setItem('dyatask_public_share_base_url', publicShareBaseUrl)
+  }, [publicShareBaseUrl])
+
+  useEffect(() => {
     if (!session) return
 
     const onStorageBookingEvent = (event) => {
@@ -1004,10 +1334,35 @@ function App() {
           status: t.status,
           dueTime: t.due_time,
           hasReminder: t.has_reminder,
+          parentTaskId: t.parent_task_id || null,
+          taskType: t.task_type || (t.parent_task_id ? 'subtask' : 'task'),
           calendarDate: t.task_date || (t.created_at ? t.created_at.slice(0, 10) : todayString)
         })));
       }
     };
+
+    const fetchProjectFolders = async () => {
+      const storageKey = `dyatask_project_folders_${session.user.id}`
+      const { data, error } = await supabase
+        .from('project_folders')
+        .select('*')
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        try {
+          setProjectFolderRecords(JSON.parse(localStorage.getItem(storageKey) || '[]'))
+        } catch {
+          setProjectFolderRecords([])
+        }
+        return
+      }
+
+      setProjectFolderRecords((data || []).map(folder => ({
+        id: folder.id,
+        name: folder.name,
+        color: folder.color || '#8B5CF6'
+      })))
+    }
     
     const fetchAppointments = async () => {
       const { data, error } = await supabase
@@ -1052,6 +1407,7 @@ function App() {
     };
 
     fetchTasks();
+    fetchProjectFolders();
     fetchAppointments();
     fetchNotes();
 
@@ -1103,31 +1459,61 @@ function App() {
   // Sync Log auto-updates
   useEffect(() => {
     const timer = setInterval(() => {
-      const logs = [
-        '🔄 Memperbarui sinkronisasi Google Calendar... [Berhasil]',
-        '🟢 Baris spreadsheet berhasil diupdate untuk aktivitas terbaru.',
-        '📧 Memindai email masuk... Tidak ada jadwal rapat baru.',
-        '🛡️ Menjalankan pemindaian berkala RLS Supabase... Aman.',
-        '🔄 Notion Calendar memperbarui 1 jadwal tugas secara real-time.'
-      ]
+      const logs = getConfiguredIntegrationSyncLogs()
       const randomLog = logs[Math.floor(Math.random() * logs.length)]
       const timestamp = new Date().toLocaleTimeString('id-ID')
       setSyncLogs(prev => [`[${timestamp}] ${randomLog}`, ...prev.slice(0, 5)])
     }, 12000)
     return () => clearInterval(timer)
-  }, [])
+  }, [integrationConfigs])
 
-  // Auto trigger a mock notification after 8 seconds
   useEffect(() => {
-    const timer = setTimeout(() => {
-      triggerMockNotification(
-        'Rapat Penting Masuk!',
-        'Rapat Koordinasi Aruneeka via Google Calendar jam 11:00 WIB',
-        'google-cal'
-      )
-    }, 6000)
-    return () => clearTimeout(timer)
-  }, [])
+    let cancelled = false
+    const fetchHolidays = async () => {
+      try {
+        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${calendarYear}/ID`)
+        const data = await response.json()
+        if (!response.ok) throw new Error(data?.message || 'Gagal memuat hari libur nasional.')
+        if (cancelled) return
+        setNationalHolidays((data || []).map(holiday => ({
+          id: `${holiday.date}-${holiday.localName || holiday.name}`,
+          date: holiday.date,
+          title: holiday.localName || holiday.name,
+          name: holiday.name
+        })))
+      } catch (err) {
+        if (!cancelled) {
+          setNationalHolidays([])
+          setSyncLogs(prev => [`[${new Date().toLocaleTimeString('id-ID')}] ⚠️ Hari libur nasional gagal dimuat: ${err.message}`, ...prev.slice(0, 9)])
+        }
+      }
+    }
+
+    fetchHolidays()
+    return () => {
+      cancelled = true
+    }
+  }, [calendarYear])
+
+  useEffect(() => {
+    fetchGoogleCalendarEventsForMonth({ notifyNew: false })
+  }, [calendarYear, calendarMonth, integrationConfigs])
+
+  useEffect(() => {
+    const cfg = integrationConfigs.google_calendar || {}
+    const hasGoogleCalendarConfig = Boolean(
+      (cfg.client_id || '').trim() &&
+      (cfg.client_secret || '').trim() &&
+      (cfg.refresh_token || '').trim()
+    )
+    if (!hasGoogleCalendarConfig) return undefined
+
+    const interval = setInterval(() => {
+      fetchGoogleCalendarEventsForMonth({ notifyNew: true })
+    }, 60000)
+
+    return () => clearInterval(interval)
+  }, [calendarYear, calendarMonth, integrationConfigs])
 
   useEffect(() => {
     if (!notifications.length) return
@@ -1160,11 +1546,62 @@ function App() {
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(nextTheme)
+    localStorage.setItem('dyatask_theme', nextTheme)
     if (nextTheme === 'dark') {
       document.documentElement.classList.add('dark')
     } else {
       document.documentElement.classList.remove('dark')
     }
+  }
+
+  const handleCreateProjectFolder = async (e) => {
+    e.preventDefault()
+    const folderName = newFolderName.trim()
+    if (!folderName || !session?.user?.id) return
+
+    if (allProjectOptions.includes(folderName)) {
+      setSelectedProjectName(folderName)
+      setNewTaskCategory(folderName)
+      setShowNewFolderModal(false)
+      setNewFolderName('')
+      return
+    }
+
+    const folderObj = {
+      name: folderName,
+      color: newFolderColor,
+      user_id: session.user.id
+    }
+
+    const { data, error } = await supabase
+      .from('project_folders')
+      .insert([folderObj])
+      .select()
+
+    const createdFolder = {
+      id: data?.[0]?.id || `local-${Date.now()}`,
+      name: folderName,
+      color: newFolderColor
+    }
+
+    if (error) {
+      const storageKey = `dyatask_project_folders_${session.user.id}`
+      const nextFolders = [...projectFolderRecords, createdFolder]
+      localStorage.setItem(storageKey, JSON.stringify(nextFolders))
+      setProjectFolderRecords(nextFolders)
+      setSyncLogs(prev => [
+        `[${new Date().toLocaleTimeString('id-ID')}] Folder "${folderName}" dibuat lokal. Jalankan migration project_folders agar tersinkron ke Supabase.`,
+        ...prev.slice(0, 9)
+      ])
+    } else {
+      setProjectFolderRecords(prev => [...prev, createdFolder])
+    }
+
+    setSelectedProjectName(folderName)
+    setNewTaskCategory(folderName)
+    setNewFolderName('')
+    setNewFolderColor('#8B5CF6')
+    setShowNewFolderModal(false)
   }
 
   // Add Task
@@ -1174,12 +1611,14 @@ function App() {
 
     const taskObj = {
       title: newTaskTitle,
-      category: newTaskCategory,
+      category: newTaskCategory.trim() || 'General',
       priority: newTaskPriority,
       color_label: newTaskColor,
       status: 'todo',
       due_time: newTaskTime,
       task_date: newTaskDate,
+      parent_task_id: null,
+      task_type: 'task',
       has_reminder: true,
       user_id: session?.user?.id
     }
@@ -1189,10 +1628,12 @@ function App() {
       .insert([taskObj])
       .select();
 
-    // Backward compatibility when database belum punya kolom task_date.
-    if (error && String(error.message || '').toLowerCase().includes('task_date')) {
+    // Backward compatibility when database belum punya kolom task_date / project subtasks.
+    if (error && ['task_date', 'parent_task_id', 'task_type'].some(column => String(error.message || '').toLowerCase().includes(column))) {
       const fallbackTaskObj = { ...taskObj }
       delete fallbackTaskObj.task_date
+      delete fallbackTaskObj.parent_task_id
+      delete fallbackTaskObj.task_type
       const retry = await supabase.from('tasks').insert([fallbackTaskObj]).select()
       data = retry.data
       error = retry.error
@@ -1213,24 +1654,79 @@ function App() {
         status: data[0].status,
         dueTime: data[0].due_time,
         hasReminder: data[0].has_reminder,
+        parentTaskId: data[0].parent_task_id || null,
+        taskType: data[0].task_type || 'task',
         calendarDate: data[0].task_date || newTaskDate || (data[0].created_at ? data[0].created_at.slice(0, 10) : todayString)
       }
-      setTasks([createdTask, ...tasks])
+      const subtaskTitles = newTaskSubtasks
+        .split('\n')
+        .map(title => title.trim())
+        .filter(Boolean)
+      let createdSubtasks = []
+
+      if (subtaskTitles.length > 0 && data[0].parent_task_id !== undefined) {
+        const subtaskRows = subtaskTitles.map((title, index) => ({
+          title,
+          category: newTaskCategory.trim() || 'General',
+          priority: newTaskPriority,
+          color_label: newTaskColor,
+          status: 'todo',
+          due_time: newTaskTime,
+          task_date: newTaskDate,
+          parent_task_id: createdTask.id,
+          task_type: 'subtask',
+          has_reminder: true,
+          user_id: session?.user?.id,
+          sort_order: index
+        }))
+
+        const { data: subtaskData, error: subtaskError } = await supabase
+          .from('tasks')
+          .insert(subtaskRows)
+          .select()
+
+        if (subtaskError) {
+          alert(`Task utama tersimpan, tapi subtask gagal dibuat: ${subtaskError.message}. Pastikan migration parent_task_id di supabase_schema.sql sudah dijalankan.`)
+        } else {
+          createdSubtasks = (subtaskData || []).map(item => ({
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            priority: item.priority,
+            colorLabel: item.color_label,
+            status: item.status,
+            dueTime: item.due_time,
+            hasReminder: item.has_reminder,
+            parentTaskId: item.parent_task_id,
+            taskType: item.task_type || 'subtask',
+            calendarDate: item.task_date || newTaskDate || todayString
+          }))
+        }
+      } else if (subtaskTitles.length > 0) {
+        alert('Task utama tersimpan, tapi database belum mendukung subtask. Jalankan migration parent_task_id di supabase_schema.sql.')
+      }
+
+      setTasks([createdTask, ...createdSubtasks, ...tasks])
 
       const taskSyncResult = await syncTaskToGoogleCalendar(createdTask)
       if (!taskSyncResult.ok && !taskSyncResult.skipped) {
         alert(`Task tersimpan, tapi sinkron Google Calendar gagal: ${taskSyncResult.error}`)
       }
+
+      for (const subtask of createdSubtasks) {
+        await syncTaskToGoogleCalendar(subtask)
+      }
     }
 
     setNewTaskTitle('')
     setNewTaskDate(todayString)
+    setNewTaskSubtasks('')
     setShowQuickTaskModal(false)
     
-    // Log sync Sheets
+    // Log only actual local database sync. External integrations are logged by their own sync handlers.
     const timestamp = new Date().toLocaleTimeString('id-ID')
     setSyncLogs(prev => [
-      `[${timestamp}] 🟢 Supabase & Spreadsheets: Tugas baru "${taskObj.title}" disinkronkan secara real-time.`,
+      `[${timestamp}] ✅ Supabase: Tugas baru "${taskObj.title}" disimpan.`,
       ...prev
     ])
 
@@ -1313,11 +1809,11 @@ function App() {
     setTasks(tasks.map(t => {
       if (t.id === id) {
         if (nextStatus === 'done') {
-          // Log task sheets
+          // Log local task status update.
           const timestamp = new Date().toLocaleTimeString('id-ID')
           setTimeout(() => {
             setSyncLogs(prev => [
-              `[${timestamp}] 🟢 Spreadsheets: Update status tugas "${t.title}" -> SELESAI di Supabase.`,
+              `[${timestamp}] ✅ Supabase: Status tugas "${t.title}" -> SELESAI.`,
               ...prev
             ])
           }, 300)
@@ -1339,7 +1835,7 @@ function App() {
       return;
     }
 
-    setTasks(tasks.filter(t => t.id !== id))
+    setTasks(tasks.filter(t => t.id !== id && t.parentTaskId !== id))
   }
 
   const openCalendarEditModal = (item) => {
@@ -1929,15 +2425,20 @@ function App() {
       if (profileFormData.avatar_file) {
         setUploadingAvatar(true)
         try {
-          const fileExt = profileFormData.avatar_file.name.split('.').pop()
-          const fileName = `${session.user.id}-${Date.now()}.${fileExt}`
+          const fileExt = profileFormData.avatar_file.name.split('.').pop()?.toLowerCase() || 'png'
+          const fileName = `${session.user.id}/${Date.now()}.${fileExt}`
           
-          const { error: uploadError, data } = await supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from('avatars')
             .upload(fileName, profileFormData.avatar_file, { upsert: true })
           
           if (uploadError) {
             console.warn('Upload warning:', uploadError.message)
+            throw new Error(
+              uploadError.message === 'Bucket not found'
+                ? 'Bucket Supabase Storage "avatars" belum dibuat. Jalankan bagian Storage di supabase_schema.sql terlebih dahulu.'
+                : uploadError.message
+            )
           } else {
             const { data: publicData } = supabase.storage
               .from('avatars')
@@ -1947,6 +2448,9 @@ function App() {
           }
         } catch (uploadErr) {
           console.warn('Upload error:', uploadErr.message)
+          alert('Gagal mengunggah foto profil: ' + uploadErr.message)
+          setUploadingAvatar(false)
+          return
         }
       }
 
@@ -2174,10 +2678,10 @@ function App() {
           
           {/* Header Brand */}
           <div className="flex flex-col items-center text-center space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-purple-500/20 glow-primary">
+            <div className="w-12 h-12 rounded-2xl bg-[#8f75d8] flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-[#8f75d8]/20 glow-primary">
               D
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight mt-2 text-purple-700 dark:text-purple-300">DyaTask Manager</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight mt-2 text-purple-700 dark:text-purple-300">{appHeaderTitle || 'Dyatask Manager'}</h1>
             <p className="text-xs text-purple-400 dark:text-purple-300 font-medium">Sistem Produktivitas Berenkripsi & Sinkronisasi macOS</p>
           </div>
 
@@ -2185,13 +2689,13 @@ function App() {
           <div className="flex rounded-xl bg-purple-50 dark:bg-indigo-950/40 p-1 border border-purple-100/50 dark:border-indigo-950/30">
             <button 
               onClick={() => { setAuthTab('signin'); setAuthError(null); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authTab === 'signin' ? 'bg-purple-600 text-white shadow' : 'text-purple-400 hover:text-purple-600'}`}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authTab === 'signin' ? 'bg-[#8f75d8] text-white shadow' : 'text-purple-400 hover:text-purple-600'}`}
             >
               Masuk
             </button>
             <button 
               onClick={() => { setAuthTab('signup'); setAuthError(null); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authTab === 'signup' ? 'bg-purple-600 text-white shadow' : 'text-purple-400 hover:text-purple-600'}`}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authTab === 'signup' ? 'bg-[#8f75d8] text-white shadow' : 'text-purple-400 hover:text-purple-600'}`}
             >
               Daftar
             </button>
@@ -2263,7 +2767,7 @@ function App() {
             <button 
               type="submit"
               disabled={loadingAuth}
-              className="w-full py-3 mt-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-500/20 active:scale-95 disabled:opacity-50"
+              className="w-full py-3 mt-2 bg-[#8f75d8] hover:bg-[#8069c8] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#8f75d8]/20 active:scale-95 disabled:opacity-50"
             >
               {loadingAuth ? (
                 <>
@@ -2298,14 +2802,12 @@ function App() {
         {/* 1. Sidebar Navigation */}
         <aside className={`sidebar sidebar-floating ${sidebarCollapsed ? 'collapsed' : ''}`}>
           {/* Brand Header */}
-          <div className="flex items-center gap-3 mb-6 px-2 pb-3 border-b border-white/25 dark:border-indigo-900/50">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center text-white font-bold text-xl shadow-md">
-              D
-            </div>
-            {!sidebarCollapsed && <div>
-              <h2 className="text-lg font-bold leading-none">DyaTask</h2>
-              <span className="text-[11px] text-white/75 font-semibold uppercase tracking-[0.14em]">Manager</span>
-            </div>}
+          <div className="flex items-center justify-center pt-2 mb-5 px-1">
+            <img
+              src={sidebarCollapsed ? dyataskMiniLogo : dyataskLogo}
+              alt="DyaTask"
+              className={`${sidebarCollapsed ? 'w-16 h-16 -my-2' : 'w-56 h-24 -my-2'} object-contain drop-shadow-md`}
+            />
           </div>
 
           <button
@@ -2374,23 +2876,34 @@ function App() {
           {/* User profile section in Sidebar footer */}
           {!sidebarCollapsed && <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto">
             <div className="flex flex-col gap-3">
-              <button 
+              <button
                 onClick={() => setIsProfileModalOpen(true)}
-                className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-br from-purple-400 to-purple-600 hover:from-purple-500 hover:to-purple-700 transition-all active:scale-95 cursor-pointer group"
+                className="flex items-center gap-3 p-3 rounded-xl bg-[#FFF08A] hover:bg-[#FFF08A]/90 transition-all active:scale-95 cursor-pointer group shadow-sm"
               >
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-all">
-                  <User size={18} className="text-white" />
+                <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center group-hover:bg-yellow-50 transition-all overflow-hidden ring-2 ring-yellow-200">
+                  {session?.user?.user_metadata?.avatar_url ? (
+                    <img
+                      src={session.user.user_metadata.avatar_url}
+                      alt={session?.user?.user_metadata?.full_name || 'Foto profil'}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden')
+                      }}
+                    />
+                  ) : null}
+                  <User size={18} className={`text-yellow-800 ${session?.user?.user_metadata?.avatar_url ? 'hidden' : ''}`} />
                 </div>
                 <div className="flex-1 min-w-0 text-left">
-                  <h4 className="text-sm font-semibold truncate flex items-center gap-1.5 text-white">
+                  <h4 className="text-sm font-semibold truncate flex items-center gap-1.5 text-yellow-950">
                     {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Pengguna'}
                     {session?.user?.email?.startsWith('arunika.dyatask@') && (
-                      <span className="bg-yellow-400/30 text-yellow-100 border border-yellow-300/50 text-[8px] px-1 py-0.5 rounded font-extrabold uppercase tracking-wider scale-90 origin-left">
+                      <span className="bg-yellow-950 text-yellow-100 border border-yellow-900 text-[8px] px-1 py-0.5 rounded font-extrabold uppercase tracking-wider scale-90 origin-left">
                         DEV
                       </span>
                     )}
                   </h4>
-                  <p className="text-xs text-white/70 truncate">{session?.user?.email}</p>
+                  <p className="text-xs text-yellow-900/75 truncate">{session?.user?.email}</p>
                 </div>
               </button>
               <div className="flex gap-2">
@@ -2411,6 +2924,30 @@ function App() {
             </div>
           </div>}
 
+          {sidebarCollapsed && (
+            <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto flex justify-center">
+              <button
+                type="button"
+                onClick={() => setIsProfileModalOpen(true)}
+                className="w-11 h-11 rounded-full bg-[#FFF08A] hover:bg-[#FFF08A]/90 p-1.5 shadow-md active:scale-95 transition-all overflow-hidden flex items-center justify-center"
+                title="Buka profil"
+              >
+                {session?.user?.user_metadata?.avatar_url ? (
+                  <img
+                    src={session.user.user_metadata.avatar_url}
+                    alt={session?.user?.user_metadata?.full_name || 'Foto profil'}
+                    className="w-full h-full rounded-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                      e.currentTarget.nextElementSibling?.classList.remove('hidden')
+                    }}
+                  />
+                ) : null}
+                <User size={18} className={`text-yellow-800 ${session?.user?.user_metadata?.avatar_url ? 'hidden' : ''}`} />
+              </button>
+            </div>
+          )}
+
         </aside>
 
         {/* 2. Main Content Area */}
@@ -2421,59 +2958,29 @@ function App() {
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold text-purple-500 uppercase tracking-widest">
                 <Sparkles size={12} />
-                <span>Modern Soft Minimalist Amethyst</span>
+                <span>{appHeaderTagline || 'Modern Soft Minimalist Amethyst'}</span>
               </div>
-              <h1 className="text-3xl font-extrabold tracking-tight mt-1">DyaTask Manager</h1>
+              <h1 className="text-3xl font-extrabold tracking-tight mt-1">{appHeaderTitle || 'Dyatask Manager'}</h1>
             </div>
             
             {/* Realtime Badges */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold ${
-                activeIntegrationLabels.length
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-300'
-                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/50 dark:border-amber-900/30 text-amber-600 dark:text-amber-300'
-              }`}>
-                <span className={`w-2 h-2 rounded-full ${activeIntegrationLabels.length ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                {realtimeStatusText} • {securityStatusText}
-              </div>
+	            <div className="flex flex-wrap items-center gap-2">
+	              <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-[11px] font-bold ${
+	                calendarIntegrationActive
+	                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-300'
+	                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/50 dark:border-amber-900/30 text-amber-600 dark:text-amber-300'
+	              }`}>
+	                <span className={`w-1.5 h-1.5 rounded-full ${calendarIntegrationActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+	                {realtimeStatusText} • {securityStatusText}
+	              </div>
 
-              <div className="relative">
-                <button
-                  onClick={() => setQuickLauncherMenuOpen(prev => !prev)}
-                  className="pulse-glow-button px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm flex items-center gap-2 shadow-lg hover:shadow-purple-500/20 active:scale-95 transition-all"
-                >
-                  <Plus size={16} />
-                  Quick Launcher
-                  <ChevronDown size={14} />
-                </button>
-
-                {quickLauncherMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-44 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-slate-900 shadow-xl z-40 p-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowQuickTaskModal(true)
-                        setQuickLauncherMenuOpen(false)
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold text-purple-700 dark:text-purple-200 hover:bg-purple-50 dark:hover:bg-slate-800 flex items-center gap-2"
-                    >
-                      <Plus size={14} />
-                      Add Task
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowQuickBookingModal(true)
-                        setQuickLauncherMenuOpen(false)
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold text-purple-700 dark:text-purple-200 hover:bg-purple-50 dark:hover:bg-slate-800 flex items-center gap-2"
-                    >
-                      <Calendar size={14} />
-                      Add Jadwal
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={() => setShowQuickBookingModal(true)}
+                className="px-3 py-1.5 rounded-lg bg-[#8f75d8] hover:bg-[#8069c8] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+              >
+                <Plus size={13} />
+                Add Event
+              </button>
             </div>
           </header>
 
@@ -2502,7 +3009,7 @@ function App() {
             {activeTab === 'calendar' && (
               <button
                 onClick={() => setShowBookingQuickForm(prev => !prev)}
-                className="px-4 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-md inline-flex items-center gap-1.5 whitespace-nowrap"
+                className="px-4 py-3 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-md inline-flex items-center gap-1.5 whitespace-nowrap"
               >
                 <Plus size={13} />
                 Reservasi Baru
@@ -2577,13 +3084,13 @@ function App() {
                       <Clock size={18} />
                     </div>
                   </div>
-                  <h3 className="text-3xl font-bold tracking-tight">
-                    {tasks.filter(t => t.date === formatDateLocal(new Date())).length}
-                  </h3>
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1.5">
-                    <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
-                    <span>Tugas hari ini</span>
-                  </p>
+	                  <h3 className="text-3xl font-bold tracking-tight">
+	                    {todayCalendarItems.length}
+	                  </h3>
+	                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1.5">
+	                    <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
+	                    <span>{todayTasks.length} task • {todayLocalAppointments.length + todayGoogleEvents.length} event</span>
+	                  </p>
                 </div>
 
               </div>
@@ -2591,153 +3098,131 @@ function App() {
               {/* Graphical Trend & Live Logs */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
                 
-                {/* Minimalist SVG Productivity Graph with Metric Selector */}
+                {/* Bento Analytics Command Center */}
                 <div className="glass-panel p-6 lg:col-span-2">
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-start justify-between gap-4 mb-5">
                     <div>
-                      <h3 className="text-lg font-bold">Analytics & Metrics Harian</h3>
-                      <p className="text-xs text-purple-400 dark:text-purple-300">Pilih metrik untuk analisis detail</p>
+                      <h3 className="text-lg font-bold">Today Command Center</h3>
+                      <p className="text-xs text-purple-400 dark:text-purple-300">Ringkasan kerja, beban mingguan, progress project, dan antrean fokus.</p>
                     </div>
-                    <select
-                      value={chartMetric}
-                      onChange={(e) => { setChartMetric(e.target.value); setChartHoverIndex(null); }}
-                      className="px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white transition-all cursor-pointer border-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('tasks')}
+                      className="px-3 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-[11px] font-bold inline-flex items-center gap-1.5 shadow-sm"
                     >
-                      <option value="productivity">Produktivitas</option>
-                      <option value="tasks">Tugas</option>
-                      <option value="bookings">Konsultasi</option>
-                      <option value="completionRate">Selesai</option>
-                    </select>
+                      Open Tasks
+                      <ExternalLink size={12} />
+                    </button>
                   </div>
 
-                  {/* Dynamic SVG Chart based on selected metric */}
-                  <div className="chart-container flex justify-center py-8 relative">
-                    <svg viewBox="0 0 650 220" width="100%" height="280" className="overflow-visible">
-                      {/* Y-Axis */}
-                      <line x1="50" y1="20" x2="50" y2="180" stroke="var(--border)" strokeWidth="1" />
-                      
-                      {/* Y-Axis Labels */}
-                      <text x="45" y="185" fill="var(--text-muted)" fontSize="10" textAnchor="end">0</text>
-                      <text x="45" y="140" fill="var(--text-muted)" fontSize="10" textAnchor="end">25</text>
-                      <text x="45" y="95" fill="var(--text-muted)" fontSize="10" textAnchor="end">50</text>
-                      <text x="45" y="50" fill="var(--text-muted)" fontSize="10" textAnchor="end">75</text>
-                      <text x="45" y="25" fill="var(--text-muted)" fontSize="10" textAnchor="end">100</text>
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+                    <div className="xl:col-span-2 rounded-3xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.18em] font-extrabold text-purple-400 dark:text-purple-300">Today</p>
+                          <h4 className="text-xl font-extrabold">Command Center</h4>
+                        </div>
+                        <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#8f75d8]/10 text-[#8f75d8] font-bold">{todayString}</span>
+                      </div>
 
-                      {/* Grid lines */}
-                      <line x1="50" y1="40" x2="620" y2="40" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
-                      <line x1="50" y1="85" x2="620" y2="85" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
-                      <line x1="50" y1="130" x2="620" y2="130" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
-                      <line x1="50" y1="175" x2="620" y2="175" stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl bg-[#8f75d8]/10 border border-[#8f75d8]/15 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#8f75d8]">Due Today</p>
+	                          <p className="text-3xl font-black mt-2">{todayCalendarItems.length}</p>
+                        </div>
+                        <div className="rounded-2xl bg-red-50/80 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-red-500">Overdue</p>
+                          <p className="text-3xl font-black mt-2 text-red-600 dark:text-red-300">{overdueTasks.length}</p>
+                        </div>
+                        <div className="rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Completed</p>
+                          <p className="text-3xl font-black mt-2 text-emerald-600 dark:text-emerald-300">{completedTodayTasks.length}</p>
+                        </div>
+                        <div className="rounded-2xl bg-amber-50/80 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Next Event</p>
+	                          <p className="text-sm font-black mt-2 truncate">{nextCalendarItem?.title || 'No event'}</p>
+	                          <p className="text-[10px] text-amber-600/80 dark:text-amber-300 mt-1 truncate">{nextCalendarItem ? `${nextCalendarItem.date} • ${nextCalendarItem.time || 'All day'} • ${nextCalendarItem.source === 'google_event' ? 'Google Calendar' : nextCalendarItem.source === 'holiday' ? 'Libur' : 'DyaTask'}` : 'Calendar clear'}</p>
+                        </div>
+                      </div>
+                    </div>
 
-                      {/* Conditional Chart Rendering */}
-                      {chartMetric === 'productivity' && (
-                        <>
-                          <path 
-                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
-                            fill="none" 
-                            stroke="#8B5CF6" 
-                            strokeWidth="3.5"
-                            className="trend-line hover:stroke-purple-700 transition-all cursor-pointer"
-                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
-                          />
-                          {chartDataPoints.map((v, i) => (
-                            <g key={i}>
-                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#8B5CF6" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
-                              {chartHoverIndex === i && (
-                                <>
-                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#8B5CF6" opacity="0.9" />
-                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}</text>
-                                </>
-                              )}
-                            </g>
-                          ))}
-                        </>
-                      )}
+                    <div className="xl:col-span-2 rounded-3xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-5">
+                      <div className="flex items-center justify-between mb-5">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.18em] font-extrabold text-purple-400 dark:text-purple-300">Weekly</p>
+                          <h4 className="text-xl font-extrabold">Workload Cards</h4>
+                        </div>
+                        <span className="text-[10px] px-2.5 py-1 rounded-full bg-purple-50 dark:bg-indigo-900/40 text-purple-500 dark:text-purple-300 font-bold">Task + Event</span>
+                      </div>
 
-                      {chartMetric === 'tasks' && (
-                        <>
-                          <path 
-                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
-                            fill="none" 
-                            stroke="#EC4899" 
-                            strokeWidth="3.5"
-                            className="trend-line hover:stroke-pink-700 transition-all cursor-pointer"
-                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
-                          />
-                          {chartDataPoints.map((v, i) => (
-                            <g key={i}>
-                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#EC4899" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
-                              {chartHoverIndex === i && (
-                                <>
-                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#EC4899" opacity="0.9" />
-                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}</text>
-                                </>
-                              )}
-                            </g>
-                          ))}
-                        </>
-                      )}
+                      <div className="grid grid-cols-7 gap-2 items-end min-h-[150px]">
+                        {weeklyWorkload.map(day => (
+                          <div key={day.label} className="flex flex-col items-center gap-2">
+                            <div className="w-full h-28 rounded-2xl bg-purple-50 dark:bg-indigo-950/40 border border-purple-100/60 dark:border-indigo-900/40 flex items-end overflow-hidden">
+                              <div
+                                className="w-full rounded-2xl bg-[#8f75d8] transition-all"
+                                style={{ height: `${Math.max(12, (day.total / maxWeeklyWorkload) * 100)}%` }}
+                              />
+                            </div>
+                            <p className="text-xs font-black text-purple-400 dark:text-purple-300">{day.label}</p>
+                            <p className="text-[10px] font-bold text-purple-500 dark:text-purple-300">{day.total}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
 
-                      {chartMetric === 'bookings' && (
-                        <>
-                          <path 
-                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
-                            fill="none" 
-                            stroke="#10B981" 
-                            strokeWidth="3.5"
-                            className="trend-line hover:stroke-emerald-700 transition-all cursor-pointer"
-                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
-                          />
-                          {chartDataPoints.map((v, i) => (
-                            <g key={i}>
-                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#10B981" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
-                              {chartHoverIndex === i && (
-                                <>
-                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#10B981" opacity="0.9" />
-                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}</text>
-                                </>
-                              )}
-                            </g>
-                          ))}
-                        </>
-                      )}
+                    <div className="xl:col-span-2 rounded-3xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.18em] font-extrabold text-purple-400 dark:text-purple-300">Projects</p>
+                          <h4 className="text-xl font-extrabold">Progress Overview</h4>
+                        </div>
+                        <FolderOpen size={20} className="text-[#8f75d8]" />
+                      </div>
+                      <div className="space-y-3">
+                        {projectProgressOverview.length === 0 ? (
+                          <p className="text-xs text-purple-400 dark:text-purple-300">Belum ada folder project aktif.</p>
+                        ) : projectProgressOverview.map(project => (
+                          <div key={project.name} className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-bold truncate">{project.name}</p>
+                              <span className="text-[10px] font-black text-[#8f75d8]">{project.percent}%</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-purple-100 dark:bg-indigo-950 overflow-hidden">
+                              <div className="h-full rounded-full bg-[#8f75d8]" style={{ width: `${project.percent}%` }} />
+                            </div>
+                            <p className="text-[10px] text-purple-400 dark:text-purple-300">{project.completed}/{project.total} item selesai</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
 
-                      {chartMetric === 'completionRate' && (
-                        <>
-                          <path 
-                            d={`M 70 ${180 - (chartDataPoints[0] / maxValue) * 140} ${chartDataPoints.map((v, i) => `L ${70 + i * 80} ${180 - (v / maxValue) * 140}`).join(' ')}`}
-                            fill="none" 
-                            stroke="#F59E0B" 
-                            strokeWidth="3.5"
-                            className="trend-line hover:stroke-amber-700 transition-all cursor-pointer"
-                            opacity={chartHoverIndex !== null && chartHoverIndex !== 0 ? 0.4 : 1}
-                          />
-                          {chartDataPoints.map((v, i) => (
-                            <g key={i}>
-                              <circle cx={70 + i * 80} cy={180 - (v / maxValue) * 140} r="6" fill="#F59E0B" className={`cursor-pointer transition-all ${chartHoverIndex === i ? 'r-8' : ''}`} onMouseEnter={() => setChartHoverIndex(i)} onMouseLeave={() => setChartHoverIndex(null)} />
-                              {chartHoverIndex === i && (
-                                <>
-                                  <rect x={70 + i * 80 - 35} y={180 - (v / maxValue) * 140 - 30} width="70" height="25" rx="4" fill="#F59E0B" opacity="0.9" />
-                                  <text x={70 + i * 80} y={180 - (v / maxValue) * 140 - 10} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">{Math.round(v)}%</text>
-                                </>
-                              )}
-                            </g>
-                          ))}
-                        </>
-                      )}
+                    <div className="xl:col-span-2 rounded-3xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.18em] font-extrabold text-purple-400 dark:text-purple-300">Priority</p>
+                          <h4 className="text-xl font-extrabold">Focus Queue</h4>
+                        </div>
+                        <CheckCircle size={20} className="text-[#8f75d8]" />
+                      </div>
 
-                      {/* X-Axis */}
-                      <line x1="50" y1="180" x2="620" y2="180" stroke="var(--border)" strokeWidth="1" />
-
-                      {/* Labels */}
-                      <text x="90" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Sen</text>
-                      <text x="170" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Sel</text>
-                      <text x="250" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Rab</text>
-                      <text x="330" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Kam</text>
-                      <text x="410" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Jum</text>
-                      <text x="490" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Sab</text>
-                      <text x="570" y="205" fill="var(--text-muted)" fontSize="11" textAnchor="middle">Min</text>
-                    </svg>
+                      <div className="space-y-2">
+                        {focusQueue.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-4 text-center text-xs text-purple-400 dark:text-purple-300">
+                            Tidak ada antrean fokus. Semua aman.
+                          </div>
+                        ) : focusQueue.map((task, index) => (
+                          <div key={task.id} className="flex items-center gap-3 rounded-2xl border border-purple-100/70 dark:border-indigo-900/50 bg-purple-50/40 dark:bg-indigo-950/30 p-3">
+                            <span className="w-7 h-7 rounded-xl bg-[#8f75d8] text-white text-xs font-black flex items-center justify-center">{index + 1}</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-bold truncate">{task.title}</p>
+                              <p className="text-[10px] text-purple-400 dark:text-purple-300 truncate">{task.category} • {task.calendarDate || todayString} • {task.dueTime} WIB</p>
+                            </div>
+                            <span className="text-[9px] px-2 py-1 rounded-full bg-white dark:bg-indigo-900/60 text-[#8f75d8] font-black uppercase">{task.priority}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -2789,15 +3274,19 @@ function App() {
                   </div>
 
                   <div className="border-t border-purple-100 dark:border-indigo-950 pt-4 mt-4">
-                    <button 
-                      onClick={() => {
-                        const timestamp = new Date().toLocaleTimeString('id-ID')
-                        setSyncLogs(prev => [
-                          `[${timestamp}] 🔄 Sinkronisasi manual dipicu oleh pengguna.`,
-                          `[${timestamp}] 🟢 Kalender Google, Notion, dan surel berhasil diperbarui secara realtime.`,
-                          ...prev
-                        ])
-                      }}
+	                    <button 
+	                      onClick={() => {
+	                        const timestamp = new Date().toLocaleTimeString('id-ID')
+	                        const activeExternalLogs = getConfiguredIntegrationSyncLogs().filter(log => !log.includes('Supabase RLS'))
+	                        setSyncLogs(prev => [
+	                          `[${timestamp}] 🔄 Sinkronisasi manual dipicu oleh pengguna.`,
+	                          ...(activeExternalLogs.length
+	                            ? activeExternalLogs.map(log => `[${timestamp}] ${log}`)
+	                            : [`[${timestamp}] ℹ️ Belum ada integrasi eksternal aktif. Hanya database Supabase yang dicek.`]),
+	                          ...prev
+	                        ])
+	                        fetchGoogleCalendarEventsForMonth({ notifyNew: true })
+	                      }}
                       className="w-full py-2.5 bg-purple-100 hover:bg-purple-200 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all"
                     >
                       <RefreshCw size={12} className="animate-spin" />
@@ -2830,7 +3319,7 @@ function App() {
                         onClick={() => toggleTaskStatus(task.id)}
                         className={`w-6 h-6 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
                           task.status === 'done' 
-                            ? 'bg-purple-600 border-purple-600 text-white' 
+                            ? 'bg-[#8f75d8] border-[#8f75d8] text-white' 
                             : 'border-purple-300 hover:border-purple-500'
                         }`}
                       >
@@ -2872,32 +3361,14 @@ function App() {
           {/* TAB CONTENT: 2. TASKS & PROJECT MANAGEMENT */}
           {activeTab === 'tasks' && (
             <div>
-              {/* Task filters & view toggle */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                {/* Filter tags */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {['All', 'Work', 'Meeting', 'Personal', 'Security'].map(filter => (
-                    <button
-                      key={filter}
-                      onClick={() => setTaskFilter(filter)}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
-                        taskFilter === filter
-                          ? 'bg-purple-600 text-white shadow-md'
-                          : 'bg-purple-100/60 dark:bg-indigo-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-indigo-900/60'
-                      }`}
-                    >
-                      {filter}
-                    </button>
-                  ))}
-                </div>
-
-                {/* View toggle + add task */}
+              {/* Task view toggle + actions */}
+              <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 mb-6">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-2 p-1 rounded-xl bg-purple-100/60 dark:bg-indigo-950/40 border border-purple-200/20">
                     <button
                       onClick={() => setTaskView('list')}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                        taskView === 'list' ? 'bg-purple-600 text-white shadow' : 'text-purple-700 dark:text-purple-300'
+                        taskView === 'list' ? 'bg-[#8f75d8] text-white shadow' : 'text-purple-700 dark:text-purple-300'
                       }`}
                     >
                       List View
@@ -2905,15 +3376,25 @@ function App() {
                     <button
                       onClick={() => setTaskView('grid')}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                        taskView === 'grid' ? 'bg-purple-600 text-white shadow' : 'text-purple-700 dark:text-purple-300'
+                        taskView === 'grid' ? 'bg-[#8f75d8] text-white shadow' : 'text-purple-700 dark:text-purple-300'
                       }`}
                     >
                       Project Board
                     </button>
                   </div>
                   <button
-                    onClick={() => setShowQuickTaskModal(true)}
-                    className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md"
+                    onClick={() => setShowNewFolderModal(true)}
+                    className="px-4 py-2.5 rounded-xl bg-white/70 dark:bg-indigo-950/40 border border-purple-200/60 dark:border-indigo-900 text-purple-700 dark:text-purple-300 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Folder size={13} />
+                    New Folder Task
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedProjectFolder?.name) setNewTaskCategory(selectedProjectFolder.name)
+                      setShowQuickTaskModal(true)
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md"
                   >
                     <Plus size={13} />
                     Add Task
@@ -2924,79 +3405,171 @@ function App() {
               {/* Tasks view */}
               <div className="space-y-4">
                   {taskView === 'list' ? (
-                    // List View
-                    <div className="glass-panel p-6 space-y-3">
-                      <h3 className="text-lg font-bold mb-4">Daftar Semua Tugas</h3>
-
-                      {tasks.filter(t => (taskFilter === 'All' || t.category === taskFilter) && t.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
-                        <div className="text-center py-8">
-                          <CheckCircle className="mx-auto text-purple-300 dark:text-purple-700 mb-2" size={32} />
-                          <p className="text-sm text-purple-400 dark:text-purple-300">Tidak ada tugas yang cocok.</p>
-                        </div>
-                      ) : (
-                        tasks.filter(t => (taskFilter === 'All' || t.category === taskFilter) && t.title.toLowerCase().includes(searchQuery.toLowerCase())).map(task => (
-                          <div 
-                            key={task.id} 
-                            className="p-4 rounded-xl border border-purple-100/60 dark:border-indigo-950/60 bg-purple-50/10 dark:bg-indigo-950/5 flex items-center gap-3.5 hover:translate-x-1 transition-transform"
+                    // Two-panel folder/task view
+                    <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
+                      <aside className="glass-panel p-4">
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                          <div>
+                            <h3 className="text-lg font-bold">Folder Project</h3>
+                            <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">{allProjectFolders.length} folder aktif</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowNewFolderModal(true)}
+                            className="w-9 h-9 rounded-xl bg-[#8f75d8] text-white flex items-center justify-center shadow-md hover:bg-[#8069c8]"
+                            title="New Folder Task"
                           >
-                            <div 
-                              onClick={() => toggleTaskStatus(task.id)}
-                              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
-                                task.status === 'done' 
-                                  ? 'bg-purple-600 border-purple-600 text-white' 
-                                  : 'border-purple-300 hover:border-purple-500'
-                              }`}
-                            >
-                              {task.status === 'done' && <Check size={12} strokeWidth={3} />}
+                            <Plus size={16} />
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
+                          {allProjectFolders.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-4 text-xs text-purple-400 dark:text-purple-300">
+                              Belum ada folder. Buat folder project baru untuk mulai mengelompokkan task.
                             </div>
-
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-semibold truncate ${task.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>
-                                {task.title}
-                              </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span 
-                                  className="w-2 h-2 rounded-full" 
-                                  style={{ backgroundColor: task.colorLabel }}
-                                ></span>
-                                <span className="text-xs text-purple-400 dark:text-purple-300">{task.category}</span>
-                                <span className="text-xs text-purple-400 dark:text-purple-300">•</span>
-                                <span className="text-xs text-purple-400 dark:text-purple-300 flex items-center gap-0.5">
-                                  <Clock size={10} />
-                                  {task.dueTime} WIB
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${
-                                task.priority === 'critical' 
-                                  ? 'bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400' 
-                                  : task.priority === 'high' 
-                                  ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
-                                  : 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
-                              }`}>
-                                {task.priority}
-                              </span>
-
+                          ) : allProjectFolders.map(folder => {
+                            const totalItems = folder.tasks.length + folder.subtasks.length
+                            const doneItems = [...folder.tasks, ...folder.subtasks].filter(task => task.status === 'done').length
+                            const isSelected = selectedProjectFolder?.name === folder.name
+                            return (
                               <button
-                                onClick={() => openCalendarEditModal({ ...task, itemType: 'task' })}
-                                className="w-8 h-8 rounded-lg hover:bg-purple-50 dark:hover:bg-indigo-950/20 text-purple-400 hover:text-purple-600 dark:hover:text-purple-300 flex items-center justify-center transition-colors"
-                                title="Edit task"
+                                key={folder.name}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProjectName(folder.name)
+                                  setNewTaskCategory(folder.name)
+                                }}
+                                className={`w-full rounded-2xl border p-3 text-left transition-all ${
+                                  isSelected
+                                    ? 'bg-[#8f75d8] text-white border-[#8f75d8] shadow-lg shadow-[#8f75d8]/20'
+                                    : 'bg-white/60 dark:bg-indigo-950/20 border-purple-100/70 dark:border-indigo-900/60 hover:bg-purple-50 dark:hover:bg-indigo-900/30'
+                                }`}
                               >
-                                <Pencil size={14} />
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'text-white'}`} style={!isSelected ? { background: `linear-gradient(135deg, ${folder.color}, #7C3AED)` } : undefined}>
+                                    <Folder size={18} />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <h4 className={`text-sm font-extrabold truncate ${isSelected ? 'text-white' : 'text-purple-900 dark:text-white'}`}>{folder.name}</h4>
+                                    <p className={`text-[11px] mt-0.5 ${isSelected ? 'text-white/75' : 'text-purple-400 dark:text-purple-300'}`}>{folder.tasks.length} task • {folder.subtasks.length} subtask</p>
+                                  </div>
+                                  <span className={`text-[10px] font-bold ${isSelected ? 'text-white' : 'text-purple-500 dark:text-purple-300'}`}>{doneItems}/{totalItems}</span>
+                                </div>
                               </button>
-                              
-                              <button 
-                                onClick={() => deleteTask(task.id)}
-                                className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-purple-400 hover:text-red-500 flex items-center justify-center transition-colors"
+                            )
+                          })}
+                        </div>
+                      </aside>
+
+                      <section className="glass-panel p-6 min-h-[420px]">
+                        {selectedProjectFolder ? (
+                          <>
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0" style={{ background: `linear-gradient(135deg, ${selectedProjectFolder.color}, #7C3AED)` }}>
+                                  <FolderOpen size={22} />
+                                </div>
+                                <div className="min-w-0">
+                                  <h3 className="text-xl font-extrabold truncate">{selectedProjectFolder.name}</h3>
+                                  <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">Task dan subtask pada folder ini tetap sinkron ke kalender dan notifikasi.</p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewTaskCategory(selectedProjectFolder.name)
+                                  setShowQuickTaskModal(true)
+                                }}
+                                className="px-4 py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md"
                               >
-                                <Trash2 size={14} />
+                                <Plus size={13} />
+                                Add Task
                               </button>
+                            </div>
+
+                            {selectedFolderTasks.length === 0 ? (
+                              <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-8 text-center">
+                                <CheckCircle className="mx-auto text-purple-300 dark:text-purple-700 mb-2" size={32} />
+                                <p className="text-sm text-purple-400 dark:text-purple-300">Folder ini belum punya task utama.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {selectedFolderTasks.map(task => {
+                                  const childSubtasks = (subtasksByParent[task.id] || []).filter(taskMatchesSearch)
+                                  const taskProgress = getTaskProgress(task, childSubtasks)
+                                  return (
+                                    <div key={task.id} className="rounded-2xl border border-purple-100/70 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-slate-950/20 p-4">
+                                      <div className="flex items-center gap-3">
+                                        <button type="button" onClick={() => toggleTaskStatus(task.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.status === 'done' ? 'bg-[#8f75d8] border-[#8f75d8] text-white' : 'border-purple-300 hover:border-purple-500'}`}>
+                                          {task.status === 'done' && <Check size={12} strokeWidth={3} />}
+                                        </button>
+                                        <div className="flex-1 min-w-0">
+                                          <p className={`text-sm font-semibold truncate ${task.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{task.title}</p>
+                                          <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-purple-400 dark:text-purple-300">
+                                            <span className="flex items-center gap-1"><Clock size={10} />{task.dueTime} WIB</span>
+                                            <span>•</span>
+                                            <span>{task.calendarDate || todayString}</span>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300 font-bold uppercase">{task.priority}</span>
+                                          </div>
+                                        </div>
+                                        <button onClick={() => openCalendarEditModal({ ...task, itemType: 'task' })} className="w-8 h-8 rounded-lg hover:bg-purple-100 dark:hover:bg-indigo-900/50 text-purple-400 hover:text-purple-600 flex items-center justify-center" title="Edit task">
+                                          <Pencil size={14} />
+                                        </button>
+                                        <button onClick={() => deleteTask(task.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-purple-400 hover:text-red-500 flex items-center justify-center" title="Hapus task">
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+
+                                      <div className="mt-3 ml-9">
+                                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300 mb-1.5">
+                                          <span>Progress</span>
+                                          <span>{taskProgress.percent}% • {taskProgress.completed}/{taskProgress.total}</span>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-purple-100 dark:bg-indigo-950/60 overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              taskProgress.percent === 100
+                                                ? 'bg-emerald-500'
+                                                : 'bg-gradient-to-r from-purple-500 to-fuchsia-500'
+                                            }`}
+                                            style={{ width: `${taskProgress.percent}%` }}
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {childSubtasks.length > 0 && (
+                                        <div className="mt-3 ml-9 space-y-2">
+                                          {childSubtasks.map(subtask => (
+                                            <div key={subtask.id} className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-indigo-950/30 border border-purple-100/50 dark:border-indigo-900/40 px-3 py-2">
+                                              <button type="button" onClick={() => toggleTaskStatus(subtask.id)} className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${subtask.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-purple-300 hover:border-purple-500'}`}>
+                                                {subtask.status === 'done' && <Check size={9} strokeWidth={3} />}
+                                              </button>
+                                              <div className="flex-1 min-w-0">
+                                                <p className={`text-xs font-semibold truncate ${subtask.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{subtask.title}</p>
+                                                <p className="text-[10px] text-purple-400 dark:text-purple-300">{subtask.calendarDate || todayString} • {subtask.dueTime} WIB</p>
+                                              </div>
+                                              <button onClick={() => openCalendarEditModal({ ...subtask, itemType: 'task' })} className="text-purple-400 hover:text-purple-600"><Pencil size={12} /></button>
+                                              <button onClick={() => deleteTask(subtask.id)} className="text-purple-400 hover:text-red-500"><Trash2 size={12} /></button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="h-full min-h-[320px] flex items-center justify-center rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 text-center p-8">
+                            <div>
+                              <Folder className="mx-auto text-purple-300 dark:text-purple-700 mb-3" size={40} />
+                              <p className="text-sm text-purple-400 dark:text-purple-300">Pilih atau buat folder project terlebih dahulu.</p>
                             </div>
                           </div>
-                        ))
-                      )}
+                        )}
+                      </section>
                     </div>
                   ) : (
                     // Project Kanban Board View
@@ -3057,7 +3630,7 @@ function App() {
                               <span className="text-[10px] font-bold text-red-500 uppercase">{task.priority}</span>
                               <button 
                                 onClick={() => toggleTaskStatus(task.id)}
-                                className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-[10px] text-white font-bold rounded-lg transition-colors"
+                                className="px-2 py-1 bg-[#8f75d8] hover:bg-[#8069c8] text-[10px] text-white font-bold rounded-lg transition-colors"
                               >
                                 Selesaikan
                               </button>
@@ -3117,148 +3690,88 @@ function App() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="px-2 py-1 rounded-lg border border-purple-200 dark:border-indigo-900 text-xs">◀</button>
-                      <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3 py-1 rounded-lg bg-purple-600 text-white text-xs font-bold">Hari Ini</button>
+                      <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3 py-1 rounded-lg bg-[#8f75d8] text-white text-xs font-bold">Hari Ini</button>
                       <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="px-2 py-1 rounded-lg border border-purple-200 dark:border-indigo-900 text-xs">▶</button>
                     </div>
                   </div>
 
-                  {/* Day Names Row */}
-                  <div className="grid grid-cols-7 gap-1 text-center font-bold text-xs text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-3">
-                    {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(d => <span key={d}>{d}</span>)}
-                  </div>
+                      {/* Day Names Row */}
+                      <div className="grid grid-cols-7 gap-1 text-center font-bold text-xs text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-3">
+                        {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(d => <span key={d}>{d}</span>)}
+                      </div>
 
-                  {/* Calendar Grid Days */}
-                  <div className="calendar-grid">
-                    {calendarDays.map((dayItem) => {
-                      const dayNumber = dayItem.date.getDate()
-                      const dateStr = dayItem.dateStr
-                      const dayAppointments = appointments.filter(app => app.date === dateStr)
-                      const dayTasks = tasks.filter(task => (task.calendarDate || todayString) === dateStr)
-                      const totalItems = dayAppointments.length + dayTasks.length
-                      const hasAppt = totalItems > 0
-                      const isToday = dayItem.isToday
+                      {/* Calendar Grid Days */}
+                      <div className="calendar-grid">
+                        {calendarDays.map((dayItem) => {
+                          const dayNumber = dayItem.date.getDate()
+	                          const dateStr = dayItem.dateStr
+	                          const dayAppointments = appointments.filter(app => app.date === dateStr)
+	                          const dayTasks = tasks.filter(task => (task.calendarDate || todayString) === dateStr)
+	                          const dayGoogleEvents = googleCalendarEvents.filter(event => event.date === dateStr)
+	                          const dayHolidays = nationalHolidays.filter(holiday => holiday.date === dateStr)
+	                          const totalItems = dayAppointments.length + dayTasks.length + dayGoogleEvents.length + dayHolidays.length
+	                          const hasAppt = totalItems > 0
+	                          const isToday = dayItem.isToday
 
-                      return (
-                        <div 
-                          key={dateStr} 
-                          className={`calendar-day ${!dayItem.isCurrentMonth ? 'other-month' : ''} ${isToday ? 'active-day font-bold border-purple-500 shadow-sm' : ''} ${hasAppt ? 'has-appointment' : ''}`}
-                          onClick={() => {
-                            setBookingDate(dateStr)
-                            setSelectedCalendarDate(dateStr)
-                          }}
-                        >
-                          <div className="flex justify-between items-start">
-                            <span className={`text-xs ${isToday ? 'text-purple-600 dark:text-purple-300' : 'text-purple-800 dark:text-purple-300'}`}>{dayNumber}</span>
-                            {isToday && <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>}
-                          </div>
-                          {hasAppt && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
+                          return (
+                            <div 
+                              key={dateStr} 
+                              className={`calendar-day ${!dayItem.isCurrentMonth ? 'other-month' : ''} ${isToday ? 'active-day font-bold border-purple-500 shadow-sm' : ''} ${hasAppt ? 'has-appointment' : ''}`}
+                              onClick={() => {
+                                setBookingDate(dateStr)
                                 setSelectedCalendarDate(dateStr)
                               }}
-                              className="text-[8px] bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block mt-1 w-full text-left hover:bg-purple-200 dark:hover:bg-purple-900/60"
                             >
-                              {totalItems} Aktivitas
-                            </button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  <div className="mt-5 p-4 rounded-xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-bold">Detail Aktivitas Tanggal {selectedCalendarDate}</h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-indigo-900/50 text-purple-700 dark:text-purple-300 font-bold">
-                        {selectedDateItems.length} event
-                      </span>
-                    </div>
-                    {selectedDateItems.length === 0 ? (
-                      <p className="text-xs text-purple-400 dark:text-purple-300">Belum ada event/task aktif di tanggal ini.</p>
-                    ) : (
-                      <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                        {selectedDateItems.map(item => (
-                          <button
-                            key={`${item.itemType}-${item.id}`}
-                            type="button"
-                            className="w-full text-left p-2.5 rounded-lg border border-purple-200/60 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/30 hover:bg-purple-100/70 dark:hover:bg-indigo-900/40"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-xs font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
-                                {item.itemType === 'appointment' ? <Calendar size={12} /> : <CheckSquare size={12} />}
-                                {item.title}
-                              </p>
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-indigo-900/50 text-purple-600 dark:text-purple-300 uppercase font-bold">
-                                {item.itemType === 'appointment' ? 'Reservasi' : 'Task'}
-                              </span>
+                              <div className="flex justify-between items-start">
+                                <span className={`text-xs ${isToday ? 'text-purple-600 dark:text-purple-300' : 'text-purple-800 dark:text-purple-300'}`}>{dayNumber}</span>
+                                {isToday && <span className="w-1.5 h-1.5 rounded-full bg-[#8f75d8]"></span>}
+                              </div>
+	                              {hasAppt && (
+	                                <div className="mt-1 space-y-1">
+	                                  {dayHolidays.slice(0, 1).map(holiday => (
+	                                    <button
+	                                      key={holiday.id}
+	                                      type="button"
+	                                      onClick={(e) => {
+	                                        e.stopPropagation()
+	                                        setSelectedCalendarDate(dateStr)
+	                                      }}
+	                                      className="text-[8px] bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block w-full text-left"
+	                                    >
+	                                      Libur • {holiday.title}
+	                                    </button>
+	                                  ))}
+	                                  {dayGoogleEvents.slice(0, 1).map(event => (
+	                                    <button
+	                                      key={event.id}
+	                                      type="button"
+	                                      onClick={(e) => {
+	                                        e.stopPropagation()
+	                                        setSelectedCalendarDate(dateStr)
+	                                      }}
+	                                      className="text-[8px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block w-full text-left"
+	                                    >
+	                                      GCal • {event.title}
+	                                    </button>
+	                                  ))}
+	                                  <button
+	                                    type="button"
+	                                    onClick={(e) => {
+	                                      e.stopPropagation()
+	                                      setSelectedCalendarDate(dateStr)
+	                                    }}
+	                                    className="text-[8px] bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block w-full text-left hover:bg-purple-200 dark:hover:bg-purple-900/60"
+	                                  >
+	                                    {totalItems} Aktivitas
+	                                  </button>
+	                                </div>
+	                              )}
                             </div>
-                            {item.itemType === 'appointment' ? (
-                              <>
-                                <p className="text-[11px] text-purple-500 dark:text-purple-300 mt-0.5">{item.clientName} • {item.time} WIB</p>
-                                <p className="text-[10px] text-purple-400 dark:text-purple-400 mt-1">{item.email}</p>
-                                <div className="mt-2 flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openCalendarEditModal(item)
-                                    }}
-                                    className="px-2 py-1 rounded-md text-[10px] font-bold bg-purple-600 text-white hover:bg-purple-700 inline-flex items-center gap-1"
-                                  >
-                                    <Pencil size={10} />
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openDeleteConfirmModal(item)
-                                    }}
-                                    className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 inline-flex items-center gap-1"
-                                  >
-                                    <Trash2 size={10} />
-                                    Hapus
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <p className="text-[11px] text-purple-500 dark:text-purple-300 mt-0.5">{item.category} • {item.dueTime}</p>
-                                <p className="text-[10px] text-purple-400 dark:text-purple-400 mt-1 uppercase">Task • {item.priority}</p>
-                                <div className="mt-2 flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openCalendarEditModal(item)
-                                    }}
-                                    className="px-2 py-1 rounded-md text-[10px] font-bold bg-purple-600 text-white hover:bg-purple-700 inline-flex items-center gap-1"
-                                  >
-                                    <Pencil size={10} />
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openDeleteConfirmModal(item)
-                                    }}
-                                    className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 inline-flex items-center gap-1"
-                                  >
-                                    <Trash2 size={10} />
-                                    Hapus
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </button>
-                        ))}
+                          )
+                        })}
+
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
                 {/* Right pane: Reservation Form & Appointments lists */}
                 <div className="space-y-6">
@@ -3343,7 +3856,7 @@ function App() {
 
                       <button 
                         type="submit"
-                        className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all mt-4"
+                        className="w-full py-2.5 bg-[#8f75d8] hover:bg-[#8069c8] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all mt-4"
                       >
                         <Plus size={14} />
                         Reservasi Rapat & Sync
@@ -3377,6 +3890,124 @@ function App() {
                       ))}
                     </div>
                   </div>
+
+                  <div className="p-4 rounded-xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-bold">Detail Aktivitas Tanggal {selectedCalendarDate}</h4>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-indigo-900/50 text-purple-700 dark:text-purple-300 font-bold">
+                          {selectedDateItems.length} event
+                        </span>
+                      </div>
+                      {selectedDateItems.length === 0 ? (
+                        <p className="text-xs text-purple-400 dark:text-purple-300">Belum ada event/task aktif di tanggal ini.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedDateItems.map(item => {
+                            const itemLabel = item.itemType === 'appointment'
+                              ? 'Reservasi'
+                              : item.itemType === 'task'
+                                ? 'Task'
+                                : item.itemType === 'google_event'
+                                  ? 'Google Calendar'
+                                  : 'Libur Nasional'
+                            const itemIcon = item.itemType === 'task'
+                              ? <CheckSquare size={12} />
+                              : item.itemType === 'holiday'
+                                ? <Sparkles size={12} />
+                                : <Calendar size={12} />
+
+                            return (
+                              <div
+                                key={`${item.itemType}-${item.id}`}
+                                className="w-full text-left p-2.5 rounded-lg border border-purple-200/60 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/30 hover:bg-purple-100/70 dark:hover:bg-indigo-900/40"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-xs font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                                    {itemIcon}
+                                    {item.title}
+                                  </p>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${item.itemType === 'holiday' ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300' : item.itemType === 'google_event' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-300' : 'bg-purple-100 dark:bg-indigo-900/50 text-purple-600 dark:text-purple-300'}`}>
+                                    {itemLabel}
+                                  </span>
+                                </div>
+                                {item.itemType === 'appointment' ? (
+                                  <>
+                                    <p className="text-[11px] text-purple-500 dark:text-purple-300 mt-0.5">{item.clientName} • {item.time} WIB</p>
+                                    <p className="text-[10px] text-purple-400 dark:text-purple-400 mt-1">{item.email}</p>
+                                    <div className="mt-2 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openCalendarEditModal(item)
+                                        }}
+                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"
+                                      >
+                                        <Pencil size={10} />
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openDeleteConfirmModal(item)
+                                        }}
+                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 inline-flex items-center gap-1"
+                                      >
+                                        <Trash2 size={10} />
+                                        Hapus
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : item.itemType === 'task' ? (
+                                  <>
+                                    <p className="text-[11px] text-purple-500 dark:text-purple-300 mt-0.5">{item.category} • {item.dueTime}</p>
+                                    <p className="text-[10px] text-purple-400 dark:text-purple-400 mt-1 uppercase">Task • {item.priority}</p>
+                                    <div className="mt-2 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openCalendarEditModal(item)
+                                        }}
+                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"
+                                      >
+                                        <Pencil size={10} />
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openDeleteConfirmModal(item)
+                                        }}
+                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 inline-flex items-center gap-1"
+                                      >
+                                        <Trash2 size={10} />
+                                        Hapus
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : item.itemType === 'google_event' ? (
+                                  <>
+                                    <p className="text-[11px] text-emerald-600 dark:text-emerald-300 mt-0.5">{item.time} • {item.calendarName}</p>
+                                    {item.htmlLink && (
+                                      <a href={item.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-300 hover:underline">
+                                        Buka di Google Calendar <ExternalLink size={10} />
+                                      </a>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="text-[11px] text-red-500 dark:text-red-300 mt-0.5">Hari libur nasional Indonesia</p>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                  </div>
+
+
 
                 </div>
 
@@ -3414,7 +4045,7 @@ function App() {
                   <button
                     type="button"
                     onClick={() => setIsNoteModalOpen(true)}
-                    className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-purple-500/10"
+                    className="w-full py-3 bg-[#8f75d8] hover:bg-[#8069c8] text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-[#8f75d8]/10"
                   >
                     <Lock size={16} />
                     Tambah Catatan Aman
@@ -3483,7 +4114,7 @@ function App() {
                           <button 
                             type="submit"
                             disabled={scrambleProgress}
-                            className="flex-1 py-3.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-purple-600/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-1 py-3.5 bg-gradient-to-r from-[#8f75d8] to-[#8069c8] hover:from-[#8069c8] hover:to-[#745ebb] text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#8f75d8]/40 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Lock size={16} />
                             Enkripsi & Simpan
@@ -3549,7 +4180,7 @@ function App() {
                                 />
                                 <button 
                                   onClick={() => handleDecryptNote(note)}
-                                  className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded-xl hover:bg-purple-700"
+                                  className="px-4 py-2 bg-[#8f75d8] text-white font-bold text-xs rounded-xl hover:bg-[#8069c8]"
                                 >
                                   Dekripsi
                                 </button>
@@ -3796,7 +4427,7 @@ function App() {
                     </button>
                     <button
                       onClick={saveIntegrationConfig}
-                      className="flex-1 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] tracking-[0.14em] uppercase font-bold transition-all shadow-md"
+                      className="flex-1 py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-[11px] tracking-[0.14em] uppercase font-bold transition-all shadow-md"
                     >
                       Simpan & Hubungkan
                     </button>
@@ -3825,7 +4456,7 @@ function App() {
                   <div className="space-y-2">
                     {tutorial?.steps.map((step, idx) => (
                       <div key={step} className="flex items-start gap-2.5 p-3 rounded-xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/40 dark:bg-indigo-950/20">
-                        <span className="w-5 h-5 shrink-0 rounded-full bg-purple-600 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">{idx + 1}</span>
+                        <span className="w-5 h-5 shrink-0 rounded-full bg-[#8f75d8] text-white text-[10px] font-bold flex items-center justify-center mt-0.5">{idx + 1}</span>
                         <p className="text-xs text-purple-600 dark:text-purple-300 leading-relaxed">{step}</p>
                       </div>
                     ))}
@@ -3848,7 +4479,7 @@ function App() {
                       setActiveTutorialModal(null)
                       openIntegrationModal(activeTutorialModal)
                     }}
-                    className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-md"
+                    className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold transition-all shadow-md"
                   >
                     Lanjut ke Form Konfigurasi
                   </button>
@@ -3919,7 +4550,7 @@ function App() {
                   <div className="flex items-center gap-3">
                     <button 
                       onClick={triggerManualBackup}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                      className="px-4 py-2 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1.5"
                     >
                       <Lock size={12} />
                       Ekspor Backup Terenkripsi
@@ -3957,6 +4588,50 @@ function App() {
                 </div>
 
                 <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold flex items-center gap-2">
+                        <Sparkles size={15} className="text-purple-500" />
+                        Header Branding
+                      </h4>
+                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Atur tulisan kecil dan nama app yang tampil di header utama.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAppHeaderTagline('Modern Soft Minimalist Amethyst')
+                        setAppHeaderTitle('Dyatask Manager - Superapp for Freelancer')
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-indigo-800 text-[10px] font-bold text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-indigo-900/40 transition-all"
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Tulisan Kecil Header</label>
+                      <input
+                        value={appHeaderTagline}
+                        onChange={(e) => setAppHeaderTagline(e.target.value)}
+                        placeholder="Contoh: Modern Soft Minimalist Amethyst"
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Nama App</label>
+                      <input
+                        value={appHeaderTitle}
+                        onChange={(e) => setAppHeaderTitle(e.target.value)}
+                        placeholder="Contoh: Dyatask Manager"
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-purple-400 dark:text-purple-300">Perubahan tersimpan otomatis dan tetap aktif setelah refresh.</p>
+                </div>
+
+                <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-bold flex items-center gap-2">
                       <Calendar size={15} className="text-purple-500" />
@@ -3974,13 +4649,25 @@ function App() {
                         <p className="text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300">Form Share Publik</p>
                         <button type="button" onClick={regenerateShareToken} className="text-[10px] px-2 py-1 rounded bg-purple-100 dark:bg-indigo-900/50 text-purple-700 dark:text-purple-300">Regenerate Link</button>
                       </div>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-400 dark:text-purple-300 mb-1">Public Share Domain</label>
+                        <input
+                          value={publicShareBaseUrl}
+                          onChange={(e) => setPublicShareBaseUrl(e.target.value)}
+                          placeholder="https://booking.domainkamu.com"
+                          className="w-full px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-[10px] focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                        />
+                      </div>
                       <div className="flex gap-2">
                         <input readOnly value={sharedFormLink} className="flex-1 px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-[10px]" />
-                        <button type="button" onClick={copyShareLink} className="px-3 py-2 rounded-lg bg-purple-600 text-white text-[10px] font-bold inline-flex items-center gap-1">
+                        <button type="button" onClick={copyShareLink} className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-[10px] font-bold inline-flex items-center gap-1">
                           <Copy size={10} />
                           {copiedShareLink ? 'Tersalin' : 'Copy'}
                         </button>
                       </div>
+                      <p className="text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
+                        Untuk app DMG, isi domain publik agar link tidak memakai path lokal <span className="font-mono">file://</span>.
+                      </p>
                     </div>
 
                     <div className="p-3 rounded-xl border border-purple-200/60 dark:border-indigo-900/60 bg-white/40 dark:bg-indigo-950/20">
@@ -4009,7 +4696,7 @@ function App() {
                             key={label}
                             type="button"
                             onClick={() => setSelectedAvailabilityDay(index)}
-                            className={`py-1 text-[10px] rounded border ${selectedAvailabilityDay === index ? 'bg-purple-600 text-white border-purple-600' : (bookingAvailability.daySchedules?.[index]?.enabled ? 'bg-purple-100 dark:bg-indigo-900/40 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-indigo-900/60' : 'bg-zinc-100 dark:bg-zinc-900/40 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800')}`}
+                            className={`py-1 text-[10px] rounded border ${selectedAvailabilityDay === index ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : (bookingAvailability.daySchedules?.[index]?.enabled ? 'bg-purple-100 dark:bg-indigo-900/40 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-indigo-900/60' : 'bg-zinc-100 dark:bg-zinc-900/40 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800')}`}
                           >
                             {label}
                           </button>
@@ -4096,7 +4783,7 @@ function App() {
                         onChange={() => setAutoStart(!autoStart)}
                         className="sr-only peer" 
                       />
-                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8f75d8]"></div>
                     </label>
                   </div>
 
@@ -4113,7 +4800,7 @@ function App() {
                         onChange={() => setAutoOpenOnAlert(!autoOpenOnAlert)}
                         className="sr-only peer" 
                       />
-                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8f75d8]"></div>
                     </label>
                   </div>
 
@@ -4130,7 +4817,7 @@ function App() {
                         onChange={() => setFloatingMenuEnabled(!floatingMenuEnabled)}
                         className="sr-only peer" 
                       />
-                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8f75d8]"></div>
                     </label>
                   </div>
 
@@ -4147,7 +4834,7 @@ function App() {
                         onChange={() => setTwoFactorEnabled(!twoFactorEnabled)}
                         className="sr-only peer" 
                       />
-                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      <div className="w-11 h-6 bg-purple-200 dark:bg-indigo-950 rounded-full peer peer-focus:ring-2 peer-focus:ring-purple-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8f75d8]"></div>
                     </label>
                   </div>
                 </div>
@@ -4176,7 +4863,7 @@ function App() {
                       <div className="macbook-dot macbook-red"></div>
                       <div className="macbook-dot macbook-yellow"></div>
                       <div className="macbook-dot macbook-green"></div>
-                      <span className="text-[10px] text-zinc-400 font-bold ml-2">DyaTask Manager Desktop</span>
+                      <span className="text-[10px] text-zinc-400 font-bold ml-2">{appHeaderTitle || 'Dyatask Manager'}</span>
                     </div>
 
                     <div className="p-4 bg-zinc-950 text-white font-mono text-[9px] space-y-1 select-none">
@@ -4200,7 +4887,7 @@ function App() {
                         'local'
                       )
                     }}
-                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
+                    className="w-full py-2.5 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
                   >
                     <BellRing size={12} />
                     Uji Notifikasi macOS
@@ -4215,12 +4902,40 @@ function App() {
         
       </div>
 
+      {showNewFolderModal && (
+        <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowNewFolderModal(false)}>
+          <div className="w-full max-w-md rounded-[2rem] bg-white dark:bg-slate-900 p-8 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-6">
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-[#8f75d8] text-white flex items-center justify-center mb-3 shadow-lg shadow-[#8f75d8]/25">
+                <Folder size={24} />
+              </div>
+              <h3 className="text-3xl font-extrabold text-purple-600 dark:text-purple-300 tracking-tight">New Folder Task</h3>
+              <p className="text-sm text-slate-400 dark:text-slate-300 mt-2">Buat folder project kosong untuk menampung task dan subtask.</p>
+            </div>
+            <form onSubmit={handleCreateProjectFolder} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Nama Folder Project</label>
+                <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Contoh: Website Redesign" className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Warna Folder</label>
+                <input type="color" value={newFolderColor} onChange={(e) => setNewFolderColor(e.target.value)} className="w-full h-12 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 p-1" />
+              </div>
+              <div className="pt-2 space-y-3">
+                <button type="submit" className="w-full py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Buat Folder</button>
+                <button type="button" onClick={() => setShowNewFolderModal(false)} className="w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showQuickTaskModal && (
         <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowQuickTaskModal(false)}>
           <div className="w-full max-w-lg rounded-[2rem] bg-white dark:bg-slate-900 p-8 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-6">
               <h3 className="text-4xl font-extrabold text-purple-600 dark:text-purple-300 tracking-tight">Add Task</h3>
-              <p className="text-sm text-slate-400 dark:text-slate-300 mt-2">Tambah task baru dari halaman mana pun.</p>
+              <p className="text-sm text-slate-400 dark:text-slate-300 mt-2">Tambah task ke folder project beserta subtask-nya.</p>
             </div>
             <form onSubmit={handleAddTask} className="space-y-4">
               <div>
@@ -4229,13 +4944,20 @@ function App() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Kategori</label>
-                  <select value={newTaskCategory} onChange={(e) => setNewTaskCategory(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all">
-                    <option value="Work">Pekerjaan</option>
-                    <option value="Meeting">Rapat</option>
-                    <option value="Personal">Pribadi</option>
-                    <option value="Security">Keamanan</option>
-                  </select>
+                  <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Folder Project</label>
+                  <input
+                    value={newTaskCategory}
+                    onChange={(e) => setNewTaskCategory(e.target.value)}
+                    list="project-folder-options"
+                    placeholder="Nama project / folder..."
+                    className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all"
+                    required
+                  />
+                  <datalist id="project-folder-options">
+                    {allProjectOptions.filter(option => option !== 'All').map(option => (
+                      <option key={option} value={option} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Prioritas</label>
@@ -4256,6 +4978,17 @@ function App() {
                   <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Jam</label>
                   <input type="time" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Subtask</label>
+                <textarea
+                  value={newTaskSubtasks}
+                  onChange={(e) => setNewTaskSubtasks(e.target.value)}
+                  placeholder={'Opsional. Tulis satu subtask per baris.\nContoh:\nRiset kebutuhan\nSiapkan desain\nReview final'}
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all resize-none"
+                />
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Subtask memakai tanggal dan jam yang sama saat dibuat, lalu bisa diedit terpisah dari kalender.</p>
               </div>
               <div className="pt-2 space-y-3">
                 <button type="submit" className="w-full py-3 rounded-2xl bg-purple-300 hover:bg-purple-400 text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Simpan Task</button>
@@ -4397,6 +5130,79 @@ function App() {
         </div>
       )}
 
+      {showNotificationHistory && (
+        <div className={`fixed bottom-32 right-10 z-50 w-[min(360px,calc(100vw-2rem))] rounded-[1.5rem] border p-4 shadow-2xl backdrop-blur-xl ${
+          theme === 'dark'
+            ? 'bg-slate-950/90 border-indigo-800/70 text-white'
+            : 'bg-white/92 border-purple-100 text-slate-900'
+        }`}>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-[#8f75d8]/15 flex items-center justify-center shrink-0">
+                <img src={dyataskMiniLogo} alt="DyaTask" className="w-7 h-7 object-contain" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-extrabold">Riwayat Notifikasi</h4>
+                <p className="text-[11px] text-slate-400">{notifications.length} pesan tersimpan sementara</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowNotificationHistory(false)}
+              className="w-8 h-8 rounded-full border border-purple-100 dark:border-indigo-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto pr-1 space-y-2">
+            {notifications.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-800 p-5 text-center">
+                <img src={dyataskMiniLogo} alt="" className="w-10 h-10 object-contain mx-auto opacity-70 mb-2" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">Belum ada notifikasi baru.</p>
+                <p className="text-[11px] text-slate-400 mt-1">Event Google Calendar baru akan muncul di sini saat terdeteksi.</p>
+              </div>
+            ) : notifications.map(item => (
+              <div key={item.id} className={`rounded-2xl border p-3 ${
+                theme === 'dark'
+                  ? 'bg-indigo-950/35 border-indigo-800/60'
+                  : 'bg-purple-50/45 border-purple-100'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <img src={dyataskMiniLogo} alt="" className="w-8 h-8 object-contain shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-bold truncate">{item.title}</p>
+                      <button
+                        type="button"
+                        onClick={() => removeNotificationById(item.id)}
+                        className="text-[11px] font-bold text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 leading-relaxed line-clamp-2">{item.body}</p>
+                    <p className="text-[10px] text-[#8f75d8] mt-2 font-semibold">{new Date(item.createdAt).toLocaleTimeString('id-ID')}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            disabled={notifications.length === 0}
+            onClick={() => {
+              setNotifications([])
+              setShowNotificationList(false)
+            }}
+            className="mt-3 w-full py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
+          >
+            Clear Notification
+          </button>
+        </div>
+      )}
+
       {/* 🚀 FLOATING OVERLAY QUICK ADD LAUNCHER */}
       {floatingQuickAdd && (
         <div className="floating-overlay-widget glass-panel p-4 glow-primary">
@@ -4427,7 +5233,7 @@ function App() {
               <span className="text-[9px] text-purple-400 dark:text-purple-300">Disinkronkan ke Kalender & Sheets</span>
               <button 
                 type="submit"
-                className="px-3.5 py-1.5 bg-purple-600 text-white font-bold text-[10px] rounded-lg hover:bg-purple-700 transition-colors"
+                className="px-3.5 py-1.5 bg-[#8f75d8] text-white font-bold text-[10px] rounded-lg hover:bg-[#8069c8] transition-colors"
               >
                 Simpan Cepat
               </button>
@@ -4538,7 +5344,7 @@ function App() {
                 <button 
                   type="submit"
                   disabled={uploadingAvatar}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-purple-600/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 py-2.5 bg-gradient-to-r from-[#8f75d8] to-[#8069c8] hover:from-[#8069c8] hover:to-[#745ebb] text-white font-bold rounded-lg text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#8f75d8]/40 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <User size={14} />
                   {uploadingAvatar ? 'Menyimpan...' : 'Simpan'}
@@ -4553,10 +5359,20 @@ function App() {
       {/* 🚀 FLOATING WIDGET BUTTON ON MACBOOK PREVIEW */}
       {floatingMenuEnabled && (
         <button 
-          onClick={() => setFloatingQuickAdd(!floatingQuickAdd)}
-          className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center shadow-2xl hover:shadow-purple-500/30 glow-primary active:scale-95 transition-all z-40"
+          type="button"
+          onClick={() => {
+            setFloatingQuickAdd(false)
+            setShowNotificationHistory(prev => !prev)
+          }}
+          aria-label="Buka riwayat notifikasi"
+          className="fixed bottom-12 right-14 w-20 h-20 flex items-center justify-center active:scale-95 transition-all z-40"
         >
-          <Sparkles size={24} />
+          <img src={dyataskMiniLogo} alt="" className="w-20 h-20 object-contain drop-shadow-xl hover:scale-105 transition-transform" />
+          {notifications.length > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold flex items-center justify-center border-2 border-white dark:border-slate-950">
+              {Math.min(notifications.length, 9)}
+            </span>
+          )}
         </button>
       )}
 

@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   /* Fonts */
   --font-sans: 'Plus Jakarta Sans', 'Nunito', 'Avenir Next', Avenir, system-ui, -apple-system, sans-serif;
@@ -169,7 +173,7 @@ a:hover {
 /* Flex & Grid layouts */
 .layout-grid {
   display: grid;
-  grid-template-columns: 338px 1fr;
+  grid-template-columns: 300px 1fr;
   min-height: 100vh;
   width: 100vw;
 }

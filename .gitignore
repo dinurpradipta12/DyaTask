@@ -25,3 +25,6 @@ dist-electron
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase local cache
+supabase/.temp/

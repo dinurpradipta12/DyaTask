@@ -4,11 +4,21 @@ const fs = require('fs');
 
 let mainWindow;
 let tray;
+const APP_NAME = 'Dyatask Manager - Superapp for Freelancer';
+
+function getTrayIconPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'minilogo-dyatask.png');
+  }
+
+  return path.join(__dirname, '../src/minilogo-dyatask.png');
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: APP_NAME,
     titleBarStyle: 'hiddenInset', // Mac style title bar
     backgroundColor: '#09070F', // Amethyst dark theme matching background
     show: false,
@@ -95,9 +105,9 @@ app.whenReady().then(() => {
   });
 
   // Setup System Tray
-  tray = new Tray(path.join(__dirname, '../public/favicon.svg')); // Using mock icon
+  tray = new Tray(getTrayIconPath());
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Buka DyaTask Manager', click: () => { if (mainWindow) mainWindow.show(); else createWindow(); } },
+    { label: `Buka ${APP_NAME}`, click: () => { if (mainWindow) mainWindow.show(); else createWindow(); } },
     { label: 'Uji Alarm / Alert', click: () => {
         if (mainWindow) mainWindow.webContents.send('trigger-alert-demo');
       } 
@@ -105,7 +115,7 @@ app.whenReady().then(() => {
     { type: 'separator' },
     { label: 'Keluar', click: () => { app.quit(); } }
   ]);
-  tray.setToolTip('DyaTask Manager');
+  tray.setToolTip(APP_NAME);
   tray.setContextMenu(contextMenu);
 
   // Default autostart enabled
