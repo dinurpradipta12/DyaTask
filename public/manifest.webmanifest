@@ -1,0 +1,19 @@
+{
+  "name": "Dyatask Manager - Superapp for Freelancer",
+  "short_name": "DyaTask",
+  "description": "DyaTask Manager untuk task, kalender, project, dan notifikasi freelancer.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F3F1F8",
+  "theme_color": "#8F75D8",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "964x945",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
