@@ -2703,9 +2703,8 @@ function App() {
           </section>
 
           <section className="auth-form-panel">
-            <div className="auth-brand-pill">
+            <div className="auth-logo-mark">
               <img src={dyataskMiniLogo} alt="DyaTask" />
-              <span>{appHeaderTitle || 'Dyatask Manager'}</span>
             </div>
 
             <div className="auth-copy">
@@ -2776,11 +2775,6 @@ function App() {
                     Processing...
                   </>
                 ) : authTab === 'signin' ? 'Log in' : 'Sign up'}
-              </button>
-
-              <button type="button" className="auth-google-button" disabled>
-                <span>G</span>
-                Google login coming soon
               </button>
             </form>
 
