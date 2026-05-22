@@ -2656,7 +2656,7 @@ function App() {
     }
   }, [isProfileModalOpen, session])
 
-  if (isPublicBookingMode && publicBookingToken === shareToken) {
+  if (isPublicBookingMode) {
     if (publicBookingSuccess && publicBookingSummary) {
       const waNumber = '6289619941101'
       const waText = [
