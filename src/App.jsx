@@ -2674,27 +2674,29 @@ function App() {
       const waLink = `https://wa.me/${waNumber}?text=${encodeURIComponent(waText)}`
 
       return (
-        <div className="min-h-screen bg-[#07070f] text-white flex items-center justify-center p-6">
-          <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-zinc-900/90 shadow-2xl p-8 text-center">
-            <h1 className="text-2xl font-semibold mb-2">Reservasi Berhasil Dikirim</h1>
-            <p className="text-zinc-300 text-sm mb-6">
+        <div className="min-h-screen bg-[radial-gradient(circle_at_15%_20%,rgba(143,117,216,0.26),transparent_30%),radial-gradient(circle_at_85%_70%,rgba(255,229,76,0.18),transparent_26%),linear-gradient(135deg,#fbfaff_0%,#f2edff_48%,#fff8df_100%)] text-[#40375f] flex items-center justify-center p-6 relative overflow-hidden">
+          <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-[#8f75d8]/20 blur-3xl"></div>
+          <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-[#bba7ff]/25 blur-3xl"></div>
+          <div className="relative w-full max-w-xl rounded-[2rem] border border-white/70 bg-white/72 backdrop-blur-2xl shadow-2xl shadow-purple-200/50 p-8 text-center">
+            <h1 className="text-2xl font-semibold mb-2 text-[#3f365f]">Reservasi Berhasil Dikirim</h1>
+            <p className="text-purple-500 text-sm mb-6">
               Terima kasih, reservasi Anda sudah tercatat. Tim kami akan menindaklanjuti sesuai jadwal yang dipilih.
             </p>
-            <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-left text-sm mb-6">
-              <p><span className="text-zinc-400">Nama:</span> {publicBookingSummary.clientName}</p>
-              <p><span className="text-zinc-400">Topik:</span> {publicBookingSummary.title}</p>
-              <p><span className="text-zinc-400">WhatsApp:</span> {publicBookingSummary.whatsapp || '-'}</p>
-              <p><span className="text-zinc-400">Jadwal:</span> {publicBookingSummary.date} • {publicBookingSummary.time} WIB</p>
+            <div className="rounded-2xl border border-purple-100 bg-white/70 p-4 text-left text-sm mb-6 shadow-sm">
+              <p><span className="text-purple-400">Nama:</span> {publicBookingSummary.clientName}</p>
+              <p><span className="text-purple-400">Topik:</span> {publicBookingSummary.title}</p>
+              <p><span className="text-purple-400">WhatsApp:</span> {publicBookingSummary.whatsapp || '-'}</p>
+              <p><span className="text-purple-400">Jadwal:</span> {publicBookingSummary.date} • {publicBookingSummary.time} WIB</p>
             </div>
             <a
               href={waLink}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center justify-center w-full py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+              className="inline-flex items-center justify-center w-full py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white font-semibold shadow-lg shadow-purple-300/40"
             >
               Lanjutkan ke WhatsApp Admin
             </a>
-            <p className="text-[12px] text-zinc-400 mt-3">
+            <p className="text-[12px] text-purple-400 mt-3">
               Setelah klik tombol, chat WhatsApp akan terisi otomatis sebagai notifikasi reservasi.
             </p>
           </div>
@@ -2710,41 +2712,48 @@ function App() {
     })
 
     return (
-      <div className="min-h-screen bg-[#07070f] text-white flex items-center justify-center p-6">
-        <div className="w-full max-w-6xl rounded-2xl border border-white/10 bg-zinc-900/90 shadow-2xl overflow-hidden">
-          <div className="grid grid-cols-1 lg:grid-cols-12">
-            <div className="lg:col-span-4 p-6 lg:p-7 border-r border-white/10">
-              <h1 className="text-2xl font-semibold mb-1">1on1 Consultation</h1>
-              <p className="text-sm text-zinc-400 mb-6">Nayanika Projects</p>
+      <div className="min-h-screen bg-[radial-gradient(circle_at_12%_18%,rgba(143,117,216,0.28),transparent_30%),radial-gradient(circle_at_88%_12%,rgba(198,181,255,0.34),transparent_24%),radial-gradient(circle_at_82%_82%,rgba(255,229,76,0.2),transparent_26%),linear-gradient(135deg,#fbfaff_0%,#f0ebff_48%,#fff8e2_100%)] text-[#463d66] flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute -top-28 left-20 w-80 h-80 rounded-full bg-[#8f75d8]/20 blur-3xl"></div>
+        <div className="absolute bottom-8 -right-24 w-[26rem] h-[26rem] rounded-full bg-[#bca8ff]/25 blur-3xl"></div>
+        <div className="absolute top-1/2 left-1/2 w-[34rem] h-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/38 blur-3xl"></div>
+        <div className="relative w-full max-w-6xl rounded-[2.25rem] border border-white/70 bg-white/58 shadow-2xl shadow-purple-200/45 backdrop-blur-2xl p-4 lg:p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-4 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white/72 shadow-lg shadow-purple-100/35 backdrop-blur-xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100/80 text-purple-600 text-[11px] font-semibold mb-5">
+                <span className="w-2 h-2 rounded-full bg-[#8f75d8]"></span>
+                Public Booking
+              </div>
+              <h1 className="text-3xl font-semibold mb-1 text-[#40375f]">1on1 Consultation</h1>
+              <p className="text-sm text-purple-400 mb-6">Nayanika Projects</p>
               <form onSubmit={handleAddBooking} className="space-y-3">
-                <input type="text" placeholder="Nama lengkap" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-blue-500/40 bg-zinc-900 text-sm focus:outline-none focus:border-blue-400" required />
-                <input type="email" placeholder="Email aktif" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-blue-500/40 bg-zinc-900 text-sm focus:outline-none focus:border-blue-400" />
-                <input type="text" placeholder="Nomor WhatsApp" value={bookingWhatsapp} onChange={(e) => setBookingWhatsapp(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-blue-500/40 bg-zinc-900 text-sm focus:outline-none focus:border-blue-400" />
-                <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-blue-500/40 bg-zinc-900 text-sm focus:outline-none focus:border-blue-400" required />
-                <div className="pt-3 border-t border-white/10">
-                  <p className="text-xs text-zinc-400 mb-2">Tanggal terpilih: <span className="text-white font-semibold">{publicSelectedDateLabel}</span></p>
-                  <p className="text-xs text-zinc-400 mb-3">Waktu terpilih: <span className="text-white font-semibold">{bookingTime || '-'}</span></p>
-                  <button type="submit" disabled={!bookingTime || !availableTimeSlotsForSelectedDate.length} className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-semibold">
+                <input type="text" placeholder="Nama lengkap" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                <input type="email" placeholder="Email aktif" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
+                <input type="text" placeholder="Nomor WhatsApp" value={bookingWhatsapp} onChange={(e) => setBookingWhatsapp(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
+                <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                <div className="pt-4 border-t border-purple-100">
+                  <p className="text-xs text-purple-400 mb-2">Tanggal terpilih: <span className="text-[#40375f] font-semibold">{publicSelectedDateLabel}</span></p>
+                  <p className="text-xs text-purple-400 mb-4">Waktu terpilih: <span className="text-[#40375f] font-semibold">{bookingTime || '-'}</span></p>
+                  <button type="submit" disabled={!bookingTime || !availableTimeSlotsForSelectedDate.length} className="w-full py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-lg shadow-purple-300/40">
                     Kirim Reservasi
                   </button>
                 </div>
               </form>
-              <div className="mt-5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-                <p className="text-xs font-semibold text-amber-300 mb-2">Catatan / Ketentuan</p>
-                <p className="text-xs text-amber-100/90 whitespace-pre-line leading-relaxed">{publicBookingNotes}</p>
+              <div className="mt-5 rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-amber-700 mb-2">Catatan / Ketentuan</p>
+                <p className="text-xs text-amber-800/85 whitespace-pre-line leading-relaxed">{publicBookingNotes}</p>
               </div>
             </div>
 
-            <div className="lg:col-span-5 p-6 lg:p-7 border-r border-white/10">
+            <div className="lg:col-span-5 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white/64 shadow-lg shadow-purple-100/30 backdrop-blur-xl">
               <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xl font-semibold">Pick a date</h2>
+                <h2 className="text-xl font-semibold text-[#40375f]">Pick a date</h2>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-8 h-8 rounded-md border border-white/20 hover:border-white/40">‹</button>
-                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-8 h-8 rounded-md border border-white/20 hover:border-white/40">›</button>
+                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white/70 hover:bg-purple-50 text-purple-600 shadow-sm">‹</button>
+                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white/70 hover:bg-purple-50 text-purple-600 shadow-sm">›</button>
                 </div>
               </div>
-              <p className="text-lg mb-4">{publicMonthLabel}</p>
-              <div className="grid grid-cols-7 text-center text-xs text-zinc-400 mb-2">
+              <p className="text-lg mb-4 text-[#40375f]">{publicMonthLabel}</p>
+              <div className="grid grid-cols-7 text-center text-xs text-purple-400 mb-2">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <span key={d}>{d}</span>)}
               </div>
               <div className="grid grid-cols-7 gap-1.5">
@@ -2761,10 +2770,10 @@ function App() {
                       onClick={() => setBookingDate(dayItem.dateStr)}
                       className={`h-10 rounded-full text-sm transition-all ${
                         isSelected
-                          ? 'bg-red-500 text-white font-bold'
+                          ? 'bg-[#8f75d8] text-white font-bold shadow-lg shadow-purple-300/50'
                           : isDisabled
-                            ? 'text-zinc-600 cursor-not-allowed'
-                            : 'hover:bg-zinc-800 text-zinc-200'
+                            ? 'text-purple-200 cursor-not-allowed'
+                            : 'hover:bg-purple-100 text-[#5a4d82]'
                       }`}
                     >
                       {dayItem.date.getDate()}
@@ -2772,17 +2781,17 @@ function App() {
                   )
                 })}
               </div>
-              <div className="mt-6 rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300">
+              <div className="mt-6 rounded-2xl border border-purple-100 bg-white/58 px-4 py-3 text-sm text-purple-500 shadow-sm">
                 Time zone: {timezoneLabel}
               </div>
-              <p className="mt-2 text-[11px] text-zinc-400">
+              <p className="mt-2 text-[11px] text-purple-400">
                 Waktu dan jam reservasi akan otomatis disesuaikan dengan zona waktu masing-masing pengguna.
               </p>
             </div>
 
-            <div className="lg:col-span-3 p-6 lg:p-7">
-              <h3 className="text-lg font-semibold mb-1">{publicSelectedDateLabel}</h3>
-              <p className="text-xs text-zinc-400 mb-4">Pilih jam yang masih tersedia</p>
+            <div className="lg:col-span-3 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white/70 shadow-lg shadow-purple-100/35 backdrop-blur-xl">
+              <h3 className="text-lg font-semibold mb-1 text-[#40375f]">{publicSelectedDateLabel}</h3>
+              <p className="text-xs text-purple-400 mb-4">Pilih jam yang masih tersedia</p>
               <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
                 {availableTimeSlotsForSelectedDate.map(slot => (
                   <button
@@ -2791,15 +2800,15 @@ function App() {
                     onClick={() => setBookingTime(slot)}
                     className={`w-full py-3 rounded-md border text-sm font-semibold transition-all ${
                       bookingTime === slot
-                        ? 'border-blue-400 bg-blue-500/20 text-blue-300'
-                        : 'border-blue-500/40 hover:border-blue-400 text-blue-300'
+                        ? 'border-[#8f75d8] bg-[#8f75d8] text-white shadow-md shadow-purple-300/40'
+                        : 'border-purple-100 bg-white/72 hover:bg-purple-50 text-purple-600'
                     }`}
                   >
                     {slot}
                   </button>
                 ))}
                 {!availableTimeSlotsForSelectedDate.length && (
-                  <div className="text-xs text-amber-400 border border-amber-500/30 rounded-md px-3 py-2">
+                  <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-2xl px-3 py-2">
                     Tidak ada slot tersisa di tanggal ini.
                   </div>
                 )}
