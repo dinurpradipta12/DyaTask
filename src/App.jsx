@@ -2677,12 +2677,12 @@ function App() {
         <div className="min-h-screen bg-[radial-gradient(circle_at_15%_20%,rgba(143,117,216,0.26),transparent_30%),radial-gradient(circle_at_85%_70%,rgba(255,229,76,0.18),transparent_26%),linear-gradient(135deg,#fbfaff_0%,#f2edff_48%,#fff8df_100%)] text-[#40375f] flex items-center justify-center p-6 relative overflow-hidden">
           <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-[#8f75d8]/20 blur-3xl"></div>
           <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-[#bba7ff]/25 blur-3xl"></div>
-          <div className="relative w-full max-w-xl rounded-[2rem] border border-white/70 bg-white/72 backdrop-blur-2xl shadow-2xl shadow-purple-200/50 p-8 text-center">
+          <div className="relative w-full max-w-xl rounded-[2rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/50 p-8 text-center">
             <h1 className="text-2xl font-semibold mb-2 text-[#3f365f]">Reservasi Berhasil Dikirim</h1>
             <p className="text-purple-500 text-sm mb-6">
               Terima kasih, reservasi Anda sudah tercatat. Tim kami akan menindaklanjuti sesuai jadwal yang dipilih.
             </p>
-            <div className="rounded-2xl border border-purple-100 bg-white/70 p-4 text-left text-sm mb-6 shadow-sm">
+            <div className="rounded-2xl border border-purple-100 bg-white p-4 text-left text-sm mb-6 shadow-sm">
               <p><span className="text-purple-400">Nama:</span> {publicBookingSummary.clientName}</p>
               <p><span className="text-purple-400">Topik:</span> {publicBookingSummary.title}</p>
               <p><span className="text-purple-400">WhatsApp:</span> {publicBookingSummary.whatsapp || '-'}</p>
@@ -2716,9 +2716,9 @@ function App() {
         <div className="absolute -top-28 left-20 w-80 h-80 rounded-full bg-[#8f75d8]/20 blur-3xl"></div>
         <div className="absolute bottom-8 -right-24 w-[26rem] h-[26rem] rounded-full bg-[#bca8ff]/25 blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 w-[34rem] h-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/38 blur-3xl"></div>
-        <div className="relative w-full max-w-6xl rounded-[2.25rem] border border-white/70 bg-white/58 shadow-2xl shadow-purple-200/45 backdrop-blur-2xl p-4 lg:p-5">
+        <div className="relative w-full max-w-6xl rounded-[2.25rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/45 p-4 lg:p-5">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-4 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white/72 shadow-lg shadow-purple-100/35 backdrop-blur-xl">
+            <div className="lg:col-span-4 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/35">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100/80 text-purple-600 text-[11px] font-semibold mb-5">
                 <span className="w-2 h-2 rounded-full bg-[#8f75d8]"></span>
                 Public Booking
@@ -2726,10 +2726,10 @@ function App() {
               <h1 className="text-3xl font-semibold mb-1 text-[#40375f]">1on1 Consultation</h1>
               <p className="text-sm text-purple-400 mb-6">Nayanika Projects</p>
               <form onSubmit={handleAddBooking} className="space-y-3">
-                <input type="text" placeholder="Nama lengkap" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
-                <input type="email" placeholder="Email aktif" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
-                <input type="text" placeholder="Nomor WhatsApp" value={bookingWhatsapp} onChange={(e) => setBookingWhatsapp(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
-                <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white/78 text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                <input type="text" placeholder="Nama lengkap" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                <input type="email" placeholder="Email aktif" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
+                <input type="text" placeholder="Nomor WhatsApp" value={bookingWhatsapp} onChange={(e) => setBookingWhatsapp(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
+                <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
                 <div className="pt-4 border-t border-purple-100">
                   <p className="text-xs text-purple-400 mb-2">Tanggal terpilih: <span className="text-[#40375f] font-semibold">{publicSelectedDateLabel}</span></p>
                   <p className="text-xs text-purple-400 mb-4">Waktu terpilih: <span className="text-[#40375f] font-semibold">{bookingTime || '-'}</span></p>
@@ -2744,12 +2744,12 @@ function App() {
               </div>
             </div>
 
-            <div className="lg:col-span-5 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white/64 shadow-lg shadow-purple-100/30 backdrop-blur-xl">
+            <div className="lg:col-span-5 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/30">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-xl font-semibold text-[#40375f]">Pick a date</h2>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white/70 hover:bg-purple-50 text-purple-600 shadow-sm">‹</button>
-                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white/70 hover:bg-purple-50 text-purple-600 shadow-sm">›</button>
+                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white hover:bg-purple-50 text-purple-600 shadow-sm">‹</button>
+                  <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white hover:bg-purple-50 text-purple-600 shadow-sm">›</button>
                 </div>
               </div>
               <p className="text-lg mb-4 text-[#40375f]">{publicMonthLabel}</p>
@@ -2781,7 +2781,7 @@ function App() {
                   )
                 })}
               </div>
-              <div className="mt-6 rounded-2xl border border-purple-100 bg-white/58 px-4 py-3 text-sm text-purple-500 shadow-sm">
+              <div className="mt-6 rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-purple-500 shadow-sm">
                 Time zone: {timezoneLabel}
               </div>
               <p className="mt-2 text-[11px] text-purple-400">
@@ -2789,7 +2789,7 @@ function App() {
               </p>
             </div>
 
-            <div className="lg:col-span-3 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white/70 shadow-lg shadow-purple-100/35 backdrop-blur-xl">
+            <div className="lg:col-span-3 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/35">
               <h3 className="text-lg font-semibold mb-1 text-[#40375f]">{publicSelectedDateLabel}</h3>
               <p className="text-xs text-purple-400 mb-4">Pilih jam yang masih tersedia</p>
               <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
@@ -2801,7 +2801,7 @@ function App() {
                     className={`w-full py-3 rounded-md border text-sm font-semibold transition-all ${
                       bookingTime === slot
                         ? 'border-[#8f75d8] bg-[#8f75d8] text-white shadow-md shadow-purple-300/40'
-                        : 'border-purple-100 bg-white/72 hover:bg-purple-50 text-purple-600'
+                        : 'border-purple-100 bg-white hover:bg-purple-50 text-purple-600'
                     }`}
                   >
                     {slot}
@@ -3566,7 +3566,7 @@ function App() {
                   </div>
                   <button
                     onClick={() => setShowNewFolderModal(true)}
-                    className="px-4 py-2.5 rounded-xl bg-white/70 dark:bg-indigo-950/40 border border-purple-200/60 dark:border-indigo-900 text-purple-700 dark:text-purple-300 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm"
+                    className="px-4 py-2.5 rounded-xl bg-white dark:bg-indigo-950/40 border border-purple-200/60 dark:border-indigo-900 text-purple-700 dark:text-purple-300 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm"
                   >
                     <Folder size={13} />
                     New Folder Task
@@ -3723,7 +3723,7 @@ function App() {
                                       {childSubtasks.length > 0 && (
                                         <div className="mt-3 ml-9 space-y-2">
                                           {childSubtasks.map(subtask => (
-                                            <div key={subtask.id} className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-indigo-950/30 border border-purple-100/50 dark:border-indigo-900/40 px-3 py-2">
+                                            <div key={subtask.id} className="flex items-center gap-2 rounded-lg bg-white dark:bg-indigo-950/30 border border-purple-100/50 dark:border-indigo-900/40 px-3 py-2">
                                               <button type="button" onClick={() => toggleTaskStatus(subtask.id)} className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${subtask.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-purple-300 hover:border-purple-500'}`}>
                                                 {subtask.status === 'done' && <Check size={9} strokeWidth={3} />}
                                               </button>
@@ -4797,7 +4797,7 @@ function App() {
                         value={appHeaderTagline}
                         onChange={(e) => setAppHeaderTagline(e.target.value)}
                         placeholder="Contoh: Modern Soft Minimalist Amethyst"
-                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
                       />
                     </div>
                     <div>
@@ -4806,7 +4806,7 @@ function App() {
                         value={appHeaderTitle}
                         onChange={(e) => setAppHeaderTitle(e.target.value)}
                         placeholder="Contoh: Dyatask Manager"
-                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
                       />
                     </div>
                   </div>
@@ -4850,7 +4850,7 @@ function App() {
                           type="file"
                           accept="image/*"
                           onChange={handleLoginVisualUpload}
-                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#8f75d8] file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
+                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#8f75d8] file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
                         />
                       </label>
                       <p className="text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
@@ -4884,11 +4884,11 @@ function App() {
                           value={publicShareBaseUrl}
                           onChange={(e) => setPublicShareBaseUrl(e.target.value)}
                           placeholder="https://booking.domainkamu.com"
-                          className="w-full px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-[10px] focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                          className="w-full px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-[10px] focus:outline-none focus:ring-2 focus:ring-purple-300/50"
                         />
                       </div>
                       <div className="flex gap-2">
-                        <input readOnly value={sharedFormLink} className="flex-1 px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-[10px]" />
+                        <input readOnly value={sharedFormLink} className="flex-1 px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-[10px]" />
                         <button type="button" onClick={copyShareLink} className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-[10px] font-bold inline-flex items-center gap-1">
                           <Copy size={10} />
                           {copiedShareLink ? 'Tersalin' : 'Copy'}
@@ -4905,7 +4905,7 @@ function App() {
                         value={publicBookingNotes}
                         onChange={(e) => setPublicBookingNotes(e.target.value)}
                         rows={5}
-                        className="w-full px-3 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs resize-none"
+                        className="w-full px-3 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs resize-none"
                         placeholder="Tulis ketentuan, pengumuman, atau catatan yang tampil di form publik..."
                       />
                     </div>
@@ -4968,7 +4968,7 @@ function App() {
                               }
                             }
                           }))}
-                          className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs"
+                          className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
                         />
                         <input
                           type="time"
@@ -4983,9 +4983,9 @@ function App() {
                               }
                             }
                           }))}
-                          className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs"
+                          className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
                         />
-                        <select value={bookingAvailability.slotMinutes} onChange={(e) => setBookingAvailability(prev => ({ ...prev, slotMinutes: Number(e.target.value) }))} className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs">
+                        <select value={bookingAvailability.slotMinutes} onChange={(e) => setBookingAvailability(prev => ({ ...prev, slotMinutes: Number(e.target.value) }))} className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs">
                           <option value={15}>15m</option>
                           <option value={30}>30m</option>
                           <option value={60}>60m</option>
