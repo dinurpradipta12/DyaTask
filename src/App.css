@@ -38,6 +38,28 @@
   isolation: isolate;
 }
 
+.auth-visual-panel.has-custom-visual {
+  background: #f4f1fb;
+}
+
+.auth-custom-visual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+}
+
+.auth-visual-panel.has-custom-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 56%, rgba(26, 22, 38, 0.18));
+  z-index: 2;
+  pointer-events: none;
+}
+
 .desk-sun,
 .desk-wall-card,
 .desk-lamp,
@@ -368,6 +390,10 @@
   border: 1px solid rgba(255, 255, 255, 0.68);
   backdrop-filter: blur(18px);
   z-index: 6;
+}
+
+.auth-visual-panel.has-custom-visual .auth-visual-caption {
+  z-index: 7;
 }
 
 .auth-visual-caption img {

@@ -141,6 +141,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [appHeaderTagline, setAppHeaderTagline] = useState(() => localStorage.getItem('dyatask_header_tagline') || 'Modern Soft Minimalist Amethyst')
   const [appHeaderTitle, setAppHeaderTitle] = useState(() => localStorage.getItem('dyatask_header_title') || 'Dyatask Manager - Superapp for Freelancer')
+  const [loginVisualImage, setLoginVisualImage] = useState(() => localStorage.getItem('dyatask_login_visual_image') || '')
   const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem('dyatask_theme')
     return savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark'
@@ -400,6 +401,38 @@ function App() {
     localStorage.setItem('dyatask_header_title', appHeaderTitle)
     document.title = safeTitle
   }, [appHeaderTagline, appHeaderTitle])
+
+  useEffect(() => {
+    if (loginVisualImage) {
+      localStorage.setItem('dyatask_login_visual_image', loginVisualImage)
+    } else {
+      localStorage.removeItem('dyatask_login_visual_image')
+    }
+  }, [loginVisualImage])
+
+  const handleLoginVisualUpload = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      alert('File harus berupa gambar.')
+      event.target.value = ''
+      return
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Ukuran gambar maksimal 2MB agar tetap ringan saat dibuka.')
+      event.target.value = ''
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setLoginVisualImage(String(reader.result || ''))
+      event.target.value = ''
+    }
+    reader.readAsDataURL(file)
+  }
 
   const openIntegrationModal = (key) => {
     setIntegrationFormData(integrationConfigs[key] || {})
@@ -2675,48 +2708,54 @@ function App() {
     return (
       <div className="auth-page">
         <div className="auth-shell">
-          <section className="auth-visual-panel" aria-hidden="true">
-            <div className="desk-sun"></div>
-            <div className="desk-wall-card desk-wall-card-one"></div>
-            <div className="desk-wall-card desk-wall-card-two"></div>
-            <div className="desk-lamp">
-              <span></span>
-              <i></i>
-              <b></b>
-            </div>
-            <div className="desk-plant">
-              <span></span>
-              <span></span>
-              <span></span>
-              <i></i>
-            </div>
-            <div className="desk-board">
-              <div className="desk-board-top">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <div className="desk-board-line"></div>
-              <div className="desk-board-line short"></div>
-              <div className="desk-board-task done"></div>
-              <div className="desk-board-task"></div>
-            </div>
-            <div className="desk-laptop">
-              <div className="desk-laptop-screen">
-                <div className="desk-window-bar"></div>
-                <div className="desk-chart">
+          <section className={`auth-visual-panel ${loginVisualImage ? 'has-custom-visual' : ''}`} aria-hidden="true">
+            {loginVisualImage ? (
+              <img src={loginVisualImage} alt="" className="auth-custom-visual" />
+            ) : (
+              <>
+                <div className="desk-sun"></div>
+                <div className="desk-wall-card desk-wall-card-one"></div>
+                <div className="desk-wall-card desk-wall-card-two"></div>
+                <div className="desk-lamp">
+                  <span></span>
+                  <i></i>
+                  <b></b>
+                </div>
+                <div className="desk-plant">
                   <span></span>
                   <span></span>
                   <span></span>
+                  <i></i>
+                </div>
+                <div className="desk-board">
+                  <div className="desk-board-top">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <div className="desk-board-line"></div>
+                  <div className="desk-board-line short"></div>
+                  <div className="desk-board-task done"></div>
+                  <div className="desk-board-task"></div>
+                </div>
+                <div className="desk-laptop">
+                  <div className="desk-laptop-screen">
+                    <div className="desk-window-bar"></div>
+                    <div className="desk-chart">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div className="desk-laptop-base"></div>
+                </div>
+                <div className="desk-coffee">
                   <span></span>
                 </div>
-              </div>
-              <div className="desk-laptop-base"></div>
-            </div>
-            <div className="desk-coffee">
-              <span></span>
-            </div>
-            <div className="desk-pencil"></div>
+                <div className="desk-pencil"></div>
+              </>
+            )}
             <div className="auth-visual-caption">
               <img src={dyataskMiniLogo} alt="" />
               <div>
@@ -4656,6 +4695,53 @@ function App() {
                     </div>
                   </div>
                   <p className="text-[10px] text-purple-400 dark:text-purple-300">Perubahan tersimpan otomatis dan tetap aktif setelah refresh.</p>
+                </div>
+
+                <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold flex items-center gap-2">
+                        <FileText size={15} className="text-purple-500" />
+                        Gambar Login
+                      </h4>
+                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Upload gambar untuk mengganti visual kiri pada halaman login.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLoginVisualImage('')}
+                      disabled={!loginVisualImage}
+                      className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-indigo-800 text-[10px] font-bold text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-indigo-900/40 disabled:opacity-45 disabled:cursor-not-allowed transition-all"
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-[180px_1fr] gap-4 items-center">
+                    <div className="h-44 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-white/60 dark:bg-indigo-950/30 overflow-hidden flex items-center justify-center">
+                      {loginVisualImage ? (
+                        <img src={loginVisualImage} alt="Preview login visual" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center px-4">
+                          <img src={dyataskMiniLogo} alt="" className="w-12 h-12 object-contain mx-auto opacity-80 mb-2" />
+                          <p className="text-[11px] text-purple-400 dark:text-purple-300">Default desk illustration aktif.</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <label className="block">
+                        <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Upload Gambar</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLoginVisualUpload}
+                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-indigo-950/30 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#8f75d8] file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
+                        />
+                      </label>
+                      <p className="text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
+                        Rekomendasi rasio 4:5 atau 1:1, ukuran maksimal 2MB. Gambar disimpan lokal di browser/app, jadi aman untuk personalisasi perangkat ini.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
