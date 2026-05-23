@@ -3860,25 +3860,25 @@ function App() {
 
           {/* TAB CONTENT: 3. BOOKING CALENDAR & APPOINTMENTS */}
           {activeTab === 'calendar' && (
-            <div>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="rounded-[2rem] border border-purple-100/80 bg-[radial-gradient(circle_at_12%_16%,rgba(143,117,216,0.16),transparent_26%),radial-gradient(circle_at_90%_8%,rgba(255,229,76,0.16),transparent_20%),linear-gradient(135deg,#fbfaff_0%,#f4f0ff_48%,#ffffff_100%)] p-4 lg:p-5 shadow-xl shadow-purple-100/50">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 
                 {/* Left pane: Calendar Matrix (May 2026) */}
-                <div className="lg:col-span-2 glass-panel p-6">
+                <div className="lg:col-span-2 rounded-[1.75rem] border border-purple-100 bg-white p-5 lg:p-6 shadow-lg shadow-purple-100/40">
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h3 className="text-lg font-bold">Kalender Reservasi Pertemuan</h3>
-                      <p className="text-xs text-purple-400 dark:text-purple-300 capitalize">{calendarTitle} - Hubungan Realtime Google & Notion</p>
+                      <h3 className="text-lg font-bold text-[#4f4574]">Kalender Reservasi Pertemuan</h3>
+                      <p className="text-xs text-[#8f75d8] capitalize">{calendarTitle} - Hubungan Realtime Google & Notion</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="px-2 py-1 rounded-lg border border-purple-200 dark:border-indigo-900 text-xs">◀</button>
-                      <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3 py-1 rounded-lg bg-[#8f75d8] text-white text-xs font-bold">Hari Ini</button>
-                      <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="px-2 py-1 rounded-lg border border-purple-200 dark:border-indigo-900 text-xs">▶</button>
+                      <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="px-2.5 py-1.5 rounded-xl border border-purple-200 bg-white text-xs text-[#4f4574] shadow-sm hover:bg-purple-50">◀</button>
+                      <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3.5 py-1.5 rounded-xl bg-[#8f75d8] text-white text-xs font-bold shadow-sm hover:bg-[#8069c8]">Hari Ini</button>
+                      <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="px-2.5 py-1.5 rounded-xl border border-purple-200 bg-white text-xs text-[#4f4574] shadow-sm hover:bg-purple-50">▶</button>
                     </div>
                   </div>
 
                       {/* Day Names Row */}
-                      <div className="grid grid-cols-7 gap-1 text-center font-bold text-xs text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-3">
+                      <div className="grid grid-cols-7 gap-2 text-center font-bold text-xs text-[#a88cff] uppercase tracking-widest mb-3">
                         {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(d => <span key={d}>{d}</span>)}
                       </div>
 
@@ -3905,7 +3905,7 @@ function App() {
                               }}
                             >
                               <div className="flex justify-between items-start">
-                                <span className={`text-xs ${isToday ? 'text-purple-600 dark:text-purple-300' : 'text-purple-800 dark:text-purple-300'}`}>{dayNumber}</span>
+                                <span className={`text-xs ${isToday ? 'text-[#6f3df3]' : 'text-[#5d4a98]'}`}>{dayNumber}</span>
                                 {isToday && <span className="w-1.5 h-1.5 rounded-full bg-[#8f75d8]"></span>}
                               </div>
 	                              {hasAppt && (
@@ -3918,7 +3918,7 @@ function App() {
 	                                        e.stopPropagation()
 	                                        setSelectedCalendarDate(dateStr)
 	                                      }}
-	                                      className="text-[8px] bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block w-full text-left"
+	                                      className="text-[8px] bg-red-50 text-red-600 px-1.5 py-1 rounded-lg truncate font-bold uppercase tracking-wider block w-full text-left"
 	                                    >
 	                                      Libur • {holiday.title}
 	                                    </button>
@@ -3931,7 +3931,7 @@ function App() {
 	                                        e.stopPropagation()
 	                                        setSelectedCalendarDate(dateStr)
 	                                      }}
-	                                      className="text-[8px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block w-full text-left"
+	                                      className="text-[8px] bg-emerald-50 text-emerald-600 px-1.5 py-1 rounded-lg truncate font-bold uppercase tracking-wider block w-full text-left"
 	                                    >
 	                                      GCal • {event.title}
 	                                    </button>
@@ -3942,7 +3942,7 @@ function App() {
 	                                      e.stopPropagation()
 	                                      setSelectedCalendarDate(dateStr)
 	                                    }}
-	                                    className="text-[8px] bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 px-1 py-0.5 rounded truncate font-bold uppercase tracking-wider block w-full text-left hover:bg-purple-200 dark:hover:bg-purple-900/60"
+	                                    className="text-[8px] bg-[#eee7ff] text-[#6f3df3] px-1.5 py-1 rounded-lg truncate font-bold uppercase tracking-wider block w-full text-left hover:bg-[#e5dcff]"
 	                                  >
 	                                    {totalItems} Aktivitas
 	                                  </button>
@@ -3956,16 +3956,16 @@ function App() {
                     </div>
 
                 {/* Right pane: Reservation Form & Appointments lists */}
-                <div className="space-y-6">
+                <div className="space-y-4">
                   
                   {/* Reservation form */}
-                  {showBookingQuickForm && <div className="glass-panel p-6">
+                  {showBookingQuickForm && <div className="rounded-[1.5rem] border border-purple-100 bg-white p-5 shadow-lg shadow-purple-100/40">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-base font-bold flex items-center gap-2">
+                      <h3 className="text-base font-bold text-[#4f4574] flex items-center gap-2">
                         <Calendar size={18} className="text-purple-500" />
                         Jadwalkan Konsultasi Baru
                       </h3>
-                      <button type="button" onClick={() => setIsBookingFormExpanded(prev => !prev)} className="text-xs px-2 py-1 rounded-lg border border-purple-200 dark:border-indigo-900 flex items-center gap-1">
+                      <button type="button" onClick={() => setIsBookingFormExpanded(prev => !prev)} className="text-xs px-2.5 py-1 rounded-lg border border-purple-200 bg-white text-[#6f3df3] flex items-center gap-1">
                         {isBookingFormExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         {isBookingFormExpanded ? 'Hide' : 'Expand'}
                       </button>
@@ -3979,7 +3979,7 @@ function App() {
                           placeholder="Nama lengkap klien..."
                           value={bookingClient}
                           onChange={(e) => setBookingClient(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:border-purple-500"
+                          className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
                           required
                         />
                       </div>
@@ -3991,7 +3991,7 @@ function App() {
                           placeholder="client@mail.com"
                           value={bookingEmail}
                           onChange={(e) => setBookingEmail(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:border-purple-500"
+                          className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
                         />
                       </div>
 
@@ -4002,7 +4002,7 @@ function App() {
                           placeholder="Topik rapat..."
                           value={bookingTitle}
                           onChange={(e) => setBookingTitle(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:border-purple-500"
+                          className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
                           required
                         />
                       </div>
@@ -4015,7 +4015,7 @@ function App() {
                             value={bookingDate}
                             onChange={(e) => setBookingDate(e.target.value)}
                             min={todayString}
-                            className="w-full px-2 py-2 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:border-purple-500"
+                            className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
                           />
                         </div>
 
@@ -4024,7 +4024,7 @@ function App() {
                           <select
                             value={bookingTime}
                             onChange={(e) => setBookingTime(e.target.value)}
-                            className="w-full px-2 py-2 rounded-xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 text-xs focus:outline-none focus:border-purple-500"
+                            className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
                           >
                             {availableTimeSlotsForSelectedDate.map(slot => (
                               <option key={slot} value={slot}>{slot}</option>
@@ -4047,16 +4047,16 @@ function App() {
                   </div>}
 
                   {/* Active List */}
-                  <div className="glass-panel p-6">
-                    <h3 className="text-base font-bold mb-4">Agenda Terkonfirmasi</h3>
+                  <div className="rounded-[1.5rem] border border-purple-100 bg-white p-5 shadow-lg shadow-purple-100/40">
+                    <h3 className="text-base font-bold text-[#4f4574] mb-4">Agenda Terkonfirmasi</h3>
                     <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
                       {appointments.filter(appt => 
                         appt.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                         appt.title.toLowerCase().includes(searchQuery.toLowerCase())
                       ).map(appt => (
-                        <div key={appt.id} className="p-3.5 rounded-xl border border-purple-100/60 dark:border-indigo-950/60 bg-purple-50/20 dark:bg-indigo-950/10 space-y-1">
+                        <div key={appt.id} className="p-3.5 rounded-xl border border-purple-100 bg-[#fbf9ff] space-y-1">
                           <div className="flex justify-between items-center">
-                            <h4 className="text-xs font-bold text-purple-700 dark:text-purple-300 truncate">{appt.clientName}</h4>
+                            <h4 className="text-xs font-bold text-[#5d4a98] truncate">{appt.clientName}</h4>
                             <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                               appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30' : 'bg-amber-50 text-amber-600'
                             }`}>
@@ -4064,7 +4064,7 @@ function App() {
                             </span>
                           </div>
                           <p className="text-xs font-semibold">{appt.title}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-purple-400 dark:text-purple-300 pt-1">
+                          <div className="flex items-center gap-2 text-[10px] text-[#8f75d8] pt-1">
                             <Clock size={10} />
                             <span>{appt.date} • {appt.time} WIB</span>
                           </div>
@@ -4073,15 +4073,15 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20">
+                  <div className="rounded-[1.5rem] border border-purple-100 bg-white p-5 shadow-lg shadow-purple-100/40">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-bold">Detail Aktivitas Tanggal {selectedCalendarDate}</h4>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-indigo-900/50 text-purple-700 dark:text-purple-300 font-bold">
+                        <h4 className="text-sm font-bold text-[#4f4574]">Detail Aktivitas Tanggal {selectedCalendarDate}</h4>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#eee7ff] text-[#6f3df3] font-bold">
                           {selectedDateItems.length} event
                         </span>
                       </div>
                       {selectedDateItems.length === 0 ? (
-                        <p className="text-xs text-purple-400 dark:text-purple-300">Belum ada event/task aktif di tanggal ini.</p>
+                        <p className="text-xs text-[#9b85e9]">Belum ada event/task aktif di tanggal ini.</p>
                       ) : (
                         <div className="space-y-2">
                           {selectedDateItems.map(item => {
@@ -4101,7 +4101,7 @@ function App() {
                             return (
                               <div
                                 key={`${item.itemType}-${item.id}`}
-                                className="w-full text-left p-2.5 rounded-lg border border-purple-200/60 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/30 hover:bg-purple-100/70 dark:hover:bg-indigo-900/40"
+                                className="w-full text-left p-3 rounded-xl border border-purple-100 bg-[#fbf9ff] hover:bg-[#f4f0ff]"
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="text-xs font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
