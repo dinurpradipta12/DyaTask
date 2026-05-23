@@ -14,7 +14,6 @@ import {
   Moon,
   Sun,
   Plus,
-  Search,
   Sparkles,
   ShieldCheck,
   FileText,
@@ -3165,39 +3164,6 @@ function App() {
               </button>
             </div>
           </header>
-
-          {/* Advanced Search Input Bar */}
-          <div className="mb-6 flex items-center gap-3">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-purple-400 dark:text-purple-300">
-                <Search size={18} />
-              </div>
-              <input 
-                type="text" 
-                placeholder="Pencarian Lanjutan: cari nama tugas, klien kalender, atau topik catatan..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-12 py-3 rounded-2xl border border-purple-100 dark:border-indigo-950 bg-white/50 dark:bg-indigo-950/20 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm glass-panel"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-xs font-bold text-purple-500 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-100"
-                >
-                  Bersihkan
-                </button>
-              )}
-            </div>
-            {activeTab === 'calendar' && (
-              <button
-                onClick={() => setShowBookingQuickForm(prev => !prev)}
-                className="px-4 py-3 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-md inline-flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <Plus size={13} />
-                Reservasi Baru
-              </button>
-            )}
-          </div>
 
           {/* TAB CONTENT: 1. DASHBOARD */}
           {activeTab === 'dashboard' && (
