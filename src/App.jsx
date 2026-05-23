@@ -3885,9 +3885,17 @@ function App() {
                 <div className="pointer-events-none absolute -left-24 top-12 h-56 w-56 rounded-full bg-[#8f75d8]/14 blur-3xl" />
                 <div className="pointer-events-none absolute -right-20 bottom-0 h-64 w-64 rounded-full bg-[#ffe54c]/18 blur-3xl" />
                 <div className="relative grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-5">
-                  <aside className="rounded-[2rem] bg-[#fbfaff] p-5 shadow-inner shadow-purple-100/60">
-                    <div className="flex items-center justify-between gap-3 mb-7">
-                      <div className="flex items-center gap-3 min-w-0">
+	                  <aside className="relative overflow-hidden rounded-[2rem] bg-[#fbfaff] p-5 shadow-inner shadow-purple-100/60">
+	                    {showBookingQuickForm && (
+	                      <button
+	                        type="button"
+	                        aria-label="Tutup reservasi cepat"
+	                        onClick={() => setShowBookingQuickForm(false)}
+	                        className="absolute inset-0 z-20 cursor-default bg-white/45 backdrop-blur-[3px]"
+	                      />
+	                    )}
+	                    <div className="flex items-center justify-between gap-3 mb-7">
+	                      <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-2xl bg-[#8f75d8] text-white flex items-center justify-center shadow-lg shadow-purple-200">
                           <Calendar size={18} />
                         </div>
@@ -3896,7 +3904,7 @@ function App() {
                           <h3 className="text-sm font-bold text-[#4f4574] truncate">Reservasi & Jadwal</h3>
                         </div>
                       </div>
-                      <div className="relative shrink-0">
+	                      <div className="relative z-30 shrink-0">
                         <button
                           type="button"
                           onClick={() => setShowBookingQuickForm(prev => !prev)}
@@ -3906,7 +3914,7 @@ function App() {
                           {showBookingQuickForm ? <ChevronUp size={15} /> : <Plus size={15} />}
                         </button>
                         {showBookingQuickForm && (
-                          <div className="absolute right-0 top-12 z-30 w-[285px] rounded-[1.5rem] border border-purple-100 bg-white p-4 shadow-2xl shadow-purple-200/60">
+	                          <div className="absolute right-0 top-12 z-30 w-[285px] rounded-[1.5rem] border border-[#7b5fd4]/30 bg-[#fffdf8] p-4 shadow-2xl shadow-[#7b5fd4]/25 ring-1 ring-white/80">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="text-sm font-bold text-[#4f4574] flex items-center gap-2">
                                 <Plus size={14} className="text-[#8f75d8]" />
