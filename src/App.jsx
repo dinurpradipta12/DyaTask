@@ -3859,343 +3859,307 @@ function App() {
           )}
 
           {/* TAB CONTENT: 3. BOOKING CALENDAR & APPOINTMENTS */}
-          {activeTab === 'calendar' && (
-            <div className="rounded-[2rem] border border-purple-100/80 bg-[radial-gradient(circle_at_12%_16%,rgba(143,117,216,0.16),transparent_26%),radial-gradient(circle_at_90%_8%,rgba(255,229,76,0.16),transparent_20%),linear-gradient(135deg,#fbfaff_0%,#f4f0ff_48%,#ffffff_100%)] p-4 lg:p-5 shadow-xl shadow-purple-100/50">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                
-                {/* Left pane: Calendar Matrix (May 2026) */}
-                <div className="lg:col-span-2 rounded-[1.75rem] border border-purple-100 bg-white p-5 lg:p-6 shadow-lg shadow-purple-100/40">
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-lg font-bold text-[#4f4574]">Kalender Reservasi Pertemuan</h3>
-                      <p className="text-xs text-[#8f75d8] capitalize">{calendarTitle} - Hubungan Realtime Google & Notion</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="px-2.5 py-1.5 rounded-xl border border-purple-200 bg-white text-xs text-[#4f4574] shadow-sm hover:bg-purple-50">◀</button>
-                      <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3.5 py-1.5 rounded-xl bg-[#8f75d8] text-white text-xs font-bold shadow-sm hover:bg-[#8069c8]">Hari Ini</button>
-                      <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="px-2.5 py-1.5 rounded-xl border border-purple-200 bg-white text-xs text-[#4f4574] shadow-sm hover:bg-purple-50">▶</button>
-                    </div>
-                  </div>
+          {activeTab === 'calendar' && (() => {
+            const calendarFeed = [
+              ...appointments.map(appt => ({
+                id: `appt-${appt.id}`,
+                title: appt.title,
+                subtitle: appt.clientName,
+                date: appt.date,
+                time: appt.time,
+                type: 'Reservasi',
+                tone: 'purple',
+                raw: appt
+              })),
+              ...tasks.filter(task => task.status !== 'done').map(task => ({
+                id: `task-${task.id}`,
+                title: task.title,
+                subtitle: task.category,
+                date: task.calendarDate || todayString,
+                time: task.dueTime || 'Task',
+                type: 'Task',
+                tone: 'amber',
+                raw: task
+              })),
+              ...googleCalendarEvents.map(event => ({
+                id: `gcal-${event.id}`,
+                title: event.title,
+                subtitle: event.calendarName,
+                date: event.date,
+                time: event.time,
+                type: 'Google Calendar',
+                tone: 'emerald',
+                link: event.htmlLink,
+                raw: event
+              })),
+              ...nationalHolidays.map(holiday => ({
+                id: `holiday-${holiday.id}`,
+                title: holiday.title,
+                subtitle: 'Hari libur nasional',
+                date: holiday.date,
+                time: 'All day',
+                type: 'Libur',
+                tone: 'rose',
+                raw: holiday
+              }))
+            ]
+              .filter(item => item.date >= todayString)
+              .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
+              .slice(0, 5)
 
-                      {/* Day Names Row */}
-                      <div className="grid grid-cols-7 gap-2 text-center font-bold text-xs text-[#a88cff] uppercase tracking-widest mb-3">
-                        {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(d => <span key={d}>{d}</span>)}
-                      </div>
+            const toneClass = {
+              purple: 'bg-[#f0eaff] text-[#6f3df3] border-[#dfd1ff]',
+              amber: 'bg-amber-50 text-amber-700 border-amber-100',
+              emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+              rose: 'bg-rose-50 text-rose-700 border-rose-100'
+            }
 
-                      {/* Calendar Grid Days */}
-                      <div className="calendar-grid">
-                        {calendarDays.map((dayItem) => {
-                          const dayNumber = dayItem.date.getDate()
-	                          const dateStr = dayItem.dateStr
-	                          const dayAppointments = appointments.filter(app => app.date === dateStr)
-	                          const dayTasks = tasks.filter(task => (task.calendarDate || todayString) === dateStr)
-	                          const dayGoogleEvents = googleCalendarEvents.filter(event => event.date === dateStr)
-	                          const dayHolidays = nationalHolidays.filter(holiday => holiday.date === dateStr)
-	                          const totalItems = dayAppointments.length + dayTasks.length + dayGoogleEvents.length + dayHolidays.length
-	                          const hasAppt = totalItems > 0
-	                          const isToday = dayItem.isToday
-
-                          return (
-                            <div 
-                              key={dateStr} 
-                              className={`calendar-day ${!dayItem.isCurrentMonth ? 'other-month' : ''} ${isToday ? 'active-day font-bold border-purple-500 shadow-sm' : ''} ${hasAppt ? 'has-appointment' : ''}`}
-                              onClick={() => {
-                                setBookingDate(dateStr)
-                                setSelectedCalendarDate(dateStr)
-                              }}
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className={`text-xs ${isToday ? 'text-[#6f3df3]' : 'text-[#5d4a98]'}`}>{dayNumber}</span>
-                                {isToday && <span className="w-1.5 h-1.5 rounded-full bg-[#8f75d8]"></span>}
-                              </div>
-	                              {hasAppt && (
-	                                <div className="mt-1 space-y-1">
-	                                  {dayHolidays.slice(0, 1).map(holiday => (
-	                                    <button
-	                                      key={holiday.id}
-	                                      type="button"
-	                                      onClick={(e) => {
-	                                        e.stopPropagation()
-	                                        setSelectedCalendarDate(dateStr)
-	                                      }}
-	                                      className="text-[8px] bg-red-50 text-red-600 px-1.5 py-1 rounded-lg truncate font-bold uppercase tracking-wider block w-full text-left"
-	                                    >
-	                                      Libur • {holiday.title}
-	                                    </button>
-	                                  ))}
-	                                  {dayGoogleEvents.slice(0, 1).map(event => (
-	                                    <button
-	                                      key={event.id}
-	                                      type="button"
-	                                      onClick={(e) => {
-	                                        e.stopPropagation()
-	                                        setSelectedCalendarDate(dateStr)
-	                                      }}
-	                                      className="text-[8px] bg-emerald-50 text-emerald-600 px-1.5 py-1 rounded-lg truncate font-bold uppercase tracking-wider block w-full text-left"
-	                                    >
-	                                      GCal • {event.title}
-	                                    </button>
-	                                  ))}
-	                                  <button
-	                                    type="button"
-	                                    onClick={(e) => {
-	                                      e.stopPropagation()
-	                                      setSelectedCalendarDate(dateStr)
-	                                    }}
-	                                    className="text-[8px] bg-[#eee7ff] text-[#6f3df3] px-1.5 py-1 rounded-lg truncate font-bold uppercase tracking-wider block w-full text-left hover:bg-[#e5dcff]"
-	                                  >
-	                                    {totalItems} Aktivitas
-	                                  </button>
-	                                </div>
-	                              )}
-                            </div>
-                          )
-                        })}
-
-                      </div>
-                    </div>
-
-                {/* Right pane: Reservation Form & Appointments lists */}
-                <div className="space-y-4">
-                  
-                  {/* Reservation form */}
-                  {showBookingQuickForm && <div className="rounded-[1.5rem] border border-purple-100 bg-white p-5 shadow-lg shadow-purple-100/40">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-base font-bold text-[#4f4574] flex items-center gap-2">
-                        <Calendar size={18} className="text-purple-500" />
-                        Jadwalkan Konsultasi Baru
-                      </h3>
-                      <button type="button" onClick={() => setIsBookingFormExpanded(prev => !prev)} className="text-xs px-2.5 py-1 rounded-lg border border-purple-200 bg-white text-[#6f3df3] flex items-center gap-1">
-                        {isBookingFormExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        {isBookingFormExpanded ? 'Hide' : 'Expand'}
-                      </button>
-                    </div>
-
-                    {isBookingFormExpanded && <form onSubmit={handleAddBooking} className="space-y-3.5">
-                      <div>
-                        <label className="block text-[10px] font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1">Nama Klien</label>
-                        <input 
-                          type="text" 
-                          placeholder="Nama lengkap klien..."
-                          value={bookingClient}
-                          onChange={(e) => setBookingClient(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1">Surel Klien</label>
-                        <input 
-                          type="email" 
-                          placeholder="client@mail.com"
-                          value={bookingEmail}
-                          onChange={(e) => setBookingEmail(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1">Nama Rapat / Agenda</label>
-                        <input 
-                          type="text" 
-                          placeholder="Topik rapat..."
-                          value={bookingTitle}
-                          onChange={(e) => setBookingTitle(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
-                          required
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[10px] font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1">Tanggal</label>
-                          <input 
-                            type="date" 
-                            value={bookingDate}
-                            onChange={(e) => setBookingDate(e.target.value)}
-                            min={todayString}
-                            className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
-                          />
+            return (
+              <div className="calendar-workspace relative overflow-hidden rounded-[2.4rem] border border-white/80 bg-white/78 p-4 lg:p-5 shadow-2xl shadow-purple-200/45 backdrop-blur-xl">
+                <div className="pointer-events-none absolute -left-24 top-12 h-56 w-56 rounded-full bg-[#8f75d8]/14 blur-3xl" />
+                <div className="pointer-events-none absolute -right-20 bottom-0 h-64 w-64 rounded-full bg-[#ffe54c]/18 blur-3xl" />
+                <div className="relative grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-5">
+                  <aside className="rounded-[2rem] bg-[#fbfaff] p-5 shadow-inner shadow-purple-100/60">
+                    <div className="flex items-center justify-between gap-3 mb-7">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-2xl bg-[#8f75d8] text-white flex items-center justify-center shadow-lg shadow-purple-200">
+                          <Calendar size={18} />
                         </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-purple-400 dark:text-purple-300 uppercase tracking-widest mb-1">Waktu</label>
-                          <select
-                            value={bookingTime}
-                            onChange={(e) => setBookingTime(e.target.value)}
-                            className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-white text-xs focus:outline-none focus:border-purple-500"
-                          >
-                            {availableTimeSlotsForSelectedDate.map(slot => (
-                              <option key={slot} value={slot}>{slot}</option>
-                            ))}
-                          </select>
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-[0.22em] text-[#a88cff] font-bold">Calendar Hub</p>
+                          <h3 className="text-sm font-bold text-[#4f4574] truncate">Reservasi & Jadwal</h3>
                         </div>
                       </div>
-                      {!availableTimeSlotsForSelectedDate.length && (
-                        <p className="text-[11px] text-amber-600 dark:text-amber-400">Tidak ada slot jam tersisa di tanggal ini.</p>
-                      )}
-
-                      <button 
-                        type="submit"
-                        className="w-full py-2.5 bg-[#8f75d8] hover:bg-[#8069c8] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all mt-4"
+                      <button
+                        type="button"
+                        onClick={() => setShowBookingQuickForm(prev => !prev)}
+                        className="w-9 h-9 rounded-2xl bg-white border border-purple-100 text-[#8f75d8] flex items-center justify-center shadow-sm hover:bg-purple-50"
+                        title="Toggle form reservasi"
                       >
-                        <Plus size={14} />
-                        Reservasi Rapat & Sync
+                        {showBookingQuickForm ? <ChevronUp size={15} /> : <Plus size={15} />}
                       </button>
-                    </form>}
-                  </div>}
-
-                  {/* Active List */}
-                  <div className="rounded-[1.5rem] border border-purple-100 bg-white p-5 shadow-lg shadow-purple-100/40">
-                    <h3 className="text-base font-bold text-[#4f4574] mb-4">Agenda Terkonfirmasi</h3>
-                    <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-                      {appointments.filter(appt => 
-                        appt.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        appt.title.toLowerCase().includes(searchQuery.toLowerCase())
-                      ).map(appt => (
-                        <div key={appt.id} className="p-3.5 rounded-xl border border-purple-100 bg-[#fbf9ff] space-y-1">
-                          <div className="flex justify-between items-center">
-                            <h4 className="text-xs font-bold text-[#5d4a98] truncate">{appt.clientName}</h4>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                              appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30' : 'bg-amber-50 text-amber-600'
-                            }`}>
-                              {appt.status}
-                            </span>
-                          </div>
-                          <p className="text-xs font-semibold">{appt.title}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-[#8f75d8] pt-1">
-                            <Clock size={10} />
-                            <span>{appt.date} • {appt.time} WIB</span>
-                          </div>
-                        </div>
-                      ))}
                     </div>
-                  </div>
 
-                  <div className="rounded-[1.5rem] border border-purple-100 bg-white p-5 shadow-lg shadow-purple-100/40">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-bold text-[#4f4574]">Detail Aktivitas Tanggal {selectedCalendarDate}</h4>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#eee7ff] text-[#6f3df3] font-bold">
-                          {selectedDateItems.length} event
-                        </span>
+                    <div className="mb-7">
+                      <div className="flex items-end justify-between mb-3">
+                        <div>
+                          <h4 className="text-xl font-bold text-[#4f4574]">Upcoming events</h4>
+                          <p className="text-xs text-[#9b85e9]">Event dan task terdekat dari semua sumber.</p>
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{calendarFeed.length}</span>
                       </div>
-                      {selectedDateItems.length === 0 ? (
-                        <p className="text-xs text-[#9b85e9]">Belum ada event/task aktif di tanggal ini.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {selectedDateItems.map(item => {
-                            const itemLabel = item.itemType === 'appointment'
-                              ? 'Reservasi'
-                              : item.itemType === 'task'
-                                ? 'Task'
-                                : item.itemType === 'google_event'
-                                  ? 'Google Calendar'
-                                  : 'Libur Nasional'
-                            const itemIcon = item.itemType === 'task'
-                              ? <CheckSquare size={12} />
-                              : item.itemType === 'holiday'
-                                ? <Sparkles size={12} />
-                                : <Calendar size={12} />
-
-                            return (
-                              <div
-                                key={`${item.itemType}-${item.id}`}
-                                className="w-full text-left p-3 rounded-xl border border-purple-100 bg-[#fbf9ff] hover:bg-[#f4f0ff]"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="text-xs font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
-                                    {itemIcon}
-                                    {item.title}
-                                  </p>
-                                  <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${item.itemType === 'holiday' ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300' : item.itemType === 'google_event' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-300' : 'bg-purple-100 dark:bg-indigo-900/50 text-purple-600 dark:text-purple-300'}`}>
-                                    {itemLabel}
+                      <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                        {calendarFeed.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-4 text-center text-xs text-[#9b85e9]">
+                            Belum ada agenda mendatang.
+                          </div>
+                        ) : calendarFeed.map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setBookingDate(item.date)
+                              setSelectedCalendarDate(item.date)
+                            }}
+                            className="w-full rounded-2xl border border-purple-100 bg-white p-3 text-left shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className={`mt-1 h-2.5 w-2.5 rounded-full ${item.tone === 'emerald' ? 'bg-emerald-400' : item.tone === 'amber' ? 'bg-amber-400' : item.tone === 'rose' ? 'bg-rose-400' : 'bg-[#8f75d8]'}`} />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] text-[#8f75d8] font-bold">{item.date} • {item.time}</p>
+                                  <span className={`text-[8px] uppercase tracking-wide px-1.5 py-0.5 rounded-lg border font-bold ${toneClass[item.tone]}`}>
+                                    {item.type}
                                   </span>
                                 </div>
-                                {item.itemType === 'appointment' ? (
-                                  <>
-                                    <p className="text-[11px] text-purple-500 dark:text-purple-300 mt-0.5">{item.clientName} • {item.time} WIB</p>
-                                    <p className="text-[10px] text-purple-400 dark:text-purple-400 mt-1">{item.email}</p>
-                                    <div className="mt-2 flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          openCalendarEditModal(item)
-                                        }}
-                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"
-                                      >
-                                        <Pencil size={10} />
-                                        Edit
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          openDeleteConfirmModal(item)
-                                        }}
-                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 inline-flex items-center gap-1"
-                                      >
-                                        <Trash2 size={10} />
-                                        Hapus
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : item.itemType === 'task' ? (
-                                  <>
-                                    <p className="text-[11px] text-purple-500 dark:text-purple-300 mt-0.5">{item.category} • {item.dueTime}</p>
-                                    <p className="text-[10px] text-purple-400 dark:text-purple-400 mt-1 uppercase">Task • {item.priority}</p>
-                                    <div className="mt-2 flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          openCalendarEditModal(item)
-                                        }}
-                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"
-                                      >
-                                        <Pencil size={10} />
-                                        Edit
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          openDeleteConfirmModal(item)
-                                        }}
-                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 inline-flex items-center gap-1"
-                                      >
-                                        <Trash2 size={10} />
-                                        Hapus
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : item.itemType === 'google_event' ? (
-                                  <>
-                                    <p className="text-[11px] text-emerald-600 dark:text-emerald-300 mt-0.5">{item.time} • {item.calendarName}</p>
-                                    {item.htmlLink && (
-                                      <a href={item.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-300 hover:underline">
-                                        Buka di Google Calendar <ExternalLink size={10} />
-                                      </a>
-                                    )}
-                                  </>
-                                ) : (
-                                  <p className="text-[11px] text-red-500 dark:text-red-300 mt-0.5">Hari libur nasional Indonesia</p>
-                                )}
+                                <h5 className="mt-1 text-sm font-bold text-[#4f4574] truncate">{item.title}</h5>
+                                <p className="text-[11px] text-[#9b85e9] truncate">{item.subtitle}</p>
                               </div>
-                            )
-                          })}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {showBookingQuickForm && (
+                      <div className="mb-5 rounded-[1.5rem] border border-purple-100 bg-white p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-bold text-[#4f4574] flex items-center gap-2">
+                            <Plus size={14} className="text-[#8f75d8]" />
+                            Reservasi Cepat
+                          </h4>
+                          <button type="button" onClick={() => setIsBookingFormExpanded(prev => !prev)} className="text-[10px] text-[#8f75d8] font-bold">
+                            {isBookingFormExpanded ? 'Hide' : 'Expand'}
+                          </button>
                         </div>
-                      )}
-                  </div>
+                        {isBookingFormExpanded && <form onSubmit={handleAddBooking} className="space-y-2.5">
+                          <input type="text" placeholder="Nama klien" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" required />
+                          <input type="email" placeholder="Email klien" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" />
+                          <input type="text" placeholder="Agenda meeting" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" required />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input type="date" value={bookingDate} onChange={(e) => setBookingDate(e.target.value)} min={todayString} className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" />
+                            <select value={bookingTime} onChange={(e) => setBookingTime(e.target.value)} className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400">
+                              {availableTimeSlotsForSelectedDate.map(slot => <option key={slot} value={slot}>{slot}</option>)}
+                            </select>
+                          </div>
+                          <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-md shadow-purple-200">
+                            Simpan & Sync
+                          </button>
+                        </form>}
+                      </div>
+                    )}
 
+                    <div className="rounded-[1.5rem] bg-gradient-to-br from-[#62d8ff] to-[#8f75d8] p-4 text-white shadow-lg shadow-purple-200">
+                      <p className="text-[10px] uppercase tracking-[0.2em] font-bold opacity-80">Selected date</p>
+                      <h4 className="text-lg font-bold mt-1">{selectedCalendarDate}</h4>
+                      <p className="text-xs opacity-85 mt-1">{selectedDateItems.length} aktivitas terdeteksi</p>
+                    </div>
+                  </aside>
 
+                  <section className="rounded-[2rem] bg-white p-5 lg:p-6 shadow-xl shadow-purple-100/50">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs text-[#8f75d8] font-bold mb-1">
+                          <Calendar size={14} />
+                          <span>Calendar</span>
+                        </div>
+                        <h3 className="text-2xl font-bold text-[#4f4574] capitalize">{calendarTitle}</h3>
+                        <p className="text-xs text-[#9b85e9]">Google Calendar, task, reservasi, dan hari libur nasional.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="rounded-2xl bg-[#f3efff] p-1 flex items-center gap-1 text-[11px] font-bold text-[#8f75d8]">
+                          <span className="px-3 py-1.5 rounded-xl bg-[#8f75d8] text-white shadow-sm">Month</span>
+                          <span className="px-3 py-1.5 rounded-xl">Week</span>
+                          <span className="px-3 py-1.5 rounded-xl">Day</span>
+                        </div>
+                        <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white text-[#4f4574] shadow-sm hover:bg-purple-50">‹</button>
+                        <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3 h-9 rounded-xl bg-[#8f75d8] text-white text-xs font-bold shadow-sm hover:bg-[#8069c8]">Hari Ini</button>
+                        <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white text-[#4f4574] shadow-sm hover:bg-purple-50">›</button>
+                      </div>
+                    </div>
 
+                    <div className="grid grid-cols-7 gap-2 text-center font-bold text-[11px] text-[#a88cff] uppercase tracking-widest mb-2">
+                      {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(d => <span key={d}>{d}</span>)}
+                    </div>
+
+                    <div className="calendar-grid calendar-grid-dashboard">
+                      {calendarDays.map((dayItem) => {
+                        const dayNumber = dayItem.date.getDate()
+                        const dateStr = dayItem.dateStr
+                        const dayAppointments = appointments.filter(app => app.date === dateStr)
+                        const dayTasks = tasks.filter(task => (task.calendarDate || todayString) === dateStr)
+                        const dayGoogleEvents = googleCalendarEvents.filter(event => event.date === dateStr)
+                        const dayHolidays = nationalHolidays.filter(holiday => holiday.date === dateStr)
+                        const totalItems = dayAppointments.length + dayTasks.length + dayGoogleEvents.length + dayHolidays.length
+                        const hasAppt = totalItems > 0
+                        const isToday = dayItem.isToday
+
+                        return (
+                          <div
+                            key={dateStr}
+                            className={`calendar-day calendar-day-dashboard ${!dayItem.isCurrentMonth ? 'other-month' : ''} ${isToday ? 'active-day font-bold' : ''} ${hasAppt ? 'has-appointment' : ''}`}
+                            onClick={() => {
+                              setBookingDate(dateStr)
+                              setSelectedCalendarDate(dateStr)
+                            }}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={`text-[11px] ${isToday ? 'text-[#6f3df3]' : 'text-[#5d4a98]'}`}>{dayNumber}</span>
+                              {isToday && <span className="w-1.5 h-1.5 rounded-full bg-[#8f75d8]" />}
+                            </div>
+                            {hasAppt && (
+                              <div className="mt-1.5 space-y-1">
+                                {dayHolidays.slice(0, 1).map(holiday => (
+                                  <button key={holiday.id} type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill bg-red-50 text-red-600">
+                                    Libur • {holiday.title}
+                                  </button>
+                                ))}
+                                {dayGoogleEvents.slice(0, 1).map(event => (
+                                  <button key={event.id} type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill bg-emerald-50 text-emerald-700">
+                                    GCal • {event.title}
+                                  </button>
+                                ))}
+                                <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill bg-[#eee7ff] text-[#6f3df3]">
+                                  {totalItems} Aktivitas
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-bold text-[#4f4574]">Agenda Terkonfirmasi</h4>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{appointments.length}</span>
+                        </div>
+                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                          {appointments.filter(appt => appt.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || appt.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                            <p className="text-xs text-[#9b85e9]">Belum ada agenda terkonfirmasi.</p>
+                          ) : appointments.filter(appt => appt.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || appt.title.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5).map(appt => (
+                            <div key={appt.id} className="p-3 rounded-2xl border border-purple-100 bg-white">
+                              <div className="flex justify-between items-center gap-2">
+                                <h5 className="text-xs font-bold text-[#4f4574] truncate">{appt.clientName}</h5>
+                                <span className="text-[8px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold uppercase">{appt.status}</span>
+                              </div>
+                              <p className="text-[11px] text-[#5d4a98] mt-1 truncate">{appt.title}</p>
+                              <p className="text-[10px] text-[#8f75d8] mt-1 flex items-center gap-1"><Clock size={10} /> {appt.date} • {appt.time} WIB</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-bold text-[#4f4574]">Detail Tanggal {selectedCalendarDate}</h4>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{selectedDateItems.length} event</span>
+                        </div>
+                        {selectedDateItems.length === 0 ? (
+                          <p className="text-xs text-[#9b85e9]">Belum ada event/task aktif di tanggal ini.</p>
+                        ) : (
+                          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                            {selectedDateItems.map(item => {
+                              const itemLabel = item.itemType === 'appointment' ? 'Reservasi' : item.itemType === 'task' ? 'Task' : item.itemType === 'google_event' ? 'Google Calendar' : 'Libur Nasional'
+                              const itemIcon = item.itemType === 'task' ? <CheckSquare size={12} /> : item.itemType === 'holiday' ? <Sparkles size={12} /> : <Calendar size={12} />
+                              return (
+                                <div key={`${item.itemType}-${item.id}`} className="p-3 rounded-2xl border border-purple-100 bg-white">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-xs font-bold text-[#6f3df3] flex items-center gap-1.5 min-w-0">
+                                      {itemIcon}
+                                      <span className="truncate">{item.title}</span>
+                                    </p>
+                                    <span className={`text-[8px] px-1.5 py-0.5 rounded-lg uppercase font-bold shrink-0 ${item.itemType === 'holiday' ? 'bg-red-50 text-red-600' : item.itemType === 'google_event' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#eee7ff] text-[#6f3df3]'}`}>{itemLabel}</span>
+                                  </div>
+                                  {item.itemType === 'google_event' ? (
+                                    <>
+                                      <p className="text-[11px] text-emerald-600 mt-1">{item.time} • {item.calendarName}</p>
+                                      {item.htmlLink && <a href={item.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:underline">Buka di Google Calendar <ExternalLink size={10} /></a>}
+                                    </>
+                                  ) : item.itemType === 'holiday' ? (
+                                    <p className="text-[11px] text-red-500 mt-1">Hari libur nasional Indonesia</p>
+                                  ) : (
+                                    <>
+                                      <p className="text-[11px] text-[#8f75d8] mt-1">{item.itemType === 'appointment' ? `${item.clientName} • ${item.time} WIB` : `${item.category} • ${item.dueTime}`}</p>
+                                      <div className="mt-2 flex items-center gap-2">
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); openCalendarEditModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"><Pencil size={10} />Edit</button>
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteConfirmModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-100 text-red-600 hover:bg-red-200 inline-flex items-center gap-1"><Trash2 size={10} />Hapus</button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
                 </div>
-
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* TAB CONTENT: 4. ENCRYPTED NOTES VAULT */}
           {activeTab === 'notes' && (

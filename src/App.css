@@ -838,6 +838,10 @@
   gap: 8px;
 }
 
+.calendar-grid-dashboard {
+  grid-auto-rows: 104px;
+}
+
 .calendar-day {
   padding: 10px;
   border-radius: 16px;
@@ -883,9 +887,38 @@
   box-shadow: inset 3px 0 0 #8f75d8, 0 10px 24px rgba(143, 117, 216, 0.06);
 }
 
+.calendar-day-dashboard {
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.calendar-day-dashboard.has-appointment {
+  box-shadow: inset 3px 0 0 #8f75d8;
+}
+
+.calendar-event-pill {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 9px;
+  padding: 4px 6px;
+  text-align: left;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 @media (min-width: 1440px) {
   .calendar-grid {
     grid-auto-rows: 118px;
+  }
+
+  .calendar-grid-dashboard {
+    grid-auto-rows: 112px;
   }
 }
 
