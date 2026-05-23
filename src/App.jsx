@@ -2174,25 +2174,37 @@ function App() {
       user_id: session?.user?.id
     }
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert([newBookingObj])
-      .select();
+    const publicBookingPayload = {
+      p_client_name: newBookingObj.client_name,
+      p_title: newBookingObj.title,
+      p_email: newBookingObj.email,
+      p_date: newBookingObj.date,
+      p_time: newBookingObj.time
+    }
+
+    const { data, error } = isPublicBookingMode && !session
+      ? await supabase.rpc('create_public_appointment', publicBookingPayload)
+      : await supabase
+        .from('appointments')
+        .insert([newBookingObj])
+        .select();
 
     if (error) {
       alert('Gagal membuat reservasi di Supabase: ' + error.message)
       return
     }
 
-    if (data && data[0]) {
+    const createdRow = Array.isArray(data) ? data[0] : data
+
+    if (createdRow) {
       const createdBooking = {
-        id: data[0].id,
-        clientName: data[0].client_name,
-        title: data[0].title,
-        time: data[0].time,
-        date: data[0].date,
-        status: data[0].status,
-        email: data[0].email
+        id: createdRow.id,
+        clientName: createdRow.client_name,
+        title: createdRow.title,
+        time: createdRow.time,
+        date: createdRow.date,
+        status: createdRow.status,
+        email: createdRow.email
       }
       setAppointments([createdBooking, ...appointments])
     }
