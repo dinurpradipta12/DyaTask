@@ -4089,16 +4089,11 @@ function App() {
                         </div>
                         <h3 className="text-2xl font-bold text-[#4f4574] capitalize">{calendarTitle}</h3>
                         <p className="text-xs text-[#9b85e9]">Google Calendar, task, reservasi, dan hari libur nasional.</p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="rounded-2xl bg-[#f3efff] p-1 flex items-center gap-1 text-[11px] font-bold text-[#8f75d8]">
-                          <span className="px-3 py-1.5 rounded-xl bg-[#8f75d8] text-white shadow-sm">Month</span>
-                          <span className="px-3 py-1.5 rounded-xl">Week</span>
-                          <span className="px-3 py-1.5 rounded-xl">Day</span>
-                        </div>
-                        <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white text-[#4f4574] shadow-sm hover:bg-purple-50">‹</button>
-                        <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3 h-9 rounded-xl bg-[#8f75d8] text-white text-xs font-bold shadow-sm hover:bg-[#8069c8]">Hari Ini</button>
-                        <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white text-[#4f4574] shadow-sm hover:bg-purple-50">›</button>
+	                      </div>
+	                      <div className="flex flex-wrap items-center gap-2">
+	                        <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white text-[#4f4574] shadow-sm hover:bg-purple-50">‹</button>
+	                        <button onClick={() => setCalendarMonthDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))} className="px-3 h-9 rounded-xl bg-[#8f75d8] text-white text-xs font-bold shadow-sm hover:bg-[#8069c8]">Hari Ini</button>
+	                        <button onClick={() => setCalendarMonthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1))} className="w-9 h-9 rounded-xl border border-purple-100 bg-white text-[#4f4574] shadow-sm hover:bg-purple-50">›</button>
                       </div>
                     </div>
 
