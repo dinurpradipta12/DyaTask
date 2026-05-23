@@ -3896,14 +3896,43 @@ function App() {
                           <h3 className="text-sm font-bold text-[#4f4574] truncate">Reservasi & Jadwal</h3>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowBookingQuickForm(prev => !prev)}
-                        className="w-9 h-9 rounded-2xl bg-white border border-purple-100 text-[#8f75d8] flex items-center justify-center shadow-sm hover:bg-purple-50"
-                        title="Toggle form reservasi"
-                      >
-                        {showBookingQuickForm ? <ChevronUp size={15} /> : <Plus size={15} />}
-                      </button>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowBookingQuickForm(prev => !prev)}
+                          className="w-9 h-9 rounded-2xl bg-white border border-purple-100 text-[#8f75d8] flex items-center justify-center shadow-sm hover:bg-purple-50"
+                          title="Toggle form reservasi"
+                        >
+                          {showBookingQuickForm ? <ChevronUp size={15} /> : <Plus size={15} />}
+                        </button>
+                        {showBookingQuickForm && (
+                          <div className="absolute right-0 top-12 z-30 w-[285px] rounded-[1.5rem] border border-purple-100 bg-white p-4 shadow-2xl shadow-purple-200/60">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-sm font-bold text-[#4f4574] flex items-center gap-2">
+                                <Plus size={14} className="text-[#8f75d8]" />
+                                Reservasi Cepat
+                              </h4>
+                              <button type="button" onClick={() => setIsBookingFormExpanded(prev => !prev)} className="text-[10px] text-[#8f75d8] font-bold">
+                                {isBookingFormExpanded ? 'Hide' : 'Expand'}
+                              </button>
+                            </div>
+                            {isBookingFormExpanded && <form onSubmit={handleAddBooking} className="space-y-2.5">
+                              <input type="text" placeholder="Nama klien" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" required />
+                              <input type="email" placeholder="Email klien" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" />
+                              <input type="text" placeholder="Agenda meeting" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" required />
+                              <div className="grid grid-cols-2 gap-2">
+                                <input type="date" value={bookingDate} onChange={(e) => setBookingDate(e.target.value)} min={todayString} className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" />
+                                <select value={bookingTime} onChange={(e) => setBookingTime(e.target.value)} className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400">
+                                  {availableTimeSlotsForSelectedDate.map(slot => <option key={slot} value={slot}>{slot}</option>)}
+                                </select>
+                              </div>
+                              <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-md shadow-purple-200">
+                                Simpan & Sync
+                              </button>
+                            </form>}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="mb-5 rounded-[1.5rem] border border-purple-100 bg-white p-4 shadow-sm">
@@ -4016,33 +4045,7 @@ function App() {
                       </div>
                     </div>
 
-                    {showBookingQuickForm && (
-                      <div className="mb-5 rounded-[1.5rem] border border-purple-100 bg-white p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-bold text-[#4f4574] flex items-center gap-2">
-                            <Plus size={14} className="text-[#8f75d8]" />
-                            Reservasi Cepat
-                          </h4>
-                          <button type="button" onClick={() => setIsBookingFormExpanded(prev => !prev)} className="text-[10px] text-[#8f75d8] font-bold">
-                            {isBookingFormExpanded ? 'Hide' : 'Expand'}
-                          </button>
-                        </div>
-                        {isBookingFormExpanded && <form onSubmit={handleAddBooking} className="space-y-2.5">
-                          <input type="text" placeholder="Nama klien" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" required />
-                          <input type="email" placeholder="Email klien" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" />
-                          <input type="text" placeholder="Agenda meeting" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" required />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input type="date" value={bookingDate} onChange={(e) => setBookingDate(e.target.value)} min={todayString} className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400" />
-                            <select value={bookingTime} onChange={(e) => setBookingTime(e.target.value)} className="w-full px-2 py-2 rounded-xl border border-purple-100 bg-[#fbfaff] text-xs focus:outline-none focus:border-purple-400">
-                              {availableTimeSlotsForSelectedDate.map(slot => <option key={slot} value={slot}>{slot}</option>)}
-                            </select>
-                          </div>
-                          <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-md shadow-purple-200">
-                            Simpan & Sync
-                          </button>
-                        </form>}
-                      </div>
-                    )}
+
 
                   </aside>
 
