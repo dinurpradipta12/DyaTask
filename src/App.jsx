@@ -4114,8 +4114,15 @@ function App() {
                         const dayTasks = tasks.filter(task => (task.calendarDate || todayString) === dateStr)
                         const dayGoogleEvents = googleCalendarEvents.filter(event => event.date === dateStr)
                         const dayHolidays = nationalHolidays.filter(holiday => holiday.date === dateStr)
-                        const totalItems = dayAppointments.length + dayTasks.length + dayGoogleEvents.length + dayHolidays.length
-                        const hasAppt = totalItems > 0
+                        const dayActivityItems = [
+                          ...dayHolidays.map(holiday => ({ id: `holiday-${holiday.id}`, title: `Libur • ${holiday.title}`, className: 'text-red-600' })),
+                          ...dayGoogleEvents.map(event => ({ id: `gcal-${event.id}`, title: `GCal • ${event.title}`, className: 'text-emerald-700' })),
+                          ...dayAppointments.map(appt => ({ id: `appt-${appt.id}`, title: `Event • ${appt.title}`, className: 'text-blue-700' })),
+                          ...dayTasks.map(task => ({ id: `task-${task.id}`, title: `Task • ${task.title}`, className: 'text-[#6f3df3]' }))
+                        ]
+                        const visibleDayActivities = dayActivityItems.slice(0, 4)
+                        const hiddenActivityCount = dayActivityItems.length - visibleDayActivities.length
+                        const hasAppt = dayActivityItems.length > 0
                         const isToday = dayItem.isToday
 
                         return (
@@ -4133,19 +4140,16 @@ function App() {
                             </div>
                             {hasAppt && (
                               <div className="mt-1.5 space-y-1">
-                                {dayHolidays.slice(0, 1).map(holiday => (
-                                  <button key={holiday.id} type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill bg-red-50 text-red-600">
-                                    Libur • {holiday.title}
+                                {visibleDayActivities.map(activity => (
+                                  <button key={activity.id} type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className={`calendar-event-pill ${activity.className}`}>
+                                    {activity.title}
                                   </button>
                                 ))}
-                                {dayGoogleEvents.slice(0, 1).map(event => (
-                                  <button key={event.id} type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill bg-emerald-50 text-emerald-700">
-                                    GCal • {event.title}
+                                {hiddenActivityCount > 0 && (
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill text-[#6f3df3]">
+                                    +{hiddenActivityCount} aktivitas
                                   </button>
-                                ))}
-                                <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill bg-[#eee7ff] text-[#6f3df3]">
-                                  {totalItems} Aktivitas
-                                </button>
+                                )}
                               </div>
                             )}
                           </div>
