@@ -14,6 +14,7 @@ dist-ssr
 .env
 .env.*
 dist-electron
+public/deploy-version.json
 
 # Editor directories and files
 .vscode/*

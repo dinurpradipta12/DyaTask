@@ -349,9 +349,13 @@ function App() {
   const [notificationNowMs, setNotificationNowMs] = useState(Date.now())
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
+  const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
   const [floatingTaskTitle, setFloatingTaskTitle] = useState('')
   const [showQuickTaskModal, setShowQuickTaskModal] = useState(false)
   const [showQuickBookingModal, setShowQuickBookingModal] = useState(false)
+  const currentDeployVersionRef = useRef(import.meta.env.VITE_DEPLOY_COMMIT || 'dev')
+  const announcedDeployVersionRef = useRef('')
+  const dismissedDeployVersionRef = useRef(localStorage.getItem('dyatask_dismissed_deploy_version') || '')
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -538,6 +542,8 @@ function App() {
   const normalizedPublicShareBaseUrl = publicShareBaseUrl.trim().replace(/\/+$/, '')
   const currentAppBaseUrl = `${window.location.origin}${window.location.pathname}`.replace(/\/+$/, '')
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
+  const currentDeployKey = import.meta.env.VITE_DEPLOY_COMMIT || 'dev'
+  const getDeployVersionKey = (metadata = {}) => metadata.buildId || metadata.commit || metadata.version || metadata.buildTime || ''
   const calendarTitle = calendarMonthDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
   const calendarYear = calendarMonthDate.getFullYear()
   const calendarMonth = calendarMonthDate.getMonth()
@@ -1600,6 +1606,76 @@ function App() {
       console.log('App automatically focused due to alerts!')
     }
   }
+
+  useEffect(() => {
+    let cancelled = false
+
+    const withCacheBust = (url) => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+
+    const buildDeployVersionUrls = () => {
+      const urls = []
+      try {
+        const baseUrl = import.meta.env.BASE_URL || './'
+        urls.push(new URL('deploy-version.json', new URL(baseUrl, window.location.href)).toString())
+      } catch {
+        urls.push('deploy-version.json')
+      }
+
+      if (normalizedPublicShareBaseUrl) {
+        urls.push(`${normalizedPublicShareBaseUrl}/deploy-version.json`)
+      }
+
+      return [...new Set(urls)]
+    }
+
+    const readLatestDeployVersion = async () => {
+      for (const url of buildDeployVersionUrls()) {
+        try {
+          const response = await fetch(withCacheBust(url), { cache: 'no-store' })
+          if (!response.ok) continue
+          const data = await response.json()
+          return { ...data, sourceUrl: url }
+        } catch {
+          // Ignore unavailable deploy metadata, especially in local dev before first build.
+        }
+      }
+      return null
+    }
+
+    const checkDeployVersion = async () => {
+      const latest = await readLatestDeployVersion()
+      if (cancelled || !latest) return
+
+      const latestKey = getDeployVersionKey(latest)
+      if (!latestKey || latestKey === currentDeployVersionRef.current || latestKey === dismissedDeployVersionRef.current) {
+        return
+      }
+
+      currentDeployVersionRef.current = latestKey
+      setDeployUpdateInfo(latest)
+
+      if (announcedDeployVersionRef.current === latestKey) return
+      announcedDeployVersionRef.current = latestKey
+
+      triggerMockNotification(
+        'Update DyaTask tersedia',
+        `Cloudflare/GitHub sudah mempublikasikan versi ${String(latestKey).slice(0, 7)}. Reload untuk memperbarui aplikasi.`,
+        'system',
+        { kind: 'deploy_update', versionKey: latestKey }
+      )
+    }
+
+    const firstCheck = setTimeout(checkDeployVersion, 6000)
+    const interval = setInterval(checkDeployVersion, 60000)
+
+    return () => {
+      cancelled = true
+      clearTimeout(firstCheck)
+      clearInterval(interval)
+    }
+    // currentDeployKey intentionally pins the running bundle version for this app session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalizedPublicShareBaseUrl, currentDeployKey])
 
   const extractReminderStartDate = (dateValue, timeValue) => {
     const date = String(dateValue || '').slice(0, 10)
@@ -5213,6 +5289,68 @@ function App() {
                 <button type="button" onClick={() => setShowQuickBookingModal(false)} className="w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all">Cancel</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deployUpdateInfo && (
+        <div className={`fixed right-8 top-24 z-[70] w-[min(380px,calc(100vw-2rem))] rounded-[1.75rem] border p-4 shadow-2xl backdrop-blur-xl ${
+          theme === 'dark'
+            ? 'bg-slate-950/92 border-indigo-800/70 text-white'
+            : 'bg-white/95 border-purple-100 text-slate-900'
+        }`}>
+          <div className="flex items-start gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-[#8f75d8]/15 flex items-center justify-center shrink-0">
+              <img src={dyataskMiniLogo} alt="DyaTask" className="w-8 h-8 object-contain" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8f75d8] font-bold">Realtime Update</p>
+                  <h4 className="text-base font-extrabold mt-1">Update tersedia</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const key = getDeployVersionKey(deployUpdateInfo)
+                    dismissedDeployVersionRef.current = key
+                    localStorage.setItem('dyatask_dismissed_deploy_version', key)
+                    setDeployUpdateInfo(null)
+                  }}
+                  className="w-8 h-8 rounded-full border border-purple-100 dark:border-indigo-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-300 mt-2 leading-relaxed">
+                Cloudflare/GitHub sudah punya versi baru. Reload untuk memperbarui tampilan PWA atau aplikasi DMG yang membaca domain publik.
+              </p>
+              <div className="mt-3 rounded-2xl bg-purple-50/70 dark:bg-indigo-950/35 border border-purple-100 dark:border-indigo-800/60 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-300">
+                <p><span className="font-bold text-slate-700 dark:text-white">Commit:</span> {String(getDeployVersionKey(deployUpdateInfo)).slice(0, 7)}</p>
+                <p><span className="font-bold text-slate-700 dark:text-white">Build:</span> {deployUpdateInfo.buildTime ? new Date(deployUpdateInfo.buildTime).toLocaleString('id-ID') : 'Versi terbaru'}</p>
+              </div>
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="flex-1 py-2.5 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-lg shadow-purple-500/15 transition-all"
+                >
+                  Reload Aplikasi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const key = getDeployVersionKey(deployUpdateInfo)
+                    dismissedDeployVersionRef.current = key
+                    localStorage.setItem('dyatask_dismissed_deploy_version', key)
+                    setDeployUpdateInfo(null)
+                  }}
+                  className="px-4 py-2.5 rounded-2xl bg-purple-50 hover:bg-purple-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-[#8f75d8] text-xs font-bold transition-colors"
+                >
+                  Nanti
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
