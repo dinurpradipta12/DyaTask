@@ -4009,11 +4009,6 @@ function App() {
                       </div>
                     )}
 
-                    <div className="rounded-[1.5rem] bg-gradient-to-br from-[#62d8ff] to-[#8f75d8] p-4 text-white shadow-lg shadow-purple-200">
-                      <p className="text-[10px] uppercase tracking-[0.2em] font-bold opacity-80">Selected date</p>
-                      <h4 className="text-lg font-bold mt-1">{selectedCalendarDate}</h4>
-                      <p className="text-xs opacity-85 mt-1">{selectedDateItems.length} aktivitas terdeteksi</p>
-                    </div>
                   </aside>
 
                   <section className="rounded-[2rem] bg-white p-5 lg:p-6 shadow-xl shadow-purple-100/50">
@@ -4089,72 +4084,50 @@ function App() {
                       })}
                     </div>
 
-                    <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-bold text-[#4f4574]">Agenda Terkonfirmasi</h4>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{appointments.length}</span>
-                        </div>
-                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                          {appointments.filter(appt => appt.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || appt.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
-                            <p className="text-xs text-[#9b85e9]">Belum ada agenda terkonfirmasi.</p>
-                          ) : appointments.filter(appt => appt.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || appt.title.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5).map(appt => (
-                            <div key={appt.id} className="p-3 rounded-2xl border border-purple-100 bg-white">
-                              <div className="flex justify-between items-center gap-2">
-                                <h5 className="text-xs font-bold text-[#4f4574] truncate">{appt.clientName}</h5>
-                                <span className="text-[8px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold uppercase">{appt.status}</span>
-                              </div>
-                              <p className="text-[11px] text-[#5d4a98] mt-1 truncate">{appt.title}</p>
-                              <p className="text-[10px] text-[#8f75d8] mt-1 flex items-center gap-1"><Clock size={10} /> {appt.date} • {appt.time} WIB</p>
-                            </div>
-                          ))}
-                        </div>
+                    <div className="mt-5 rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-bold text-[#4f4574]">Detail Tanggal {selectedCalendarDate}</h4>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{selectedDateItems.length} event</span>
                       </div>
-
-                      <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-bold text-[#4f4574]">Detail Tanggal {selectedCalendarDate}</h4>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{selectedDateItems.length} event</span>
-                        </div>
-                        {selectedDateItems.length === 0 ? (
-                          <p className="text-xs text-[#9b85e9]">Belum ada event/task aktif di tanggal ini.</p>
-                        ) : (
-                          <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                            {selectedDateItems.map(item => {
-                              const itemLabel = item.itemType === 'appointment' ? 'Reservasi' : item.itemType === 'task' ? 'Task' : item.itemType === 'google_event' ? 'Google Calendar' : 'Libur Nasional'
-                              const itemIcon = item.itemType === 'task' ? <CheckSquare size={12} /> : item.itemType === 'holiday' ? <Sparkles size={12} /> : <Calendar size={12} />
-                              return (
-                                <div key={`${item.itemType}-${item.id}`} className="p-3 rounded-2xl border border-purple-100 bg-white">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <p className="text-xs font-bold text-[#6f3df3] flex items-center gap-1.5 min-w-0">
-                                      {itemIcon}
-                                      <span className="truncate">{item.title}</span>
-                                    </p>
-                                    <span className={`text-[8px] px-1.5 py-0.5 rounded-lg uppercase font-bold shrink-0 ${item.itemType === 'holiday' ? 'bg-red-50 text-red-600' : item.itemType === 'google_event' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#eee7ff] text-[#6f3df3]'}`}>{itemLabel}</span>
-                                  </div>
-                                  {item.itemType === 'google_event' ? (
-                                    <>
-                                      <p className="text-[11px] text-emerald-600 mt-1">{item.time} • {item.calendarName}</p>
-                                      {item.htmlLink && <a href={item.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:underline">Buka di Google Calendar <ExternalLink size={10} /></a>}
-                                    </>
-                                  ) : item.itemType === 'holiday' ? (
-                                    <p className="text-[11px] text-red-500 mt-1">Hari libur nasional Indonesia</p>
-                                  ) : (
-                                    <>
-                                      <p className="text-[11px] text-[#8f75d8] mt-1">{item.itemType === 'appointment' ? `${item.clientName} • ${item.time} WIB` : `${item.category} • ${item.dueTime}`}</p>
-                                      <div className="mt-2 flex items-center gap-2">
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); openCalendarEditModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"><Pencil size={10} />Edit</button>
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteConfirmModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-100 text-red-600 hover:bg-red-200 inline-flex items-center gap-1"><Trash2 size={10} />Hapus</button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              )
-                            })}
+                      {selectedDateItems.length === 0 ? (
+                      <p className="text-xs text-[#9b85e9]">Belum ada event/task aktif di tanggal ini.</p>
+                      ) : (
+                      <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                        {selectedDateItems.map(item => {
+                        const itemLabel = item.itemType === 'appointment' ? 'Reservasi' : item.itemType === 'task' ? 'Task' : item.itemType === 'google_event' ? 'Google Calendar' : 'Libur Nasional'
+                        const itemIcon = item.itemType === 'task' ? <CheckSquare size={12} /> : item.itemType === 'holiday' ? <Sparkles size={12} /> : <Calendar size={12} />
+                        return (
+                          <div key={`${item.itemType}-${item.id}`} className="p-3 rounded-2xl border border-purple-100 bg-white">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-bold text-[#6f3df3] flex items-center gap-1.5 min-w-0">
+                            {itemIcon}
+                            <span className="truncate">{item.title}</span>
+                            </p>
+                            <span className={`text-[8px] px-1.5 py-0.5 rounded-lg uppercase font-bold shrink-0 ${item.itemType === 'holiday' ? 'bg-red-50 text-red-600' : item.itemType === 'google_event' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#eee7ff] text-[#6f3df3]'}`}>{itemLabel}</span>
                           </div>
-                        )}
+                          {item.itemType === 'google_event' ? (
+                            <>
+                            <p className="text-[11px] text-emerald-600 mt-1">{item.time} • {item.calendarName}</p>
+                            {item.htmlLink && <a href={item.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:underline">Buka di Google Calendar <ExternalLink size={10} /></a>}
+                            </>
+                          ) : item.itemType === 'holiday' ? (
+                            <p className="text-[11px] text-red-500 mt-1">Hari libur nasional Indonesia</p>
+                          ) : (
+                            <>
+                            <p className="text-[11px] text-[#8f75d8] mt-1">{item.itemType === 'appointment' ? `${item.clientName} • ${item.time} WIB` : `${item.category} • ${item.dueTime}`}</p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button type="button" onClick={(e) => { e.stopPropagation(); openCalendarEditModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"><Pencil size={10} />Edit</button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteConfirmModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-100 text-red-600 hover:bg-red-200 inline-flex items-center gap-1"><Trash2 size={10} />Hapus</button>
+                            </div>
+                            </>
+                          )}
+                          </div>
+                        )
+                        })}
                       </div>
+                      )}
                     </div>
+
                   </section>
                 </div>
               </div>
