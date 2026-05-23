@@ -3942,45 +3942,40 @@ function App() {
 
                     <div className="mb-5 rounded-[1.5rem] border border-purple-100 bg-white p-4 shadow-sm">
                       <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-bold text-[#4f4574]">Detail Tanggal {selectedCalendarDate}</h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{selectedDateItems.length} event</span>
+                        <h4 className="text-sm font-bold text-[#4f4574]">Task hari ini</h4>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-[#8f75d8] border border-purple-100 font-bold">{todayTasks.length} task</span>
                       </div>
-                      {selectedDateItems.length === 0 ? (
-                      <p className="text-xs text-[#9b85e9]">Belum ada event/task aktif di tanggal ini.</p>
+                      {todayTasks.length === 0 ? (
+                        <p className="text-xs text-[#9b85e9]">Belum ada task kalender untuk hari ini.</p>
                       ) : (
-                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                        {selectedDateItems.map(item => {
-                        const itemLabel = item.itemType === 'appointment' ? 'Reservasi' : item.itemType === 'task' ? 'Task' : item.itemType === 'google_event' ? 'Google Calendar' : 'Libur Nasional'
-                        const itemIcon = item.itemType === 'task' ? <CheckSquare size={12} /> : item.itemType === 'holiday' ? <Sparkles size={12} /> : <Calendar size={12} />
-                        return (
-                          <div key={`${item.itemType}-${item.id}`} className="p-3 rounded-2xl border border-purple-100 bg-white">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-xs font-bold text-[#6f3df3] flex items-center gap-1.5 min-w-0">
-                            {itemIcon}
-                            <span className="truncate">{item.title}</span>
-                            </p>
-                            <span className={`text-[8px] px-1.5 py-0.5 rounded-lg uppercase font-bold shrink-0 ${item.itemType === 'holiday' ? 'bg-red-50 text-red-600' : item.itemType === 'google_event' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#eee7ff] text-[#6f3df3]'}`}>{itemLabel}</span>
-                          </div>
-                          {item.itemType === 'google_event' ? (
-                            <>
-                            <p className="text-[11px] text-emerald-600 mt-1">{item.time} • {item.calendarName}</p>
-                            {item.htmlLink && <a href={item.htmlLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 hover:underline">Buka di Google Calendar <ExternalLink size={10} /></a>}
-                            </>
-                          ) : item.itemType === 'holiday' ? (
-                            <p className="text-[11px] text-red-500 mt-1">Hari libur nasional Indonesia</p>
-                          ) : (
-                            <>
-                            <p className="text-[11px] text-[#8f75d8] mt-1">{item.itemType === 'appointment' ? `${item.clientName} • ${item.time} WIB` : `${item.category} • ${item.dueTime}`}</p>
-                            <div className="mt-2 flex items-center gap-2">
-                              <button type="button" onClick={(e) => { e.stopPropagation(); openCalendarEditModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"><Pencil size={10} />Edit</button>
-                              <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteConfirmModal(item) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-100 text-red-600 hover:bg-red-200 inline-flex items-center gap-1"><Trash2 size={10} />Hapus</button>
+                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                          {todayTasks.map(task => (
+                            <div key={task.id} className="p-3 rounded-2xl border border-purple-100 bg-white">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-xs font-bold text-[#6f3df3] flex items-center gap-1.5 min-w-0">
+                                  <CheckSquare size={12} />
+                                  <span className="truncate">{task.title}</span>
+                                </p>
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded-lg uppercase font-bold shrink-0 ${
+                                  task.status === 'done'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : 'bg-[#eee7ff] text-[#6f3df3]'
+                                }`}>
+                                  {task.status === 'done' ? 'Selesai' : task.priority}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#8f75d8] mt-1">{task.category} • {task.dueTime || 'Tanpa jam'} WIB</p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button type="button" onClick={(e) => { e.stopPropagation(); toggleTaskStatus(task.id) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[#eee7ff] text-[#6f3df3] hover:bg-[#e4dcff] inline-flex items-center gap-1">
+                                  <CheckCircle size={10} />
+                                  {task.status === 'done' ? 'Batal' : 'Selesai'}
+                                </button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); openCalendarEditModal(task) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[#8f75d8] text-white hover:bg-[#8069c8] inline-flex items-center gap-1"><Pencil size={10} />Edit</button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteConfirmModal(task) }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-100 text-red-600 hover:bg-red-200 inline-flex items-center gap-1"><Trash2 size={10} />Hapus</button>
+                              </div>
                             </div>
-                            </>
-                          )}
-                          </div>
-                        )
-                        })}
-                      </div>
+                          ))}
+                        </div>
                       )}
                     </div>
 
