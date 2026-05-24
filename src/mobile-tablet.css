@@ -327,6 +327,29 @@
     backdrop-filter: blur(14px);
   }
 
+  .floating-notification-trigger {
+    top: max(16px, calc(env(safe-area-inset-top) + 10px)) !important;
+    right: max(66px, calc(env(safe-area-inset-right) + 56px)) !important;
+    bottom: auto !important;
+    width: 44px !important;
+    height: 44px !important;
+    z-index: 91 !important;
+  }
+
+  .floating-notification-icon {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .floating-notification-trigger > span {
+    min-width: 16px !important;
+    height: 16px !important;
+    font-size: 9px !important;
+    border-width: 1px !important;
+    top: -1px !important;
+    right: -1px !important;
+  }
+
   .mobile-more-trigger.active {
     background: #8f75d8;
     color: #fff;
@@ -731,6 +754,10 @@
 }
 
 @media (max-width: 640px) {
+  .tasks-mobile-toolbar {
+    display: none !important;
+  }
+
   body {
     width: 100%;
     overflow-x: hidden;
@@ -867,6 +894,17 @@
     height: 76px;
     padding: 0 10px;
     border-radius: 24px;
+  }
+
+  .floating-notification-trigger {
+    right: max(62px, calc(env(safe-area-inset-right) + 54px)) !important;
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .floating-notification-icon {
+    width: 36px !important;
+    height: 36px !important;
   }
 
   .sidebar.sidebar-floating .nav-link {

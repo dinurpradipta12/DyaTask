@@ -38,6 +38,7 @@ import {
   EyeOff,
   BellRing,
   AlertCircle,
+  ArrowLeft,
   Folder,
   FolderOpen,
   Users,
@@ -422,6 +423,12 @@ function App() {
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
   const [showMobileMoreMenu, setShowMobileMoreMenu] = useState(false)
+  const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth <= 1180
+  })
+  const [mobileTaskFolderOpen, setMobileTaskFolderOpen] = useState(false)
+  const [mobileOrderDetailOpen, setMobileOrderDetailOpen] = useState(false)
   const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
   const [pwaInstallPrompt, setPwaInstallPrompt] = useState(null)
   const [isPwaStandalone, setIsPwaStandalone] = useState(() => {
@@ -458,6 +465,21 @@ function App() {
   const searchParams = new URLSearchParams(window.location.search)
   const publicBookingToken = searchParams.get('booking')
   const publicTrackingToken = searchParams.get('track')
+
+  useEffect(() => {
+    const handleViewportResize = () => setIsMobileTabletView(window.innerWidth <= 1180)
+    window.addEventListener('resize', handleViewportResize)
+    return () => window.removeEventListener('resize', handleViewportResize)
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileTabletView || activeTab !== 'tasks') {
+      setMobileTaskFolderOpen(false)
+    }
+    if (!isMobileTabletView || activeTab !== 'orders') {
+      setMobileOrderDetailOpen(false)
+    }
+  }, [isMobileTabletView, activeTab])
   const isPublicBookingMode = !!publicBookingToken
   const isPublicTrackingMode = !!publicTrackingToken
 
@@ -5576,7 +5598,7 @@ function App() {
           {activeTab === 'tasks' && (
             <div className="mobile-page mobile-page-tasks">
               {/* Task view toggle + actions */}
-              <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 mb-6">
+              <div className="tasks-mobile-toolbar flex flex-col md:flex-row md:items-center justify-end gap-4 mb-6">
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-2 p-1 rounded-xl bg-purple-100/60 dark:bg-indigo-950/40 border border-purple-200/20">
                     <button
@@ -5619,172 +5641,349 @@ function App() {
               {/* Tasks view */}
               <div className="space-y-4">
                   {taskView === 'list' ? (
-                    // Two-panel folder/task view
-                    <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
-                      <aside className="glass-panel p-4">
-                        <div className="flex items-center justify-between gap-3 mb-4">
-                          <div>
-                            <h3 className="text-lg font-bold">Folder Project</h3>
-                            <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">{allProjectFolders.length} folder aktif</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setShowNewFolderModal(true)}
-                            className="w-9 h-9 rounded-xl bg-[#8f75d8] text-white flex items-center justify-center shadow-md hover:bg-[#8069c8]"
-                            title="New Folder Task"
-                          >
-                            <Plus size={16} />
-                          </button>
-                        </div>
-
-                        <div className="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
-                          {allProjectFolders.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-4 text-xs text-purple-400 dark:text-purple-300">
-                              Belum ada folder. Buat folder project baru untuk mulai mengelompokkan task.
-                            </div>
-                          ) : allProjectFolders.map(folder => {
-                            const totalItems = folder.tasks.length + folder.subtasks.length
-                            const doneItems = [...folder.tasks, ...folder.subtasks].filter(task => task.status === 'done').length
-                            const isSelected = selectedProjectFolder?.name === folder.name
-                            return (
-                              <button
-                                key={folder.name}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedProjectName(folder.name)
-                                  setNewTaskCategory(folder.name)
-                                }}
-                                className={`w-full rounded-2xl border p-3 text-left transition-all ${
-                                  isSelected
-                                    ? 'bg-[#8f75d8] text-white border-[#8f75d8] shadow-lg shadow-[#8f75d8]/20'
-                                    : 'bg-white/60 dark:bg-indigo-950/20 border-purple-100/70 dark:border-indigo-900/60 hover:bg-purple-50 dark:hover:bg-indigo-900/30'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'text-white'}`} style={!isSelected ? { background: `linear-gradient(135deg, ${folder.color}, #7C3AED)` } : undefined}>
-                                    <Folder size={18} />
+                    isMobileTabletView ? (
+                      mobileTaskFolderOpen ? (
+                        <section className="glass-panel p-5 min-h-[420px]">
+                          {selectedProjectFolder ? (
+                            <>
+                              <div className="flex items-start justify-between gap-3 mb-5">
+                                <div className="min-w-0 flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMobileTaskFolderOpen(false)}
+                                    className="w-8 h-8 rounded-lg border border-purple-200/70 dark:border-indigo-900/60 bg-white/80 dark:bg-indigo-950/40 text-purple-600 dark:text-purple-300 flex items-center justify-center shrink-0"
+                                    title="Kembali ke list folder"
+                                  >
+                                    <ArrowLeft size={14} />
+                                  </button>
+                                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0" style={{ background: `linear-gradient(135deg, ${selectedProjectFolder.color}, #7C3AED)` }}>
+                                    <FolderOpen size={18} />
                                   </div>
-                                  <div className="min-w-0 flex-1">
-                                    <h4 className={`text-sm font-extrabold truncate ${isSelected ? 'text-white' : 'text-purple-900 dark:text-white'}`}>{folder.name}</h4>
-                                    <p className={`text-[11px] mt-0.5 ${isSelected ? 'text-white/75' : 'text-purple-400 dark:text-purple-300'}`}>{folder.tasks.length} task • {folder.subtasks.length} subtask</p>
+                                  <div className="min-w-0">
+                                    <h3 className="text-lg font-extrabold truncate">{selectedProjectFolder.name}</h3>
+                                    <p className="text-xs text-purple-400 dark:text-purple-300 mt-0.5">Task dan subtask pada folder ini tetap sinkron ke kalender dan notifikasi.</p>
                                   </div>
-                                  <span className={`text-[10px] font-bold ${isSelected ? 'text-white' : 'text-purple-500 dark:text-purple-300'}`}>{doneItems}/{totalItems}</span>
                                 </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </aside>
-
-                      <section className="glass-panel p-6 min-h-[420px]">
-                        {selectedProjectFolder ? (
-                          <>
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0" style={{ background: `linear-gradient(135deg, ${selectedProjectFolder.color}, #7C3AED)` }}>
-                                  <FolderOpen size={22} />
-                                </div>
-                                <div className="min-w-0">
-                                  <h3 className="text-xl font-extrabold truncate">{selectedProjectFolder.name}</h3>
-                                  <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">Task dan subtask pada folder ini tetap sinkron ke kalender dan notifikasi.</p>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewTaskCategory(selectedProjectFolder.name)
+                                    setShowQuickTaskModal(true)
+                                  }}
+                                  className="px-3 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md shrink-0"
+                                >
+                                  <Plus size={13} />
+                                  Add Task
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNewTaskCategory(selectedProjectFolder.name)
-                                  setShowQuickTaskModal(true)
-                                }}
-                                className="px-4 py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md"
-                              >
-                                <Plus size={13} />
-                                Add Task
-                              </button>
-                            </div>
 
-                            {selectedFolderTasks.length === 0 ? (
-                              <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-8 text-center">
-                                <CheckCircle className="mx-auto text-purple-300 dark:text-purple-700 mb-2" size={32} />
-                                <p className="text-sm text-purple-400 dark:text-purple-300">Folder ini belum punya task utama.</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                {selectedFolderTasks.map(task => {
-                                  const childSubtasks = (subtasksByParent[task.id] || []).filter(taskMatchesSearch)
-                                  const taskProgress = getTaskProgress(task, childSubtasks)
-                                  return (
-                                    <div key={task.id} className="rounded-2xl border border-purple-100/70 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-slate-950/20 p-4">
-                                      <div className="flex items-center gap-3">
-                                        <button type="button" onClick={() => toggleTaskStatus(task.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.status === 'done' ? 'bg-[#8f75d8] border-[#8f75d8] text-white' : 'border-purple-300 hover:border-purple-500'}`}>
-                                          {task.status === 'done' && <Check size={12} strokeWidth={3} />}
-                                        </button>
-                                        <div className="flex-1 min-w-0">
-                                          <p className={`text-sm font-semibold truncate ${task.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{task.title}</p>
-                                          <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-purple-400 dark:text-purple-300">
-                                            <span className="flex items-center gap-1"><Clock size={10} />{task.dueTime} WIB</span>
-                                            <span>•</span>
-                                            <span>{task.calendarDate || todayString}</span>
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300 font-bold uppercase">{task.priority}</span>
+                              {selectedFolderTasks.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-8 text-center">
+                                  <CheckCircle className="mx-auto text-purple-300 dark:text-purple-700 mb-2" size={32} />
+                                  <p className="text-sm text-purple-400 dark:text-purple-300">Folder ini belum punya task utama.</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {selectedFolderTasks.map(task => {
+                                    const childSubtasks = (subtasksByParent[task.id] || []).filter(taskMatchesSearch)
+                                    const taskProgress = getTaskProgress(task, childSubtasks)
+                                    return (
+                                      <div key={task.id} className="rounded-2xl border border-purple-100/70 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-slate-950/20 p-4">
+                                        <div className="flex items-center gap-3">
+                                          <button type="button" onClick={() => toggleTaskStatus(task.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.status === 'done' ? 'bg-[#8f75d8] border-[#8f75d8] text-white' : 'border-purple-300 hover:border-purple-500'}`}>
+                                            {task.status === 'done' && <Check size={12} strokeWidth={3} />}
+                                          </button>
+                                          <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-semibold truncate ${task.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{task.title}</p>
+                                            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-purple-400 dark:text-purple-300">
+                                              <span className="flex items-center gap-1"><Clock size={10} />{task.dueTime} WIB</span>
+                                              <span>•</span>
+                                              <span>{task.calendarDate || todayString}</span>
+                                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300 font-bold uppercase">{task.priority}</span>
+                                            </div>
+                                          </div>
+                                          <button onClick={() => openCalendarEditModal({ ...task, itemType: 'task' })} className="w-8 h-8 rounded-lg hover:bg-purple-100 dark:hover:bg-indigo-900/50 text-purple-400 hover:text-purple-600 flex items-center justify-center" title="Edit task">
+                                            <Pencil size={14} />
+                                          </button>
+                                          <button onClick={() => deleteTask(task.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-purple-400 hover:text-red-500 flex items-center justify-center" title="Hapus task">
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </div>
+
+                                        <div className="mt-3 ml-9">
+                                          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300 mb-1.5">
+                                            <span>Progress</span>
+                                            <span>{taskProgress.percent}% • {taskProgress.completed}/{taskProgress.total}</span>
+                                          </div>
+                                          <div className="h-2 rounded-full bg-purple-100 dark:bg-indigo-950/60 overflow-hidden">
+                                            <div
+                                              className={`h-full rounded-full transition-all duration-500 ${
+                                                taskProgress.percent === 100
+                                                  ? 'bg-emerald-500'
+                                                  : 'bg-gradient-to-r from-purple-500 to-fuchsia-500'
+                                              }`}
+                                              style={{ width: `${taskProgress.percent}%` }}
+                                            />
                                           </div>
                                         </div>
-                                        <button onClick={() => openCalendarEditModal({ ...task, itemType: 'task' })} className="w-8 h-8 rounded-lg hover:bg-purple-100 dark:hover:bg-indigo-900/50 text-purple-400 hover:text-purple-600 flex items-center justify-center" title="Edit task">
-                                          <Pencil size={14} />
-                                        </button>
-                                        <button onClick={() => deleteTask(task.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-purple-400 hover:text-red-500 flex items-center justify-center" title="Hapus task">
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
 
-                                      <div className="mt-3 ml-9">
-                                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300 mb-1.5">
-                                          <span>Progress</span>
-                                          <span>{taskProgress.percent}% • {taskProgress.completed}/{taskProgress.total}</span>
-                                        </div>
-                                        <div className="h-2 rounded-full bg-purple-100 dark:bg-indigo-950/60 overflow-hidden">
-                                          <div
-                                            className={`h-full rounded-full transition-all duration-500 ${
-                                              taskProgress.percent === 100
-                                                ? 'bg-emerald-500'
-                                                : 'bg-gradient-to-r from-purple-500 to-fuchsia-500'
-                                            }`}
-                                            style={{ width: `${taskProgress.percent}%` }}
-                                          />
-                                        </div>
-                                      </div>
-
-                                      {childSubtasks.length > 0 && (
-                                        <div className="mt-3 ml-9 space-y-2">
-                                          {childSubtasks.map(subtask => (
-                                            <div key={subtask.id} className="flex items-center gap-2 rounded-lg bg-white dark:bg-indigo-950/30 border border-purple-100/50 dark:border-indigo-900/40 px-3 py-2">
-                                              <button type="button" onClick={() => toggleTaskStatus(subtask.id)} className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${subtask.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-purple-300 hover:border-purple-500'}`}>
-                                                {subtask.status === 'done' && <Check size={9} strokeWidth={3} />}
-                                              </button>
-                                              <div className="flex-1 min-w-0">
-                                                <p className={`text-xs font-semibold truncate ${subtask.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{subtask.title}</p>
-                                                <p className="text-[10px] text-purple-400 dark:text-purple-300">{subtask.calendarDate || todayString} • {subtask.dueTime} WIB</p>
+                                        {childSubtasks.length > 0 && (
+                                          <div className="mt-3 ml-9 space-y-2">
+                                            {childSubtasks.map(subtask => (
+                                              <div key={subtask.id} className="flex items-center gap-2 rounded-lg bg-white dark:bg-indigo-950/30 border border-purple-100/50 dark:border-indigo-900/40 px-3 py-2">
+                                                <button type="button" onClick={() => toggleTaskStatus(subtask.id)} className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${subtask.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-purple-300 hover:border-purple-500'}`}>
+                                                  {subtask.status === 'done' && <Check size={9} strokeWidth={3} />}
+                                                </button>
+                                                <div className="flex-1 min-w-0">
+                                                  <p className={`text-xs font-semibold truncate ${subtask.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{subtask.title}</p>
+                                                  <p className="text-[10px] text-purple-400 dark:text-purple-300">{subtask.calendarDate || todayString} • {subtask.dueTime} WIB</p>
+                                                </div>
+                                                <button onClick={() => openCalendarEditModal({ ...subtask, itemType: 'task' })} className="text-purple-400 hover:text-purple-600"><Pencil size={12} /></button>
+                                                <button onClick={() => deleteTask(subtask.id)} className="text-purple-400 hover:text-red-500"><Trash2 size={12} /></button>
                                               </div>
-                                              <button onClick={() => openCalendarEditModal({ ...subtask, itemType: 'task' })} className="text-purple-400 hover:text-purple-600"><Pencil size={12} /></button>
-                                              <button onClick={() => deleteTask(subtask.id)} className="text-purple-400 hover:text-red-500"><Trash2 size={12} /></button>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                })}
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="h-full min-h-[320px] flex items-center justify-center rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 text-center p-8">
+                              <div>
+                                <Folder className="mx-auto text-purple-300 dark:text-purple-700 mb-3" size={40} />
+                                <p className="text-sm text-purple-400 dark:text-purple-300">Pilih folder project terlebih dahulu.</p>
                               </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="h-full min-h-[320px] flex items-center justify-center rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 text-center p-8">
-                            <div>
-                              <Folder className="mx-auto text-purple-300 dark:text-purple-700 mb-3" size={40} />
-                              <p className="text-sm text-purple-400 dark:text-purple-300">Pilih atau buat folder project terlebih dahulu.</p>
                             </div>
+                          )}
+                        </section>
+                      ) : (
+                        <aside className="glass-panel p-4">
+                          <div className="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                              <h3 className="text-lg font-bold">Folder Project</h3>
+                              <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">{allProjectFolders.length} folder aktif</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowNewFolderModal(true)}
+                              className="w-9 h-9 rounded-xl bg-[#8f75d8] text-white flex items-center justify-center shadow-md hover:bg-[#8069c8]"
+                              title="New Folder Task"
+                            >
+                              <Plus size={16} />
+                            </button>
                           </div>
-                        )}
-                      </section>
-                    </div>
+
+                          <div className="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
+                            {allProjectFolders.length === 0 ? (
+                              <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-4 text-xs text-purple-400 dark:text-purple-300">
+                                Belum ada folder. Buat folder project baru untuk mulai mengelompokkan task.
+                              </div>
+                            ) : allProjectFolders.map(folder => {
+                              const totalItems = folder.tasks.length + folder.subtasks.length
+                              const doneItems = [...folder.tasks, ...folder.subtasks].filter(task => task.status === 'done').length
+                              const isSelected = selectedProjectFolder?.name === folder.name
+                              return (
+                                <button
+                                  key={folder.name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedProjectName(folder.name)
+                                    setNewTaskCategory(folder.name)
+                                    setMobileTaskFolderOpen(true)
+                                  }}
+                                  className={`w-full rounded-2xl border p-3 text-left transition-all ${
+                                    isSelected
+                                      ? 'bg-[#8f75d8] text-white border-[#8f75d8] shadow-lg shadow-[#8f75d8]/20'
+                                      : 'bg-white/60 dark:bg-indigo-950/20 border-purple-100/70 dark:border-indigo-900/60 hover:bg-purple-50 dark:hover:bg-indigo-900/30'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'text-white'}`} style={!isSelected ? { background: `linear-gradient(135deg, ${folder.color}, #7C3AED)` } : undefined}>
+                                      <Folder size={18} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className={`text-sm font-extrabold truncate ${isSelected ? 'text-white' : 'text-purple-900 dark:text-white'}`}>{folder.name}</h4>
+                                      <p className={`text-[11px] mt-0.5 ${isSelected ? 'text-white/75' : 'text-purple-400 dark:text-purple-300'}`}>{folder.tasks.length} task • {folder.subtasks.length} subtask</p>
+                                    </div>
+                                    <span className={`text-[10px] font-bold ${isSelected ? 'text-white' : 'text-purple-500 dark:text-purple-300'}`}>{doneItems}/{totalItems}</span>
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </aside>
+                      )
+                    ) : (
+                      // Two-panel folder/task view
+                      <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
+                        <aside className="glass-panel p-4">
+                          <div className="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                              <h3 className="text-lg font-bold">Folder Project</h3>
+                              <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">{allProjectFolders.length} folder aktif</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowNewFolderModal(true)}
+                              className="w-9 h-9 rounded-xl bg-[#8f75d8] text-white flex items-center justify-center shadow-md hover:bg-[#8069c8]"
+                              title="New Folder Task"
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
+
+                          <div className="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
+                            {allProjectFolders.length === 0 ? (
+                              <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-4 text-xs text-purple-400 dark:text-purple-300">
+                                Belum ada folder. Buat folder project baru untuk mulai mengelompokkan task.
+                              </div>
+                            ) : allProjectFolders.map(folder => {
+                              const totalItems = folder.tasks.length + folder.subtasks.length
+                              const doneItems = [...folder.tasks, ...folder.subtasks].filter(task => task.status === 'done').length
+                              const isSelected = selectedProjectFolder?.name === folder.name
+                              return (
+                                <button
+                                  key={folder.name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedProjectName(folder.name)
+                                    setNewTaskCategory(folder.name)
+                                  }}
+                                  className={`w-full rounded-2xl border p-3 text-left transition-all ${
+                                    isSelected
+                                      ? 'bg-[#8f75d8] text-white border-[#8f75d8] shadow-lg shadow-[#8f75d8]/20'
+                                      : 'bg-white/60 dark:bg-indigo-950/20 border-purple-100/70 dark:border-indigo-900/60 hover:bg-purple-50 dark:hover:bg-indigo-900/30'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'text-white'}`} style={!isSelected ? { background: `linear-gradient(135deg, ${folder.color}, #7C3AED)` } : undefined}>
+                                      <Folder size={18} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className={`text-sm font-extrabold truncate ${isSelected ? 'text-white' : 'text-purple-900 dark:text-white'}`}>{folder.name}</h4>
+                                      <p className={`text-[11px] mt-0.5 ${isSelected ? 'text-white/75' : 'text-purple-400 dark:text-purple-300'}`}>{folder.tasks.length} task • {folder.subtasks.length} subtask</p>
+                                    </div>
+                                    <span className={`text-[10px] font-bold ${isSelected ? 'text-white' : 'text-purple-500 dark:text-purple-300'}`}>{doneItems}/{totalItems}</span>
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </aside>
+
+                        <section className="glass-panel p-6 min-h-[420px]">
+                          {selectedProjectFolder ? (
+                            <>
+                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0" style={{ background: `linear-gradient(135deg, ${selectedProjectFolder.color}, #7C3AED)` }}>
+                                    <FolderOpen size={22} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h3 className="text-xl font-extrabold truncate">{selectedProjectFolder.name}</h3>
+                                    <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">Task dan subtask pada folder ini tetap sinkron ke kalender dan notifikasi.</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewTaskCategory(selectedProjectFolder.name)
+                                    setShowQuickTaskModal(true)
+                                  }}
+                                  className="px-4 py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md"
+                                >
+                                  <Plus size={13} />
+                                  Add Task
+                                </button>
+                              </div>
+
+                              {selectedFolderTasks.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 p-8 text-center">
+                                  <CheckCircle className="mx-auto text-purple-300 dark:text-purple-700 mb-2" size={32} />
+                                  <p className="text-sm text-purple-400 dark:text-purple-300">Folder ini belum punya task utama.</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {selectedFolderTasks.map(task => {
+                                    const childSubtasks = (subtasksByParent[task.id] || []).filter(taskMatchesSearch)
+                                    const taskProgress = getTaskProgress(task, childSubtasks)
+                                    return (
+                                      <div key={task.id} className="rounded-2xl border border-purple-100/70 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-slate-950/20 p-4">
+                                        <div className="flex items-center gap-3">
+                                          <button type="button" onClick={() => toggleTaskStatus(task.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.status === 'done' ? 'bg-[#8f75d8] border-[#8f75d8] text-white' : 'border-purple-300 hover:border-purple-500'}`}>
+                                            {task.status === 'done' && <Check size={12} strokeWidth={3} />}
+                                          </button>
+                                          <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-semibold truncate ${task.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{task.title}</p>
+                                            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-purple-400 dark:text-purple-300">
+                                              <span className="flex items-center gap-1"><Clock size={10} />{task.dueTime} WIB</span>
+                                              <span>•</span>
+                                              <span>{task.calendarDate || todayString}</span>
+                                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300 font-bold uppercase">{task.priority}</span>
+                                            </div>
+                                          </div>
+                                          <button onClick={() => openCalendarEditModal({ ...task, itemType: 'task' })} className="w-8 h-8 rounded-lg hover:bg-purple-100 dark:hover:bg-indigo-900/50 text-purple-400 hover:text-purple-600 flex items-center justify-center" title="Edit task">
+                                            <Pencil size={14} />
+                                          </button>
+                                          <button onClick={() => deleteTask(task.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-purple-400 hover:text-red-500 flex items-center justify-center" title="Hapus task">
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </div>
+
+                                        <div className="mt-3 ml-9">
+                                          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-300 mb-1.5">
+                                            <span>Progress</span>
+                                            <span>{taskProgress.percent}% • {taskProgress.completed}/{taskProgress.total}</span>
+                                          </div>
+                                          <div className="h-2 rounded-full bg-purple-100 dark:bg-indigo-950/60 overflow-hidden">
+                                            <div
+                                              className={`h-full rounded-full transition-all duration-500 ${
+                                                taskProgress.percent === 100
+                                                  ? 'bg-emerald-500'
+                                                  : 'bg-gradient-to-r from-purple-500 to-fuchsia-500'
+                                              }`}
+                                              style={{ width: `${taskProgress.percent}%` }}
+                                            />
+                                          </div>
+                                        </div>
+
+                                        {childSubtasks.length > 0 && (
+                                          <div className="mt-3 ml-9 space-y-2">
+                                            {childSubtasks.map(subtask => (
+                                              <div key={subtask.id} className="flex items-center gap-2 rounded-lg bg-white dark:bg-indigo-950/30 border border-purple-100/50 dark:border-indigo-900/40 px-3 py-2">
+                                                <button type="button" onClick={() => toggleTaskStatus(subtask.id)} className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${subtask.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-purple-300 hover:border-purple-500'}`}>
+                                                  {subtask.status === 'done' && <Check size={9} strokeWidth={3} />}
+                                                </button>
+                                                <div className="flex-1 min-w-0">
+                                                  <p className={`text-xs font-semibold truncate ${subtask.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{subtask.title}</p>
+                                                  <p className="text-[10px] text-purple-400 dark:text-purple-300">{subtask.calendarDate || todayString} • {subtask.dueTime} WIB</p>
+                                                </div>
+                                                <button onClick={() => openCalendarEditModal({ ...subtask, itemType: 'task' })} className="text-purple-400 hover:text-purple-600"><Pencil size={12} /></button>
+                                                <button onClick={() => deleteTask(subtask.id)} className="text-purple-400 hover:text-red-500"><Trash2 size={12} /></button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="h-full min-h-[320px] flex items-center justify-center rounded-2xl border border-dashed border-purple-200 dark:border-indigo-900 text-center p-8">
+                              <div>
+                                <Folder className="mx-auto text-purple-300 dark:text-purple-700 mb-3" size={40} />
+                                <p className="text-sm text-purple-400 dark:text-purple-300">Pilih atau buat folder project terlebih dahulu.</p>
+                              </div>
+                            </div>
+                          )}
+                        </section>
+                      </div>
+                    )
                   ) : (
                     // Project Kanban Board View
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -5894,7 +6093,7 @@ function App() {
           {activeTab === 'orders' && (
             <div className="mobile-page mobile-page-orders">
               <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
-                <aside className="glass-panel p-5">
+                <aside className={`glass-panel p-5 ${isMobileTabletView && mobileOrderDetailOpen ? 'hidden' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-bold text-[#4f4574]">Order Customer</h3>
@@ -5968,7 +6167,10 @@ function App() {
                       return (
                       <div
                         key={order.id}
-                        onClick={() => setSelectedOrderId(order.id)}
+                        onClick={() => {
+                          setSelectedOrderId(order.id)
+                          if (isMobileTabletView) setMobileOrderDetailOpen(true)
+                        }}
                         className={`w-full text-left rounded-xl border p-3 transition-all ${
                           selectedSpreadsheetOrder?.id === order.id
                             ? 'border-[#8f75d8] bg-[#f5f0ff]'
@@ -6020,11 +6222,23 @@ function App() {
                   </div>
                 </aside>
 
-                <section className="glass-panel p-5">
+                <section className={`glass-panel p-5 ${isMobileTabletView && !mobileOrderDetailOpen ? 'hidden' : ''}`}>
                   {!selectedSpreadsheetOrder ? (
                     <div className="text-sm text-[#8f75d8]">Pilih order dulu dari panel kiri.</div>
                   ) : (
                     <>
+                      {isMobileTabletView && (
+                        <div className="mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setMobileOrderDetailOpen(false)}
+                            className="w-8 h-8 rounded-lg border border-purple-200/70 dark:border-indigo-900/60 bg-white/80 dark:bg-indigo-950/40 text-purple-600 dark:text-purple-300 flex items-center justify-center"
+                            title="Kembali ke list order"
+                          >
+                            <ArrowLeft size={14} />
+                          </button>
+                        </div>
+                      )}
                       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
                         <div>
                           <h3 className="text-xl font-bold text-[#4f4574]">{selectedSpreadsheetOrder.orderName}</h3>
@@ -8608,9 +8822,9 @@ function App() {
             setShowNotificationHistory(prev => !prev)
           }}
           aria-label="Buka riwayat notifikasi"
-          className="fixed bottom-12 right-14 w-20 h-20 flex items-center justify-center active:scale-95 transition-all z-40"
+          className="floating-notification-trigger fixed bottom-12 right-14 w-20 h-20 flex items-center justify-center active:scale-95 transition-all z-40"
         >
-          <img src={dyataskMiniLogo} alt="" className="w-20 h-20 object-contain drop-shadow-xl hover:scale-105 transition-transform" />
+          <img src={dyataskMiniLogo} alt="" className="floating-notification-icon w-20 h-20 object-contain drop-shadow-xl hover:scale-105 transition-transform" />
           {activeNotifications.length > 0 && (
             <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold flex items-center justify-center border-2 border-white dark:border-slate-950">
               {Math.min(activeNotifications.length, 9)}
