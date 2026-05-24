@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
+import './mobile-tablet.css'
 import dyataskLogo from './logo-dyatask.png'
 import dyataskMiniLogo from './minilogo-dyatask.png'
+import dyataskLogo2 from './logo-dyatask2.png'
 import { supabase, supabaseAdmin } from './supabaseClient'
 import {
   LayoutDashboard,
@@ -37,7 +39,13 @@ import {
   BellRing,
   AlertCircle,
   Folder,
-  FolderOpen
+  FolderOpen,
+  Users,
+  MessageSquare,
+  CalendarClock,
+  BadgeDollarSign,
+  MoreHorizontal,
+  X
 } from 'lucide-react'
 
 // Mock initial data
@@ -140,6 +148,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [appHeaderTagline, setAppHeaderTagline] = useState(() => localStorage.getItem('dyatask_header_tagline') || 'Modern Soft Minimalist Amethyst')
   const [appHeaderTitle, setAppHeaderTitle] = useState(() => localStorage.getItem('dyatask_header_title') || 'Dyatask Manager - Superapp for Freelancer')
+  const [headerNow, setHeaderNow] = useState(new Date())
   const [loginVisualImage, setLoginVisualImage] = useState(() => localStorage.getItem('dyatask_login_visual_image') || '')
   const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem('dyatask_theme')
@@ -186,6 +195,8 @@ function App() {
   const seenGoogleCalendarEventIdsRef = useRef(new Set())
   const googleCalendarBaselineReadyRef = useRef(false)
   const reminderNotificationKeysRef = useRef(new Set())
+  const orderDeadlineReminderKeysRef = useRef(new Set())
+  const invoiceReminderKeysRef = useRef(new Set())
 
   // Helper function to get chart data points based on metric (after state is defined)
   const getChartDataPoints = () => {
@@ -320,6 +331,10 @@ function App() {
       return { daySchedules: defaultDaySchedules, slotMinutes: 30 }
     }
   })
+  const [reservationSessionPrice, setReservationSessionPrice] = useState(() => {
+    const saved = Number(localStorage.getItem('dyatask_reservation_session_price') || '250000')
+    return Number.isFinite(saved) && saved >= 0 ? saved : 250000
+  })
   const [selectedAvailabilityDay, setSelectedAvailabilityDay] = useState(1)
   const [showAvailabilitySettings, setShowAvailabilitySettings] = useState(false)
   const [showBookingQuickForm, setShowBookingQuickForm] = useState(false)
@@ -331,6 +346,55 @@ function App() {
     return 'Ketentuan reservasi:\n- Harap hadir 10 menit sebelum jadwal.\n- Jadwal dapat dijadwalkan ulang maksimal 1x.\n- Link meeting akan dikirim via email/WhatsApp setelah konfirmasi.'
   })
   const [publicShareBaseUrl, setPublicShareBaseUrl] = useState(() => localStorage.getItem('dyatask_public_share_base_url') || '')
+  const [spreadsheetOrders, setSpreadsheetOrders] = useState([])
+  const [orderTimelineItems, setOrderTimelineItems] = useState([])
+  const [selectedOrderId, setSelectedOrderId] = useState(null)
+  const [newOrderCustomer, setNewOrderCustomer] = useState('')
+  const [newOrderName, setNewOrderName] = useState('')
+  const [newOrderType, setNewOrderType] = useState('Dashboard')
+  const [newOrderBudget, setNewOrderBudget] = useState('')
+  const [newOrderDueDate, setNewOrderDueDate] = useState(todayString)
+  const [newOrderStatus, setNewOrderStatus] = useState('new')
+  const [newOrderPaymentStatus, setNewOrderPaymentStatus] = useState('belum_bayar')
+  const [orderPaymentStatusMap, setOrderPaymentStatusMap] = useState({})
+  const [editingOrderId, setEditingOrderId] = useState(null)
+  const [showOrderForm, setShowOrderForm] = useState(false)
+  const [timelineInputTitle, setTimelineInputTitle] = useState('')
+  const [timelineInputNote, setTimelineInputNote] = useState('')
+  const [timelineInputProgress, setTimelineInputProgress] = useState(0)
+  const [editingTimelineId, setEditingTimelineId] = useState(null)
+  const [editTimelineTitle, setEditTimelineTitle] = useState('')
+  const [editTimelineNote, setEditTimelineNote] = useState('')
+  const [editTimelineProgress, setEditTimelineProgress] = useState(0)
+  const [invoices, setInvoices] = useState([])
+  const [invoiceStorageMode, setInvoiceStorageMode] = useState('cloud')
+  const [invoiceFilterStatus, setInvoiceFilterStatus] = useState('all')
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false)
+  const [editingInvoiceId, setEditingInvoiceId] = useState(null)
+  const [invoiceClientName, setInvoiceClientName] = useState('')
+  const [invoiceTitle, setInvoiceTitle] = useState('')
+  const [invoiceType, setInvoiceType] = useState('Custom Spreadsheet')
+  const [invoiceAmount, setInvoiceAmount] = useState('')
+  const [invoiceIssueDate, setInvoiceIssueDate] = useState(todayString)
+  const [invoiceDueDate, setInvoiceDueDate] = useState(todayString)
+  const [invoiceStatus, setInvoiceStatus] = useState('draft')
+  const [invoiceNotes, setInvoiceNotes] = useState('')
+  const [crmClients, setCrmClients] = useState([])
+  const [crmActivities, setCrmActivities] = useState([])
+  const [showCrmForm, setShowCrmForm] = useState(false)
+  const [editingCrmClientId, setEditingCrmClientId] = useState(null)
+  const [selectedCrmClientId, setSelectedCrmClientId] = useState(null)
+  const [crmClientName, setCrmClientName] = useState('')
+  const [crmClientCompany, setCrmClientCompany] = useState('')
+  const [crmClientEmail, setCrmClientEmail] = useState('')
+  const [crmClientPhone, setCrmClientPhone] = useState('')
+  const [crmClientStatus, setCrmClientStatus] = useState('lead')
+  const [crmClientNextFollowUp, setCrmClientNextFollowUp] = useState(todayString)
+  const [crmClientNotes, setCrmClientNotes] = useState('')
+  const [crmActivityTitle, setCrmActivityTitle] = useState('')
+  const [crmActivityNote, setCrmActivityNote] = useState('')
+  const [crmActivityDueDate, setCrmActivityDueDate] = useState(todayString)
+  const [activityLogs, setActivityLogs] = useState([])
 
   // Encryption simulation state
   const [notes, setNotes] = useState(initialNotes)
@@ -344,12 +408,26 @@ function App() {
   const [scrambledText, setScrambledText] = useState('')
 
   // Simulated push notification
-  const [notifications, setNotifications] = useState([])
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const raw = localStorage.getItem('dyatask_notification_history')
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
   const [showNotificationList, setShowNotificationList] = useState(false)
-  const [notificationNowMs, setNotificationNowMs] = useState(Date.now())
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
+  const [showMobileMoreMenu, setShowMobileMoreMenu] = useState(false)
   const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
+  const [pwaInstallPrompt, setPwaInstallPrompt] = useState(null)
+  const [isPwaStandalone, setIsPwaStandalone] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
+  })
   const [floatingTaskTitle, setFloatingTaskTitle] = useState('')
   const [showQuickTaskModal, setShowQuickTaskModal] = useState(false)
   const [showQuickBookingModal, setShowQuickBookingModal] = useState(false)
@@ -369,14 +447,19 @@ function App() {
   const [activeIntegrationModal, setActiveIntegrationModal] = useState(null) // 'google_calendar' | 'notion' | 'email' | 'google_sheets'
   const [activeTutorialModal, setActiveTutorialModal] = useState(null)
   const [integrationFormData, setIntegrationFormData] = useState({})
+
+  const activeNotifications = notifications.filter(item => !item.confirmed)
   const [testingGoogleConnection, setTestingGoogleConnection] = useState(false)
   const [googleConnectionStatus, setGoogleConnectionStatus] = useState(null)
+  const [calendarActionItem, setCalendarActionItem] = useState(null)
   const [activeCalendarEditItem, setActiveCalendarEditItem] = useState(null)
   const [calendarEditForm, setCalendarEditForm] = useState({})
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null)
   const searchParams = new URLSearchParams(window.location.search)
   const publicBookingToken = searchParams.get('booking')
+  const publicTrackingToken = searchParams.get('track')
   const isPublicBookingMode = !!publicBookingToken
+  const isPublicTrackingMode = !!publicTrackingToken
 
   const saveIntegrationConfig = async () => {
     if (!session?.user?.id || !activeIntegrationModal) return
@@ -407,12 +490,24 @@ function App() {
   }, [appHeaderTagline, appHeaderTitle])
 
   useEffect(() => {
+    const timer = setInterval(() => {
+      setHeaderNow(new Date())
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
     if (loginVisualImage) {
       localStorage.setItem('dyatask_login_visual_image', loginVisualImage)
     } else {
       localStorage.removeItem('dyatask_login_visual_image')
     }
   }, [loginVisualImage])
+
+  useEffect(() => {
+    localStorage.setItem('dyatask_reservation_session_price', String(Math.max(0, Number(reservationSessionPrice || 0))))
+  }, [reservationSessionPrice])
 
   const handleLoginVisualUpload = (event) => {
     const file = event.target.files?.[0]
@@ -542,9 +637,455 @@ function App() {
   const normalizedPublicShareBaseUrl = publicShareBaseUrl.trim().replace(/\/+$/, '')
   const currentAppBaseUrl = `${window.location.origin}${window.location.pathname}`.replace(/\/+$/, '')
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
+  const selectedSpreadsheetOrder = spreadsheetOrders.find(order => order.id === selectedOrderId) || spreadsheetOrders[0] || null
+  const sortedSpreadsheetOrders = [...spreadsheetOrders].sort((a, b) => {
+    const aDone = ['completed', 'done'].includes((a.status || '').toLowerCase())
+    const bDone = ['completed', 'done'].includes((b.status || '').toLowerCase())
+    if (aDone !== bDone) return aDone ? 1 : -1
+    return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')
+  })
+  const selectedOrderTimeline = selectedSpreadsheetOrder
+    ? orderTimelineItems
+      .filter(item => item.orderId === selectedSpreadsheetOrder.id)
+      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
+    : []
+  const selectedOrderPublicLink = selectedSpreadsheetOrder
+    ? `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?track=${selectedSpreadsheetOrder.publicToken}`
+    : ''
+  const paidPaymentStatuses = ['lunas', 'paid']
+  const isSpreadsheetOrderPaid = (order) => paidPaymentStatuses.includes(String(order.paymentStatus || '').toLowerCase())
+  const currentMonthKey = todayString.slice(0, 7)
+  const reservationRevenueCurrentMonth = appointments
+    .filter(item => String(item.date || '').slice(0, 7) === currentMonthKey)
+    .length * Number(reservationSessionPrice || 0)
+  const spreadsheetPaidRevenueCurrentMonth = spreadsheetOrders
+    .filter(order => isSpreadsheetOrderPaid(order) && String(order.createdAt || '').slice(0, 7) === currentMonthKey)
+    .reduce((sum, order) => sum + Number(order.budget || 0), 0)
+  const monthlyBusinessRevenue = reservationRevenueCurrentMonth + spreadsheetPaidRevenueCurrentMonth
+  const spreadsheetOutstandingAmount = spreadsheetOrders
+    .filter(order => !isSpreadsheetOrderPaid(order))
+    .reduce((sum, order) => sum + Number(order.budget || 0), 0)
+  const spreadsheetTotalAmount = spreadsheetOrders.reduce((sum, order) => sum + Number(order.budget || 0), 0)
+  const spreadsheetPaidAmount = spreadsheetOrders
+    .filter(order => isSpreadsheetOrderPaid(order))
+    .reduce((sum, order) => sum + Number(order.budget || 0), 0)
+  const spreadsheetCollectionRate = spreadsheetTotalAmount > 0 ? Math.round((spreadsheetPaidAmount / spreadsheetTotalAmount) * 100) : 0
+  const totalBusinessRevenue = (appointments.length * Number(reservationSessionPrice || 0)) + spreadsheetPaidAmount
+  const orderPaymentStatusCounts = {
+    belum_bayar: spreadsheetOrders.filter(order => String(order.paymentStatus || 'belum_bayar') === 'belum_bayar').length,
+    dp: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'dp').length,
+    cicilan: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'cicilan').length,
+    lunas: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'lunas').length
+  }
+  const invoiceStorageKey = session?.user?.id ? `dyatask_invoices_${session.user.id}` : 'dyatask_invoices_guest'
+  const crmClientsStorageKey = session?.user?.id ? `dyatask_crm_clients_${session.user.id}` : 'dyatask_crm_clients_guest'
+  const crmActivitiesStorageKey = session?.user?.id ? `dyatask_crm_activities_${session.user.id}` : 'dyatask_crm_activities_guest'
+  const filteredInvoices = invoices.filter((item) => invoiceFilterStatus === 'all' || item.status === invoiceFilterStatus)
+  const openTaskCount = tasks.filter(item => item.status !== 'done' && item.parentTaskId == null).length
+  const upcomingMeetingCount = appointments.filter(item => {
+    const value = String(item.date || '')
+    return value >= todayString
+  }).length
+  const reportByStatus = orderPaymentStatusCounts
+  const revenueByMonth = useMemo(() => {
+    const monthKeys = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date()
+      date.setMonth(date.getMonth() - (5 - index))
+      return {
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        label: date.toLocaleDateString('id-ID', { month: 'short' })
+      }
+    })
+
+    return monthKeys.map(month => {
+      const reservationValue = appointments
+        .filter(item => String(item.date || '').slice(0, 7) === month.key)
+        .length * Number(reservationSessionPrice || 0)
+
+      const spreadsheetValue = spreadsheetOrders
+        .filter(order => isSpreadsheetOrderPaid(order) && String(order.createdAt || '').slice(0, 7) === month.key)
+        .reduce((sum, order) => sum + Number(order.budget || 0), 0)
+
+      const value = reservationValue + spreadsheetValue
+      return { ...month, value }
+    })
+  }, [appointments, spreadsheetOrders, reservationSessionPrice])
+  const topClients = useMemo(() => {
+    const map = new Map()
+
+    spreadsheetOrders
+      .filter(order => isSpreadsheetOrderPaid(order))
+      .forEach(order => {
+        const key = order.customerName || 'Client Spreadsheet'
+        map.set(key, (map.get(key) || 0) + Number(order.budget || 0))
+      })
+
+    appointments.forEach(item => {
+      const key = item.clientName || 'Client Reservasi'
+      map.set(key, (map.get(key) || 0) + Number(reservationSessionPrice || 0))
+    })
+
+    return Array.from(map.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+  }, [appointments, spreadsheetOrders, reservationSessionPrice])
+  const getCrmClientKey = (name = '', email = '') => {
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    const normalizedName = String(name || '').trim().toLowerCase()
+    return normalizedEmail || normalizedName || 'unknown-client'
+  }
+  const crmClientsCombined = useMemo(() => {
+    const latestString = (a = '', b = '') => {
+      if (!a) return b
+      if (!b) return a
+      return String(a) > String(b) ? a : b
+    }
+
+    const formatActivityDate = (dateValue, timeValue) => {
+      const safeDate = String(dateValue || '').trim()
+      const safeTime = String(timeValue || '').trim()
+      if (!safeDate) return ''
+      if (!safeTime) return `${safeDate}T23:59:59`
+      const timeHead = safeTime.includes('-') ? safeTime.split('-')[0].trim() : safeTime
+      return `${safeDate}T${timeHead.length === 5 ? `${timeHead}:00` : timeHead}`
+    }
+
+    const map = new Map()
+
+    const ensureClient = (key, defaults = {}) => {
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          name: defaults.name || '',
+          company: defaults.company || '',
+          email: defaults.email || '',
+          phone: defaults.phone || '',
+          status: defaults.status || 'lead',
+          nextFollowUpDate: defaults.nextFollowUpDate || '',
+          notes: defaults.notes || '',
+          sourceLabels: new Set(defaults.sourceLabels || []),
+          reservations: [],
+          orders: [],
+          activities: [],
+          totalRevenue: 0,
+          paidRevenue: 0,
+          lastActivityAt: defaults.lastActivityAt || '',
+          updatedAt: defaults.updatedAt || ''
+        })
+      }
+      return map.get(key)
+    }
+
+    appointments.forEach((item) => {
+      const key = getCrmClientKey(item.clientName, item.email)
+      const clientName = String(item.clientName || '').trim()
+      const topic = String(item.title || '').trim()
+      const appointmentLabel = clientName && topic ? `${clientName} - ${topic}` : clientName || topic || 'Session'
+      const client = ensureClient(key, {
+        name: item.clientName || '',
+        email: item.email || '',
+        status: 'active',
+        sourceLabels: ['Reservasi']
+      })
+
+      client.name = client.name || item.clientName || ''
+      client.email = client.email || item.email || ''
+      client.status = client.status === 'lead' ? 'active' : client.status
+      client.sourceLabels.add('Reservasi')
+      client.reservations.push({
+        id: item.id,
+        title: appointmentLabel,
+        date: item.date,
+        time: item.time,
+        status: item.status || 'confirmed',
+        createdAt: formatActivityDate(item.date, item.time)
+      })
+      client.activities.push({
+        id: `reservation-${item.id}`,
+        type: 'reservation',
+        title: `Reservasi 1:1 ${appointmentLabel}`,
+        note: `${item.date || '-'}${item.time ? ` • ${item.time}` : ''}`,
+        createdAt: formatActivityDate(item.date, item.time),
+        status: item.status || 'confirmed'
+      })
+      client.totalRevenue += Number(reservationSessionPrice || 0)
+      client.lastActivityAt = latestString(client.lastActivityAt, formatActivityDate(item.date, item.time))
+    })
+
+    spreadsheetOrders.forEach((item) => {
+      const key = getCrmClientKey(item.customerName)
+      const client = ensureClient(key, {
+        name: item.customerName || '',
+        status: 'active',
+        sourceLabels: ['Spreadsheet']
+      })
+
+      client.name = client.name || item.customerName || ''
+      client.sourceLabels.add('Spreadsheet')
+      client.orders.push({
+        id: item.id,
+        title: item.orderName,
+        type: item.orderType,
+        budget: Number(item.budget || 0),
+        status: item.status,
+        paymentStatus: item.paymentStatus || 'belum_bayar',
+        dueDate: item.dueDate,
+        createdAt: item.createdAt || ''
+      })
+      if (isSpreadsheetOrderPaid(item)) {
+        client.paidRevenue += Number(item.budget || 0)
+      }
+      client.totalRevenue += Number(item.budget || 0)
+      client.activities.push({
+        id: `order-${item.id}`,
+        type: 'order',
+        title: item.orderName,
+        note: `${item.orderType} • Rp ${Number(item.budget || 0).toLocaleString('id-ID')} • ${item.paymentStatus || 'belum_bayar'}`,
+        createdAt: item.createdAt || '',
+        status: item.status || 'new'
+      })
+      client.lastActivityAt = latestString(client.lastActivityAt, item.createdAt || '')
+      if (['completed', 'done'].includes(String(item.status || '').toLowerCase())) {
+        client.status = client.status === 'lead' ? 'active' : client.status
+      }
+    })
+
+    crmClients.forEach((clientItem) => {
+      const key = getCrmClientKey(clientItem.name, clientItem.email)
+      const existing = ensureClient(key, {
+        name: clientItem.name || '',
+        email: clientItem.email || '',
+        phone: clientItem.phone || '',
+        company: clientItem.company || '',
+        status: clientItem.status || 'lead',
+        nextFollowUpDate: clientItem.nextFollowUpDate || '',
+        notes: clientItem.notes || '',
+        updatedAt: clientItem.updatedAt || clientItem.createdAt || ''
+      })
+
+      existing.name = clientItem.name || existing.name
+      existing.company = clientItem.company || existing.company
+      existing.email = clientItem.email || existing.email
+      existing.phone = clientItem.phone || existing.phone
+      existing.status = clientItem.status || existing.status
+      existing.nextFollowUpDate = clientItem.nextFollowUpDate || existing.nextFollowUpDate
+      existing.notes = clientItem.notes || existing.notes
+      existing.updatedAt = clientItem.updatedAt || existing.updatedAt
+      existing.sourceLabels.add('Manual')
+      if (clientItem.notes) {
+        existing.activities.push({
+          id: `client-note-${clientItem.id}`,
+          type: 'note',
+          title: 'Catatan CRM',
+          note: clientItem.notes,
+          createdAt: clientItem.updatedAt || clientItem.createdAt || '',
+          status: 'note'
+        })
+      }
+      if (clientItem.nextFollowUpDate) {
+        existing.activities.push({
+          id: `client-followup-${clientItem.id}`,
+          type: 'follow_up',
+          title: 'Follow-up terjadwal',
+          note: `Target follow-up ${clientItem.nextFollowUpDate}`,
+          createdAt: clientItem.updatedAt || clientItem.createdAt || '',
+          status: 'open',
+          dueDate: clientItem.nextFollowUpDate
+        })
+      }
+    })
+
+    crmActivities.forEach((activity) => {
+      const key = activity.clientKey || getCrmClientKey(activity.clientName, activity.clientEmail)
+      const client = ensureClient(key, {
+        name: activity.clientName || '',
+        email: activity.clientEmail || '',
+        status: 'active'
+      })
+      client.activities.push({
+        id: activity.id,
+        type: 'follow_up',
+        title: activity.title,
+        note: activity.note || '',
+        createdAt: activity.createdAt || '',
+        dueDate: activity.dueDate || '',
+        status: activity.status || 'open'
+      })
+      client.sourceLabels.add('Follow-up')
+      client.lastActivityAt = latestString(client.lastActivityAt, activity.createdAt || '')
+      if (activity.status === 'done') {
+        client.status = client.status === 'lead' ? 'active' : client.status
+      }
+    })
+
+    return Array.from(map.values())
+      .map(client => ({
+        ...client,
+        sourceLabels: Array.from(client.sourceLabels),
+        activities: client.activities
+          .slice()
+          .sort((a, b) => String(b.createdAt || b.dueDate || '').localeCompare(String(a.createdAt || a.dueDate || '')))
+      }))
+      .sort((a, b) => String(b.lastActivityAt || b.updatedAt || '').localeCompare(String(a.lastActivityAt || a.updatedAt || '')))
+  }, [appointments, spreadsheetOrders, crmClients, crmActivities, reservationSessionPrice])
+  const selectedCrmClient = crmClientsCombined.find(item => item.key === selectedCrmClientId) || crmClientsCombined[0] || null
+  const crmSummary = useMemo(() => {
+    const followUpTodayOrLate = crmClientsCombined.filter(item => item.nextFollowUpDate && item.nextFollowUpDate <= todayString).length
+    const reservationCount = appointments.length
+    const paidSpreadsheetCount = spreadsheetOrders.filter(order => isSpreadsheetOrderPaid(order)).length
+    return {
+      totalClients: crmClientsCombined.length,
+      activeClients: crmClientsCombined.filter(item => item.sourceLabels.length > 0).length,
+      followUpsDue: followUpTodayOrLate,
+      totalReservations: reservationCount,
+      paidSpreadsheetCount,
+      confirmedRevenue: (appointments.length * Number(reservationSessionPrice || 0)) + spreadsheetOrders.filter(order => isSpreadsheetOrderPaid(order)).reduce((sum, order) => sum + Number(order.budget || 0), 0)
+    }
+  }, [appointments.length, crmClientsCombined, reservationSessionPrice, spreadsheetOrders, todayString])
+  useEffect(() => {
+    if (!crmClientsCombined.length) {
+      setSelectedCrmClientId(null)
+      return
+    }
+
+    if (!selectedCrmClientId || !crmClientsCombined.some(item => item.key === selectedCrmClientId)) {
+      setSelectedCrmClientId(crmClientsCombined[0].key)
+    }
+  }, [crmClientsCombined, selectedCrmClientId])
+  const formatCurrencyIDR = (value) => `Rp ${Number(value || 0).toLocaleString('id-ID')}`
+  const activityLogItems = useMemo(() => {
+    const toDate = (value) => {
+      if (!value) return null
+      if (typeof value === 'number') return new Date(value)
+      const date = new Date(value)
+      return Number.isNaN(date.getTime()) ? null : date
+    }
+
+    const makeItem = ({ id, type, title, detail, createdAt, tone = 'purple' }) => ({
+      id,
+      type,
+      title,
+      detail,
+      createdAt: toDate(createdAt) || new Date(),
+      tone
+    })
+
+    const logs = []
+
+    activityLogs.forEach(log => {
+      logs.push(makeItem({
+        id: `db-log-${log.id}`,
+        type: log.type || 'Log',
+        title: log.title || 'Activity',
+        detail: log.detail || '',
+        createdAt: log.createdAt,
+        tone: log.tone || 'purple'
+      }))
+    })
+
+    spreadsheetOrders.forEach(order => {
+      logs.push(makeItem({
+        id: `order-created-${order.id}`,
+        type: 'Order',
+        title: `Order dibuat: ${order.orderName || 'Tanpa nama'}`,
+        detail: `${order.customerName || 'Client'} • ${order.orderType || 'Custom'} • ${formatCurrencyIDR(order.budget)}`,
+        createdAt: order.createdAt || order.updatedAt,
+        tone: 'blue'
+      }))
+
+      if (order.updatedAt && order.updatedAt !== order.createdAt) {
+        logs.push(makeItem({
+          id: `order-status-${order.id}`,
+          type: 'Status',
+          title: `Status order: ${order.status || 'new'}`,
+          detail: `${order.orderName || 'Order'} • pembayaran ${order.paymentStatus || 'belum_bayar'}`,
+          createdAt: order.updatedAt,
+          tone: ['completed', 'done'].includes(String(order.status || '').toLowerCase()) ? 'green' : 'amber'
+        }))
+      }
+    })
+
+    appointments.forEach(appointment => {
+      logs.push(makeItem({
+        id: `appointment-${appointment.id}`,
+        type: 'Reservasi',
+        title: `Reservasi masuk: ${appointment.clientName || 'Client'}`,
+        detail: `${appointment.title || '1:1 Consultation'} • ${appointment.date || '-'} ${appointment.time || ''}`,
+        createdAt: appointment.createdAt || `${appointment.date || todayString}T${String(appointment.time || '23:59').slice(0, 5)}:00`,
+        tone: 'green'
+      }))
+    })
+
+    invoices
+      .filter(invoice => String(invoice.status || '').toLowerCase() === 'paid')
+      .forEach(invoice => {
+        logs.push(makeItem({
+          id: `invoice-paid-${invoice.id}`,
+          type: 'Invoice',
+          title: `Invoice lunas: ${invoice.title || 'Invoice'}`,
+          detail: `${invoice.clientName || 'Client'} • ${formatCurrencyIDR(invoice.amount)}`,
+          createdAt: invoice.updatedAt || invoice.createdAt || invoice.issueDate,
+          tone: 'green'
+        }))
+      })
+
+    notifications.forEach(notification => {
+      logs.push(makeItem({
+        id: `notification-${notification.id}`,
+        type: 'Notifikasi',
+        title: `Notifikasi terkirim: ${notification.title || 'DyaTask'}`,
+        detail: notification.body || 'Notifikasi aplikasi',
+        createdAt: notification.createdAt,
+        tone: notification.confirmed ? 'slate' : 'purple'
+      }))
+    })
+
+    tasks
+      .filter(task => task.status === 'done')
+      .slice(0, 8)
+      .forEach(task => {
+        logs.push(makeItem({
+          id: `task-done-${task.id}`,
+          type: 'Task',
+          title: `Task selesai: ${task.title}`,
+          detail: `${task.category || 'Task'} • ${task.calendarDate || todayString}`,
+          createdAt: `${task.calendarDate || todayString}T${task.dueTime || '23:59'}:00`,
+          tone: 'green'
+        }))
+      })
+
+    const uniqueLogs = Array.from(
+      logs.reduce((map, item) => {
+        const key = `${item.type}:${item.title}:${item.detail}:${item.createdAt.toISOString().slice(0, 16)}`
+        if (!map.has(key)) map.set(key, item)
+        return map
+      }, new Map()).values()
+    )
+
+    return uniqueLogs
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 40)
+  }, [activityLogs, appointments, invoices, notifications, spreadsheetOrders, tasks, todayString])
   const currentDeployKey = import.meta.env.VITE_DEPLOY_COMMIT || 'dev'
   const getDeployVersionKey = (metadata = {}) => metadata.buildId || metadata.commit || metadata.version || metadata.buildTime || ''
   const calendarTitle = calendarMonthDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
+  const headerUserName = String(
+    session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'User'
+  ).trim()
+  const headerHour = headerNow.getHours()
+  const dayGreeting = headerHour < 12 ? 'Good Morning!' : headerHour < 18 ? 'Good Afternoon!' : 'Good Evening!'
+  const headerDateLabel = headerNow.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  })
+  const headerTimeLabel = headerNow.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  })
   const calendarYear = calendarMonthDate.getFullYear()
   const calendarMonth = calendarMonthDate.getMonth()
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -1370,11 +1911,228 @@ function App() {
   }, [session?.user?.id])
 
   useEffect(() => {
+    if (!session?.user?.id) return
+
+    const loadInvoices = async () => {
+      const { data, error } = await supabase
+        .from('finance_invoices')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        setInvoiceStorageMode('local')
+        try {
+          const localData = JSON.parse(localStorage.getItem(invoiceStorageKey) || '[]')
+          setInvoices(Array.isArray(localData) ? localData : [])
+        } catch {
+          setInvoices([])
+        }
+        return
+      }
+
+      setInvoiceStorageMode('cloud')
+      setInvoices((data || []).map(item => ({
+        id: item.id,
+        clientName: item.client_name,
+        title: item.title,
+        orderType: item.order_type,
+        amount: Number(item.amount || 0),
+        issueDate: item.issue_date,
+        dueDate: item.due_date,
+        status: item.status || 'draft',
+        notes: item.notes || '',
+        createdAt: item.created_at
+      })))
+    }
+
+    loadInvoices()
+
+    const invoiceChannel = supabase
+      .channel('finance_invoices_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_invoices' }, () => {
+        loadInvoices()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(invoiceChannel)
+    }
+  }, [session?.user?.id, invoiceStorageKey])
+
+  useEffect(() => {
     if (!availableTimeSlotsForSelectedDate.length) return
     if (!availableTimeSlotsForSelectedDate.includes(bookingTime)) {
       setBookingTime(availableTimeSlotsForSelectedDate[0])
     }
   }, [bookingDate, appointments, bookingAvailability, bookingTime, availableTimeSlotsForSelectedDate])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    try {
+      const raw = localStorage.getItem(`dyatask_order_payment_status_${session.user.id}`)
+      setOrderPaymentStatusMap(raw ? JSON.parse(raw) : {})
+    } catch {
+      setOrderPaymentStatusMap({})
+    }
+  }, [session?.user?.id])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    localStorage.setItem(`dyatask_order_payment_status_${session.user.id}`, JSON.stringify(orderPaymentStatusMap))
+  }, [session?.user?.id, orderPaymentStatusMap])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    try {
+      const raw = localStorage.getItem(crmClientsStorageKey)
+      const parsed = raw ? JSON.parse(raw) : []
+      setCrmClients(Array.isArray(parsed) ? parsed : [])
+    } catch {
+      setCrmClients([])
+    }
+  }, [session?.user?.id, crmClientsStorageKey])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    try {
+      const raw = localStorage.getItem(crmActivitiesStorageKey)
+      const parsed = raw ? JSON.parse(raw) : []
+      setCrmActivities(Array.isArray(parsed) ? parsed : [])
+    } catch {
+      setCrmActivities([])
+    }
+  }, [session?.user?.id, crmActivitiesStorageKey])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    localStorage.setItem(crmClientsStorageKey, JSON.stringify(crmClients))
+  }, [session?.user?.id, crmClients, crmClientsStorageKey])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    localStorage.setItem(crmActivitiesStorageKey, JSON.stringify(crmActivities))
+  }, [session?.user?.id, crmActivities, crmActivitiesStorageKey])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    let cancelled = false
+
+    const loadCrmRecords = async () => {
+      const [clientsResult, activitiesResult] = await Promise.all([
+        supabase
+          .from('crm_clients')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('updated_at', { ascending: false }),
+        supabase
+          .from('crm_activities')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+      ])
+
+      if (cancelled) return
+
+      if (!clientsResult.error) {
+        setCrmClients((clientsResult.data || []).map(item => ({
+          id: item.id,
+          name: item.name || '',
+          company: item.company || '',
+          email: item.email || '',
+          phone: item.phone || '',
+          status: item.status || 'lead',
+          nextFollowUpDate: item.next_follow_up_date || '',
+          notes: item.notes || '',
+          createdAt: item.created_at,
+          updatedAt: item.updated_at
+        })))
+      }
+
+      if (!activitiesResult.error) {
+        setCrmActivities((activitiesResult.data || []).map(item => ({
+          id: item.id,
+          clientKey: item.client_key || '',
+          clientName: item.client_name || '',
+          clientEmail: item.client_email || '',
+          title: item.title || '',
+          note: item.note || '',
+          dueDate: item.due_date || '',
+          status: item.status || 'open',
+          createdAt: item.created_at,
+          updatedAt: item.updated_at
+        })))
+      }
+    }
+
+    loadCrmRecords()
+
+    const crmClientsChannel = supabase
+      .channel(`crm_clients_realtime_${session.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_clients', filter: `user_id=eq.${session.user.id}` }, loadCrmRecords)
+      .subscribe()
+
+    const crmActivitiesChannel = supabase
+      .channel(`crm_activities_realtime_${session.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_activities', filter: `user_id=eq.${session.user.id}` }, loadCrmRecords)
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(crmClientsChannel)
+      supabase.removeChannel(crmActivitiesChannel)
+    }
+  }, [session?.user?.id])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    let cancelled = false
+
+    const mapActivityLog = (item) => ({
+      id: item.id,
+      type: item.event_type || 'Log',
+      title: item.title,
+      detail: item.detail || '',
+      tone: item.tone || 'purple',
+      sourceTable: item.source_table || '',
+      sourceId: item.source_id || '',
+      metadata: item.metadata || {},
+      createdAt: item.created_at
+    })
+
+    const loadActivityLogs = async () => {
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(80)
+
+      if (cancelled) return
+      if (error) {
+        console.warn('Activity logs fallback aktif:', error.message)
+        return
+      }
+
+      setActivityLogs((data || []).map(mapActivityLog))
+      setLastSyncTime(new Date())
+    }
+
+    loadActivityLogs()
+    const interval = setInterval(loadActivityLogs, 15000)
+
+    const activityChannel = supabase
+      .channel(`activity_logs_realtime_${session.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs', filter: `user_id=eq.${session.user.id}` }, () => {
+        loadActivityLogs()
+      })
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      supabase.removeChannel(activityChannel)
+    }
+  }, [session?.user?.id])
 
   // Fetch real data from Supabase once authenticated
   useEffect(() => {
@@ -1444,7 +2202,8 @@ function App() {
           time: a.time,
           date: a.date,
           status: a.status,
-          email: a.email
+          email: a.email,
+          createdAt: a.created_at
         })));
       }
     };
@@ -1490,7 +2249,8 @@ function App() {
             time: inserted.time,
             date: inserted.date,
             status: inserted.status,
-            email: inserted.email
+            email: inserted.email,
+            createdAt: inserted.created_at || new Date().toISOString()
           }, ...prev]
         })
 
@@ -1564,6 +2324,168 @@ function App() {
   }, [calendarYear, calendarMonth, integrationConfigs])
 
   useEffect(() => {
+    if (!session?.user?.id) return
+
+    const fetchSpreadsheetOrders = async () => {
+      const { data, error } = await supabase
+        .from('spreadsheet_orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching spreadsheet orders:', error)
+        return
+      }
+
+      const mapped = (data || []).map(order => ({
+        id: order.id,
+        customerName: order.customer_name,
+        orderName: order.order_name,
+        orderType: order.order_type,
+        budget: Number(order.budget || 0),
+        status: order.status,
+        paymentStatus: order.payment_status || orderPaymentStatusMap?.[order.id] || 'belum_bayar',
+        dueDate: order.due_date,
+        publicToken: order.public_token,
+        createdAt: order.created_at,
+        updatedAt: order.updated_at
+      }))
+
+      setSpreadsheetOrders(mapped)
+      setSelectedOrderId(prev => prev || mapped[0]?.id || null)
+    }
+
+    const fetchOrderTimeline = async () => {
+      const { data, error } = await supabase
+        .from('spreadsheet_order_timeline')
+        .select('*')
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.error('Error fetching spreadsheet timeline:', error)
+        return
+      }
+
+      setOrderTimelineItems((data || []).map(item => ({
+        id: item.id,
+        orderId: item.order_id,
+        title: item.title,
+        note: item.note || '',
+        progressPercent: Number(item.progress_percent || 0),
+        createdAt: item.created_at,
+        updatedBy: item.updated_by || 'system'
+      })))
+    }
+
+    fetchSpreadsheetOrders()
+    fetchOrderTimeline()
+
+    const ordersChannel = supabase
+      .channel('spreadsheet_orders_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spreadsheet_orders' }, () => {
+        fetchSpreadsheetOrders()
+      })
+      .subscribe()
+
+    const timelineChannel = supabase
+      .channel('spreadsheet_order_timeline_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spreadsheet_order_timeline' }, () => {
+        fetchOrderTimeline()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(ordersChannel)
+      supabase.removeChannel(timelineChannel)
+    }
+  }, [session?.user?.id, orderPaymentStatusMap])
+
+  useEffect(() => {
+    if (!session?.user?.id || !spreadsheetOrders.length) return
+
+    const formatDate = (date) => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    const today = new Date()
+    const todayStr = formatDate(today)
+    const tomorrowDate = new Date(today)
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+    const tomorrowStr = formatDate(tomorrowDate)
+
+    const checkDeadlineReminder = () => {
+      spreadsheetOrders.forEach(order => {
+        const status = String(order.status || '').toLowerCase()
+        if (status === 'completed' || status === 'done') return
+        if (!order.dueDate) return
+
+        const dueStr = String(order.dueDate).slice(0, 10)
+        const reminderScope = `${order.id}:${todayStr}`
+        const dueScope = `${order.id}:${dueStr}`
+
+        if (dueStr === tomorrowStr) {
+          const key = `${reminderScope}:deadline_tomorrow`
+          if (!orderDeadlineReminderKeysRef.current.has(key)) {
+            triggerMockNotification(
+              'Reminder Deadline Besok',
+              `Order "${order.orderName}" untuk ${order.customerName} deadline besok (${dueStr}).`,
+              'order_deadline',
+              { kind: 'order_deadline_tomorrow', orderId: order.id, dueDate: dueStr }
+            )
+            orderDeadlineReminderKeysRef.current.add(key)
+          }
+        } else if (dueStr === todayStr) {
+          const key = `${reminderScope}:deadline_today`
+          if (!orderDeadlineReminderKeysRef.current.has(key)) {
+            triggerMockNotification(
+              'Reminder Deadline Hari Ini',
+              `Order "${order.orderName}" untuk ${order.customerName} jatuh tempo hari ini.`,
+              'order_deadline',
+              { kind: 'order_deadline_today', orderId: order.id, dueDate: dueStr }
+            )
+            orderDeadlineReminderKeysRef.current.add(key)
+          }
+        } else if (dueStr < todayStr) {
+          const key = `${dueScope}:deadline_overdue`
+          if (!orderDeadlineReminderKeysRef.current.has(key)) {
+            triggerMockNotification(
+              'Order Melewati Deadline',
+              `Order "${order.orderName}" untuk ${order.customerName} sudah lewat deadline (${dueStr}).`,
+              'order_deadline',
+              { kind: 'order_deadline_overdue', orderId: order.id, dueDate: dueStr }
+            )
+            orderDeadlineReminderKeysRef.current.add(key)
+          }
+        }
+      })
+    }
+
+    checkDeadlineReminder()
+    const interval = setInterval(checkDeadlineReminder, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [session?.user?.id, spreadsheetOrders])
+
+  const [publicTrackingPayload, setPublicTrackingPayload] = useState(null)
+  useEffect(() => {
+    if (!isPublicTrackingMode || !publicTrackingToken) return
+
+    const fetchPublicTrackingPayload = async () => {
+      const { data, error } = await supabase.rpc('get_public_order_timeline', { p_token: publicTrackingToken })
+      if (error) {
+        console.error('Error fetching public tracking payload:', error)
+        setPublicTrackingPayload({ error: error.message })
+        return
+      }
+      setPublicTrackingPayload(data)
+    }
+
+    fetchPublicTrackingPayload()
+  }, [isPublicTrackingMode, publicTrackingToken])
+
+  useEffect(() => {
     const cfg = integrationConfigs.google_calendar || {}
     const hasGoogleCalendarConfig = Boolean(
       (cfg.client_id || '').trim() &&
@@ -1580,14 +2502,44 @@ function App() {
   }, [calendarYear, calendarMonth, integrationConfigs])
 
   useEffect(() => {
-    if (!notifications.length) return
-    const interval = setInterval(() => {
-      const now = Date.now()
-      setNotificationNowMs(now)
-      setNotifications(prev => prev.filter(item => now - item.createdAt < 60000))
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [notifications.length])
+    localStorage.setItem('dyatask_notification_history', JSON.stringify(notifications.slice(0, 300)))
+  }, [notifications])
+
+  const createActivityLog = async ({ type, title, detail, tone = 'purple', sourceTable = null, sourceId = null, metadata = {} }) => {
+    const createdAt = new Date().toISOString()
+    const localLog = {
+      id: `local-${Date.now()}`,
+      type,
+      title,
+      detail,
+      tone,
+      sourceTable: sourceTable || '',
+      sourceId: sourceId || '',
+      metadata,
+      createdAt
+    }
+
+    setActivityLogs(prev => [localLog, ...prev].slice(0, 80))
+
+    if (!session?.user?.id) return
+
+    const { error } = await supabase
+      .from('activity_logs')
+      .insert([{
+        user_id: session.user.id,
+        event_type: type,
+        title,
+        detail,
+        tone,
+        source_table: sourceTable,
+        source_id: sourceId ? String(sourceId) : null,
+        metadata
+      }])
+
+    if (error) {
+      console.warn('Gagal menyimpan activity log:', error.message)
+    }
+  }
 
   const triggerMockNotification = (title, body, source, meta = {}) => {
     setNotifications(prev => [{
@@ -1596,8 +2548,19 @@ function App() {
       body,
       source,
       meta,
-      createdAt: Date.now()
-    }, ...prev].slice(0, 10))
+      createdAt: Date.now(),
+      confirmed: false,
+      confirmedAt: null
+    }, ...prev].slice(0, 300))
+    createActivityLog({
+      type: 'Notifikasi',
+      title: `Notifikasi terkirim: ${title}`,
+      detail: body,
+      tone: 'purple',
+      sourceTable: 'notifications',
+      sourceId: meta?.id || source || null,
+      metadata: { source, ...meta }
+    })
     sendNativeNotification(title, body, meta)
     
     // Automatically open app if autoOpenOnAlert is set
@@ -1606,6 +2569,97 @@ function App() {
       console.log('App automatically focused due to alerts!')
     }
   }
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault()
+      setPwaInstallPrompt(event)
+    }
+
+    const handleAppInstalled = () => {
+      setPwaInstallPrompt(null)
+      setIsPwaStandalone(true)
+    }
+
+    const handlePwaUpdateReady = () => {
+      triggerMockNotification(
+        'Update PWA tersedia',
+        'Versi baru DyaTask sudah siap. Reload aplikasi untuk memakai versi terbaru.',
+        'system',
+        { kind: 'pwa_update_ready' }
+      )
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleAppInstalled)
+    window.addEventListener('dyatask:pwa-update-ready', handlePwaUpdateReady)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleAppInstalled)
+      window.removeEventListener('dyatask:pwa-update-ready', handlePwaUpdateReady)
+    }
+    // PWA lifecycle listeners should be attached once per app session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!session?.user?.id || !invoices.length) return
+
+    const today = new Date()
+    const toDateKey = (date) => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    const todayKey = toDateKey(today)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrowKey = toDateKey(tomorrow)
+
+    invoices.forEach((invoice) => {
+      const status = String(invoice.status || '').toLowerCase()
+      if (['paid', 'void'].includes(status)) return
+      if (!invoice.dueDate) return
+
+      const dueDateKey = String(invoice.dueDate).slice(0, 10)
+      const reminderKeyBase = `${invoice.id}:${todayKey}`
+
+      if (dueDateKey === tomorrowKey) {
+        const key = `${reminderKeyBase}:invoice_tomorrow`
+        if (invoiceReminderKeysRef.current.has(key)) return
+        invoiceReminderKeysRef.current.add(key)
+        triggerMockNotification(
+          'Invoice Deadline Besok',
+          `Invoice "${invoice.title}" untuk ${invoice.clientName} jatuh tempo besok (${dueDateKey}).`,
+          'invoice',
+          { kind: 'invoice_due_tomorrow', invoiceId: invoice.id, dueDate: dueDateKey }
+        )
+      } else if (dueDateKey === todayKey) {
+        const key = `${reminderKeyBase}:invoice_today`
+        if (invoiceReminderKeysRef.current.has(key)) return
+        invoiceReminderKeysRef.current.add(key)
+        triggerMockNotification(
+          'Invoice Deadline Hari Ini',
+          `Invoice "${invoice.title}" untuk ${invoice.clientName} jatuh tempo hari ini.`,
+          'invoice',
+          { kind: 'invoice_due_today', invoiceId: invoice.id, dueDate: dueDateKey }
+        )
+      } else if (dueDateKey < todayKey) {
+        const key = `${invoice.id}:${dueDateKey}:invoice_overdue`
+        if (invoiceReminderKeysRef.current.has(key)) return
+        invoiceReminderKeysRef.current.add(key)
+        triggerMockNotification(
+          'Invoice Melewati Deadline',
+          `Invoice "${invoice.title}" untuk ${invoice.clientName} sudah lewat deadline (${dueDateKey}).`,
+          'invoice',
+          { kind: 'invoice_overdue', invoiceId: invoice.id, dueDate: dueDateKey }
+        )
+      }
+    })
+  }, [session?.user?.id, invoices])
 
   useEffect(() => {
     let cancelled = false
@@ -1767,6 +2821,14 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark')
     }
+  }
+
+  const handleInstallPwa = async () => {
+    if (!pwaInstallPrompt) return
+    const promptEvent = pwaInstallPrompt
+    setPwaInstallPrompt(null)
+    await promptEvent.prompt()
+    await promptEvent.userChoice
   }
 
   const handleCreateProjectFolder = async (e) => {
@@ -2053,23 +3115,44 @@ function App() {
     setTasks(tasks.filter(t => t.id !== id && t.parentTaskId !== id))
   }
 
+  const normalizeCalendarActionItem = (item) => {
+    if (!item) return null
+    if (item.itemType) return item
+    if (item.source === 'appointment') return { ...item, itemType: 'appointment' }
+    if (item.source === 'task') return { ...item, itemType: 'task' }
+    return item
+  }
+
+  const formatAppointmentLabel = (appointment) => {
+    const client = (appointment?.clientName || '').trim()
+    const topic = (appointment?.title || '').trim()
+    if (!client && !topic) return 'Session'
+    if (!client) return topic
+    if (!topic) return client
+    return `${client} - ${topic}`
+  }
+
   const openCalendarEditModal = (item) => {
-    setActiveCalendarEditItem(item)
-    if (item.itemType === 'appointment') {
+    const editableItem = normalizeCalendarActionItem(item)
+    if (!editableItem || !['appointment', 'task'].includes(editableItem.itemType)) return
+
+    setCalendarActionItem(null)
+    setActiveCalendarEditItem(editableItem)
+    if (editableItem.itemType === 'appointment') {
       setCalendarEditForm({
-        title: item.title || '',
-        clientName: item.clientName || '',
-        email: item.email || '',
-        date: item.date || '',
-        time: item.time || ''
+        title: editableItem.title || '',
+        clientName: editableItem.clientName || '',
+        email: editableItem.email || '',
+        date: editableItem.date || '',
+        time: editableItem.time || ''
       })
     } else {
       setCalendarEditForm({
-        title: item.title || '',
-        category: item.category || 'Work',
-        priority: item.priority || 'medium',
-        date: item.calendarDate || '',
-        dueTime: item.dueTime || '09:00'
+        title: editableItem.title || '',
+        category: editableItem.category || 'Work',
+        priority: editableItem.priority || 'medium',
+        date: editableItem.calendarDate || '',
+        dueTime: editableItem.dueTime || '09:00'
       })
     }
   }
@@ -2204,7 +3287,8 @@ function App() {
         time: createdRow.time,
         date: createdRow.date,
         status: createdRow.status,
-        email: createdRow.email
+        email: createdRow.email,
+        createdAt: createdRow.created_at || new Date().toISOString()
       }
       setAppointments([createdBooking, ...appointments])
     }
@@ -2267,6 +3351,665 @@ function App() {
     )
   }
 
+  const resetInvoiceForm = () => {
+    setEditingInvoiceId(null)
+    setInvoiceClientName('')
+    setInvoiceTitle('')
+    setInvoiceType('Custom Spreadsheet')
+    setInvoiceAmount('')
+    setInvoiceIssueDate(todayString)
+    setInvoiceDueDate(todayString)
+    setInvoiceStatus('draft')
+    setInvoiceNotes('')
+    setShowInvoiceForm(false)
+  }
+
+  const persistInvoicesLocal = (nextInvoices) => {
+    localStorage.setItem(invoiceStorageKey, JSON.stringify(nextInvoices))
+  }
+
+  const handleSubmitInvoice = async (e) => {
+    e.preventDefault()
+    if (!session?.user?.id) return
+    if (!invoiceClientName.trim() || !invoiceTitle.trim()) return
+
+    const payload = {
+      user_id: session.user.id,
+      client_name: invoiceClientName.trim(),
+      title: invoiceTitle.trim(),
+      order_type: invoiceType,
+      amount: Number(invoiceAmount || 0),
+      issue_date: invoiceIssueDate || todayString,
+      due_date: invoiceDueDate || null,
+      status: invoiceStatus,
+      notes: invoiceNotes.trim() || null
+    }
+
+    const mapInvoice = (item) => ({
+      id: item.id,
+      clientName: item.client_name || item.clientName,
+      title: item.title,
+      orderType: item.order_type || item.orderType,
+      amount: Number(item.amount || 0),
+      issueDate: item.issue_date || item.issueDate,
+      dueDate: item.due_date || item.dueDate,
+      status: item.status || 'draft',
+      notes: item.notes || '',
+      createdAt: item.created_at || item.createdAt || new Date().toISOString()
+    })
+
+    if (invoiceStorageMode === 'cloud') {
+      if (editingInvoiceId) {
+        const { data, error } = await supabase
+          .from('finance_invoices')
+          .update(payload)
+          .eq('id', editingInvoiceId)
+          .select()
+          .single()
+
+        if (error) {
+          alert('Gagal update invoice: ' + error.message)
+          return
+        }
+
+        setInvoices(prev => prev.map(item => item.id === editingInvoiceId ? mapInvoice(data) : item))
+      } else {
+        const { data, error } = await supabase
+          .from('finance_invoices')
+          .insert([payload])
+          .select()
+          .single()
+
+        if (error) {
+          alert('Gagal membuat invoice: ' + error.message)
+          return
+        }
+
+        setInvoices(prev => [mapInvoice(data), ...prev])
+      }
+    } else {
+      const localInvoice = {
+        id: editingInvoiceId || `local-${Date.now()}`,
+        clientName: payload.client_name,
+        title: payload.title,
+        orderType: payload.order_type,
+        amount: payload.amount,
+        issueDate: payload.issue_date,
+        dueDate: payload.due_date,
+        status: payload.status,
+        notes: payload.notes || '',
+        createdAt: new Date().toISOString()
+      }
+
+      setInvoices(prev => {
+        const next = editingInvoiceId
+          ? prev.map(item => item.id === editingInvoiceId ? { ...item, ...localInvoice } : item)
+          : [localInvoice, ...prev]
+        persistInvoicesLocal(next)
+        return next
+      })
+    }
+
+    resetInvoiceForm()
+  }
+
+  const startEditInvoice = (invoice) => {
+    if (!invoice) return
+    setEditingInvoiceId(invoice.id)
+    setInvoiceClientName(invoice.clientName || '')
+    setInvoiceTitle(invoice.title || '')
+    setInvoiceType(invoice.orderType || 'Custom Spreadsheet')
+    setInvoiceAmount(String(invoice.amount || ''))
+    setInvoiceIssueDate(invoice.issueDate || todayString)
+    setInvoiceDueDate(invoice.dueDate || todayString)
+    setInvoiceStatus(invoice.status || 'draft')
+    setInvoiceNotes(invoice.notes || '')
+    setShowInvoiceForm(true)
+  }
+
+  const handleDeleteInvoice = async (invoice) => {
+    if (!invoice) return
+    const ok = window.confirm(`Hapus invoice "${invoice.title}"?`)
+    if (!ok) return
+
+    if (invoiceStorageMode === 'cloud') {
+      const { error } = await supabase.from('finance_invoices').delete().eq('id', invoice.id)
+      if (error) {
+        alert('Gagal menghapus invoice: ' + error.message)
+        return
+      }
+      setInvoices(prev => prev.filter(item => item.id !== invoice.id))
+      return
+    }
+
+    setInvoices(prev => {
+      const next = prev.filter(item => item.id !== invoice.id)
+      persistInvoicesLocal(next)
+      return next
+    })
+  }
+
+  const updateInvoiceStatus = async (invoice, nextStatus) => {
+    if (!invoice || !nextStatus) return
+
+    if (invoiceStorageMode === 'cloud') {
+      const { error } = await supabase
+        .from('finance_invoices')
+        .update({ status: nextStatus })
+        .eq('id', invoice.id)
+
+      if (error) {
+        alert('Gagal update status invoice: ' + error.message)
+        return
+      }
+
+      setInvoices(prev => prev.map(item => item.id === invoice.id ? { ...item, status: nextStatus } : item))
+      return
+    }
+
+    setInvoices(prev => {
+      const next = prev.map(item => item.id === invoice.id ? { ...item, status: nextStatus } : item)
+      persistInvoicesLocal(next)
+      return next
+    })
+  }
+
+  const handleCreateSpreadsheetOrder = async (e) => {
+    e.preventDefault()
+    if (!session?.user?.id) return
+    if (!newOrderCustomer.trim() || !newOrderName.trim()) return
+    const paymentValue = newOrderPaymentStatus || 'belum_bayar'
+
+    const withPaymentUpdatePayload = {
+      customer_name: newOrderCustomer.trim(),
+      order_name: newOrderName.trim(),
+      order_type: newOrderType,
+      budget: Number(newOrderBudget || 0),
+      status: newOrderStatus,
+      payment_status: paymentValue,
+      due_date: newOrderDueDate || null
+    }
+
+    const baseUpdatePayload = {
+      customer_name: newOrderCustomer.trim(),
+      order_name: newOrderName.trim(),
+      order_type: newOrderType,
+      budget: Number(newOrderBudget || 0),
+      status: newOrderStatus,
+      due_date: newOrderDueDate || null
+    }
+
+    if (editingOrderId) {
+      const { data, error } = await supabase
+        .from('spreadsheet_orders')
+        .update(withPaymentUpdatePayload)
+        .eq('id', editingOrderId)
+        .select()
+        .single()
+
+      let resolvedData = data
+      if (error) {
+        if (String(error.message || '').toLowerCase().includes('payment_status')) {
+          const retry = await supabase
+            .from('spreadsheet_orders')
+            .update(baseUpdatePayload)
+            .eq('id', editingOrderId)
+            .select()
+            .single()
+          if (retry.error) {
+            alert('Gagal update order spreadsheet: ' + retry.error.message)
+            return
+          }
+          resolvedData = retry.data
+        } else {
+          alert('Gagal update order spreadsheet: ' + error.message)
+          return
+        }
+      }
+
+      setOrderPaymentStatusMap(prev => ({ ...prev, [editingOrderId]: paymentValue }))
+
+      setSpreadsheetOrders(prev => prev.map(order => (
+        order.id === editingOrderId
+          ? {
+              ...order,
+              customerName: resolvedData.customer_name,
+              orderName: resolvedData.order_name,
+              orderType: resolvedData.order_type,
+              budget: Number(resolvedData.budget || 0),
+              status: resolvedData.status,
+              paymentStatus: resolvedData.payment_status || paymentValue,
+              dueDate: resolvedData.due_date,
+              updatedAt: resolvedData.updated_at
+            }
+          : order
+      )))
+      setEditingOrderId(null)
+      setNewOrderCustomer('')
+      setNewOrderName('')
+      setNewOrderBudget('')
+      setNewOrderDueDate(todayString)
+      setNewOrderStatus('new')
+      setNewOrderPaymentStatus('belum_bayar')
+      return
+    }
+
+    const orderPayload = {
+      user_id: session.user.id,
+      customer_name: newOrderCustomer.trim(),
+      order_name: newOrderName.trim(),
+      order_type: newOrderType,
+      budget: Number(newOrderBudget || 0),
+      status: newOrderStatus,
+      payment_status: paymentValue,
+      due_date: newOrderDueDate || null
+    }
+
+    const { data, error } = await supabase
+      .from('spreadsheet_orders')
+      .insert([orderPayload])
+      .select()
+      .single()
+
+    let resolvedData = data
+    if (error) {
+      if (String(error.message || '').toLowerCase().includes('payment_status')) {
+        const retryPayload = {
+          user_id: session.user.id,
+          customer_name: newOrderCustomer.trim(),
+          order_name: newOrderName.trim(),
+          order_type: newOrderType,
+          budget: Number(newOrderBudget || 0),
+          status: newOrderStatus,
+          due_date: newOrderDueDate || null
+        }
+        const retry = await supabase
+          .from('spreadsheet_orders')
+          .insert([retryPayload])
+          .select()
+          .single()
+        if (retry.error) {
+          alert('Gagal membuat order spreadsheet: ' + retry.error.message)
+          return
+        }
+        resolvedData = retry.data
+      } else {
+        alert('Gagal membuat order spreadsheet: ' + error.message)
+        return
+      }
+    }
+
+    setOrderPaymentStatusMap(prev => ({ ...prev, [resolvedData.id]: paymentValue }))
+
+    setSpreadsheetOrders(prev => [{
+      id: resolvedData.id,
+      customerName: resolvedData.customer_name,
+      orderName: resolvedData.order_name,
+      orderType: resolvedData.order_type,
+      budget: Number(resolvedData.budget || 0),
+      status: resolvedData.status,
+      paymentStatus: resolvedData.payment_status || paymentValue,
+      dueDate: resolvedData.due_date,
+      publicToken: resolvedData.public_token,
+      createdAt: resolvedData.created_at,
+      updatedAt: resolvedData.updated_at
+    }, ...prev])
+    setSelectedOrderId(resolvedData.id)
+    setNewOrderCustomer('')
+    setNewOrderName('')
+    setNewOrderBudget('')
+    setNewOrderDueDate(todayString)
+    setNewOrderStatus('new')
+    setNewOrderPaymentStatus('belum_bayar')
+    setTimelineInputProgress(0)
+  }
+
+  const startEditSpreadsheetOrder = (order) => {
+    if (!order) return
+    setShowOrderForm(true)
+    setEditingOrderId(order.id)
+    setNewOrderCustomer(order.customerName || '')
+    setNewOrderName(order.orderName || '')
+    setNewOrderType(order.orderType || 'Dashboard')
+    setNewOrderBudget(String(order.budget ?? ''))
+    setNewOrderDueDate(order.dueDate || todayString)
+    setNewOrderStatus(order.status || 'new')
+    setNewOrderPaymentStatus(order.paymentStatus || 'belum_bayar')
+    setSelectedOrderId(order.id)
+  }
+
+  const cancelEditSpreadsheetOrder = () => {
+    setEditingOrderId(null)
+    setNewOrderCustomer('')
+    setNewOrderName('')
+    setNewOrderType('Dashboard')
+    setNewOrderBudget('')
+    setNewOrderDueDate(todayString)
+    setNewOrderStatus('new')
+    setNewOrderPaymentStatus('belum_bayar')
+    setShowOrderForm(false)
+  }
+
+  const handleAddOrderTimeline = async (e) => {
+    e.preventDefault()
+    if (!session?.user?.id || !selectedSpreadsheetOrder) return
+    if (!timelineInputTitle.trim()) return
+
+    const { data, error } = await supabase
+      .from('spreadsheet_order_timeline')
+      .insert([{
+        order_id: selectedSpreadsheetOrder.id,
+        title: timelineInputTitle.trim(),
+        note: timelineInputNote.trim(),
+        progress_percent: Number(timelineInputProgress || 0),
+        updated_by: session.user.email || session.user.id
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      alert('Gagal menambah timeline: ' + error.message)
+      return
+    }
+
+    setOrderTimelineItems(prev => [...prev, {
+      id: data.id,
+      orderId: data.order_id,
+      title: data.title,
+      note: data.note || '',
+      progressPercent: Number(data.progress_percent || 0),
+      createdAt: data.created_at,
+      updatedBy: data.updated_by || 'system'
+    }])
+    setTimelineInputTitle('')
+    setTimelineInputNote('')
+  }
+
+  const handleDeleteSpreadsheetOrder = async (order) => {
+    if (!order) return
+    const ok = window.confirm(`Hapus order "${order.orderName}" beserta timeline-nya?`)
+    if (!ok) return
+
+    const { error } = await supabase
+      .from('spreadsheet_orders')
+      .delete()
+      .eq('id', order.id)
+
+    if (error) {
+      alert('Gagal menghapus order: ' + error.message)
+      return
+    }
+
+    setSpreadsheetOrders(prev => prev.filter(item => item.id !== order.id))
+    setOrderTimelineItems(prev => prev.filter(item => item.orderId !== order.id))
+    setSelectedOrderId(prev => (prev === order.id ? null : prev))
+  }
+
+  const startEditTimeline = (item) => {
+    setEditingTimelineId(item.id)
+    setEditTimelineTitle(item.title || '')
+    setEditTimelineNote(item.note || '')
+    setEditTimelineProgress(Number(item.progressPercent || 0))
+  }
+
+  const cancelEditTimeline = () => {
+    setEditingTimelineId(null)
+    setEditTimelineTitle('')
+    setEditTimelineNote('')
+    setEditTimelineProgress(0)
+  }
+
+  const handleSaveTimelineEdit = async (itemId) => {
+    if (!itemId || !editTimelineTitle.trim()) return
+    const { data, error } = await supabase
+      .from('spreadsheet_order_timeline')
+      .update({
+        title: editTimelineTitle.trim(),
+        note: editTimelineNote.trim(),
+        progress_percent: Number(editTimelineProgress || 0),
+        updated_by: session?.user?.email || session?.user?.id || 'system'
+      })
+      .eq('id', itemId)
+      .select()
+      .single()
+
+    if (error) {
+      alert('Gagal update timeline: ' + error.message)
+      return
+    }
+
+    setOrderTimelineItems(prev => prev.map(item => (
+      item.id === itemId
+        ? {
+            ...item,
+            title: data.title,
+            note: data.note || '',
+            progressPercent: Number(data.progress_percent || 0),
+            updatedBy: data.updated_by || item.updatedBy
+          }
+        : item
+    )))
+    cancelEditTimeline()
+  }
+
+  const handleDeleteTimelineItem = async (itemId) => {
+    const ok = window.confirm('Hapus timeline ini?')
+    if (!ok) return
+    const { error } = await supabase
+      .from('spreadsheet_order_timeline')
+      .delete()
+      .eq('id', itemId)
+    if (error) {
+      alert('Gagal hapus timeline: ' + error.message)
+      return
+    }
+    setOrderTimelineItems(prev => prev.filter(item => item.id !== itemId))
+    if (editingTimelineId === itemId) cancelEditTimeline()
+  }
+
+  const resetCrmClientForm = () => {
+    setEditingCrmClientId(null)
+    setCrmClientName('')
+    setCrmClientCompany('')
+    setCrmClientEmail('')
+    setCrmClientPhone('')
+    setCrmClientStatus('lead')
+    setCrmClientNextFollowUp(todayString)
+    setCrmClientNotes('')
+    setShowCrmForm(false)
+  }
+
+  const startEditCrmClient = (client) => {
+    if (!client) return
+    const manualClient = crmClients.find(item => getCrmClientKey(item.name, item.email) === client.key)
+    setEditingCrmClientId(manualClient?.id || client.key)
+    setCrmClientName(client.name || '')
+    setCrmClientCompany(client.company || '')
+    setCrmClientEmail(client.email || '')
+    setCrmClientPhone(client.phone || '')
+    setCrmClientStatus(client.status || 'lead')
+    setCrmClientNextFollowUp(client.nextFollowUpDate || todayString)
+    setCrmClientNotes(client.notes || '')
+    setShowCrmForm(true)
+    setSelectedCrmClientId(client.key)
+  }
+
+  const handleSubmitCrmClient = async (e) => {
+    e.preventDefault()
+    const name = crmClientName.trim()
+    if (!name) return
+
+    const existingManual = crmClients.find(item => item.id === editingCrmClientId)
+    const payload = {
+      id: existingManual?.id || `crm-${Date.now()}`,
+      name,
+      company: crmClientCompany.trim(),
+      email: crmClientEmail.trim(),
+      phone: crmClientPhone.trim(),
+      status: crmClientStatus,
+      nextFollowUpDate: crmClientNextFollowUp || '',
+      notes: crmClientNotes.trim(),
+      createdAt: existingManual?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+
+    if (session?.user?.id) {
+      const dbPayload = {
+        user_id: session.user.id,
+        name: payload.name,
+        company: payload.company || null,
+        email: payload.email || null,
+        phone: payload.phone || null,
+        status: payload.status,
+        next_follow_up_date: payload.nextFollowUpDate || null,
+        notes: payload.notes || null
+      }
+
+      const query = existingManual
+        ? supabase.from('crm_clients').update(dbPayload).eq('id', existingManual.id).select().single()
+        : supabase.from('crm_clients').insert([dbPayload]).select().single()
+
+      const { data, error } = await query
+      if (!error && data) {
+        payload.id = data.id
+        payload.createdAt = data.created_at
+        payload.updatedAt = data.updated_at
+      } else if (error) {
+        console.warn('CRM Supabase fallback aktif:', error.message)
+      }
+    }
+
+    setCrmClients(prev => {
+      const exists = prev.some(item => item.id === payload.id)
+      const next = exists
+        ? prev.map(item => (item.id === payload.id ? { ...item, ...payload } : item))
+        : [payload, ...prev]
+      return next
+    })
+
+    createActivityLog({
+      type: existingManual ? 'CRM' : 'CRM',
+      title: `${existingManual ? 'Client diperbarui' : 'Client ditambahkan'}: ${payload.name}`,
+      detail: `${payload.status}${payload.nextFollowUpDate ? ` • follow-up ${payload.nextFollowUpDate}` : ''}`,
+      tone: 'blue',
+      sourceTable: 'crm_clients',
+      sourceId: payload.id
+    })
+
+    setSelectedCrmClientId(getCrmClientKey(payload.name, payload.email))
+    resetCrmClientForm()
+  }
+
+  const handleDeleteCrmClient = async (client) => {
+    if (!client) return
+    const ok = window.confirm(`Hapus client "${client.name}" dari CRM?`)
+    if (!ok) return
+
+    const manualClients = crmClients.filter(item => getCrmClientKey(item.name, item.email) === client.key)
+    if (session?.user?.id && manualClients.length) {
+      const manualIds = manualClients.map(item => item.id)
+      await supabase.from('crm_clients').delete().in('id', manualIds)
+      await supabase.from('crm_activities').delete().eq('client_key', client.key).eq('user_id', session.user.id)
+    }
+
+    setCrmClients(prev => prev.filter(item => getCrmClientKey(item.name, item.email) !== client.key))
+    setCrmActivities(prev => prev.filter(activity => (activity.clientKey || getCrmClientKey(activity.clientName, activity.clientEmail)) !== client.key))
+    setSelectedCrmClientId(prev => (prev === client.key ? null : prev))
+    createActivityLog({
+      type: 'CRM',
+      title: `Client CRM dihapus: ${client.name}`,
+      detail: client.email || client.company || 'Data manual CRM',
+      tone: 'amber',
+      sourceTable: 'crm_clients',
+      sourceId: client.key
+    })
+  }
+
+  const handleSubmitCrmActivity = async (e) => {
+    e.preventDefault()
+    if (!selectedCrmClient) return
+    if (!crmActivityTitle.trim()) return
+
+    const nextActivity = {
+      id: `crm-activity-${Date.now()}`,
+      clientKey: selectedCrmClient.key,
+      clientName: selectedCrmClient.name || '',
+      clientEmail: selectedCrmClient.email || '',
+      title: crmActivityTitle.trim(),
+      note: crmActivityNote.trim(),
+      dueDate: crmActivityDueDate || '',
+      status: 'open',
+      createdAt: new Date().toISOString()
+    }
+
+    if (session?.user?.id) {
+      const { data, error } = await supabase
+        .from('crm_activities')
+        .insert([{
+          user_id: session.user.id,
+          client_key: nextActivity.clientKey,
+          client_name: nextActivity.clientName || null,
+          client_email: nextActivity.clientEmail || null,
+          title: nextActivity.title,
+          note: nextActivity.note || null,
+          due_date: nextActivity.dueDate || null,
+          status: nextActivity.status
+        }])
+        .select()
+        .single()
+
+      if (!error && data) {
+        nextActivity.id = data.id
+        nextActivity.createdAt = data.created_at
+      } else if (error) {
+        console.warn('CRM activity Supabase fallback aktif:', error.message)
+      }
+    }
+
+    setCrmActivities(prev => [nextActivity, ...prev])
+    createActivityLog({
+      type: 'Follow-up',
+      title: `Follow-up dibuat: ${nextActivity.title}`,
+      detail: `${selectedCrmClient.name || 'Client'}${nextActivity.dueDate ? ` • ${nextActivity.dueDate}` : ''}`,
+      tone: 'purple',
+      sourceTable: 'crm_activities',
+      sourceId: nextActivity.id
+    })
+    setCrmActivityTitle('')
+    setCrmActivityNote('')
+    setCrmActivityDueDate(todayString)
+  }
+
+  const handleToggleCrmActivityStatus = async (activityId) => {
+    const currentActivity = crmActivities.find(activity => activity.id === activityId)
+    const nextStatus = currentActivity?.status === 'done' ? 'open' : 'done'
+
+    if (session?.user?.id && currentActivity && !String(activityId).startsWith('crm-activity-')) {
+      await supabase
+        .from('crm_activities')
+        .update({ status: nextStatus })
+        .eq('id', activityId)
+        .eq('user_id', session.user.id)
+    }
+
+    setCrmActivities(prev => prev.map(activity => (
+      activity.id === activityId
+        ? { ...activity, status: nextStatus, updatedAt: new Date().toISOString() }
+        : activity
+    )))
+
+    if (currentActivity) {
+      createActivityLog({
+        type: 'Follow-up',
+        title: `Follow-up ${nextStatus === 'done' ? 'selesai' : 'dibuka ulang'}: ${currentActivity.title}`,
+        detail: currentActivity.clientName || selectedCrmClient?.name || 'Client CRM',
+        tone: nextStatus === 'done' ? 'green' : 'amber',
+        sourceTable: 'crm_activities',
+        sourceId: activityId
+      })
+    }
+  }
+
   const deleteAppointmentFromCalendar = async (appointment) => {
     const { error } = await supabase
       .from('appointments')
@@ -2282,7 +4025,11 @@ function App() {
   }
 
   const openDeleteConfirmModal = (item) => {
-    setDeleteConfirmItem(item)
+    const deletableItem = normalizeCalendarActionItem(item)
+    if (!deletableItem || !['appointment', 'task'].includes(deletableItem.itemType)) return
+
+    setCalendarActionItem(null)
+    setDeleteConfirmItem(deletableItem)
   }
 
   const handleConfirmDelete = async () => {
@@ -2300,10 +4047,40 @@ function App() {
     setCopiedShareLink(false)
   }
 
+  const copyTextToClipboard = async (text) => {
+    const value = String(text || '').trim()
+    if (!value) throw new Error('Teks kosong.')
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(value)
+        return
+      } catch {
+        // Continue to manual fallback when clipboard permission is denied.
+      }
+    }
+
+    const textArea = document.createElement('textarea')
+    textArea.value = value
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-9999px'
+    textArea.style.top = '0'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    const copied = document.execCommand('copy')
+    document.body.removeChild(textArea)
+    if (!copied) throw new Error('Clipboard tidak didukung browser ini.')
+  }
+
   const copyShareLink = async () => {
-    await navigator.clipboard.writeText(sharedFormLink)
-    setCopiedShareLink(true)
-    setTimeout(() => setCopiedShareLink(false), 1600)
+    try {
+      await copyTextToClipboard(sharedFormLink)
+      setCopiedShareLink(true)
+      setTimeout(() => setCopiedShareLink(false), 1600)
+    } catch (error) {
+      alert(`Gagal menyalin link: ${error.message}`)
+    }
   }
 
   // Note client-side encryption simulation
@@ -2411,8 +4188,13 @@ function App() {
 
   // Trigger quick reply
   const handleQuickReply = (message) => {
-    const latest = notifications[0]
-    setNotifications(prev => prev.slice(1))
+    const latest = activeNotifications[0]
+    if (!latest) return
+    setNotifications(prev => prev.map(item => (
+      item.id === latest.id
+        ? { ...item, confirmed: true, confirmedAt: Date.now() }
+        : item
+    )))
     setShowNotificationList(false)
     const timestamp = new Date().toLocaleTimeString('id-ID')
     setSyncLogs(prev => [
@@ -2444,9 +4226,13 @@ function App() {
   }
 
   const handleRemindMe = () => {
-    const latest = notifications[0]
+    const latest = activeNotifications[0]
     if (!latest) return
-    setNotifications(prev => prev.slice(1))
+    setNotifications(prev => prev.map(item => (
+      item.id === latest.id
+        ? { ...item, confirmed: true, confirmedAt: Date.now() }
+        : item
+    )))
     setShowNotificationList(false)
     setTimeout(() => {
       triggerMockNotification(
@@ -2460,6 +4246,14 @@ function App() {
 
   const removeNotificationById = (id) => {
     setNotifications(prev => prev.filter(item => item.id !== id))
+  }
+
+  const confirmNotificationById = (id) => {
+    setNotifications(prev => prev.map(item => (
+      item.id === id
+        ? { ...item, confirmed: true, confirmedAt: Date.now() }
+        : item
+    )))
   }
 
   // Manual Trigger Backup
@@ -2743,6 +4537,119 @@ function App() {
     }
   }, [isProfileModalOpen, session])
 
+  if (isPublicTrackingMode) {
+    const payload = publicTrackingPayload
+    const publicOrder = payload?.order || null
+    const publicTimeline = payload?.timeline || []
+    const safeTimeline = Array.isArray(publicTimeline) ? publicTimeline : []
+    const latestProgress = safeTimeline.length > 0
+      ? Number(safeTimeline[safeTimeline.length - 1]?.progress_percent || 0)
+      : 0
+    const averageProgress = safeTimeline.length > 0
+      ? Math.round(safeTimeline.reduce((acc, item) => acc + Number(item.progress_percent || 0), 0) / safeTimeline.length)
+      : 0
+    const overallProgress = Math.max(0, Math.min(100, safeTimeline.length > 0 ? latestProgress : averageProgress))
+    const completedMilestones = safeTimeline.filter(item => Number(item.progress_percent || 0) >= 100).length
+    const lastUpdateAt = safeTimeline.length > 0 ? safeTimeline[safeTimeline.length - 1]?.created_at : null
+    const dueDateRaw = publicOrder?.due_date ? new Date(`${publicOrder.due_date}T00:00:00`) : null
+    const dueDaysLeft = dueDateRaw ? Math.ceil((dueDateRaw.getTime() - new Date().setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24)) : null
+    const dueBadgeText = dueDaysLeft == null
+      ? '-'
+      : dueDaysLeft < 0
+        ? `Terlambat ${Math.abs(dueDaysLeft)} hari`
+        : `${dueDaysLeft} hari lagi`
+
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_12%_18%,rgba(143,117,216,0.24),transparent_30%),radial-gradient(circle_at_82%_70%,rgba(255,229,76,0.18),transparent_24%),linear-gradient(135deg,#fbfaff_0%,#f0ebff_48%,#fff8e2_100%)] text-[#463d66] flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="relative w-full max-w-4xl rounded-[2.25rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/45 p-6 lg:p-8">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#8f75d8]">Spreadsheet Order Tracker</p>
+              <h1 className="text-2xl font-bold text-[#40375f] mt-1">View Progress</h1>
+            </div>
+            <img src={dyataskMiniLogo} alt="DyaTask" className="w-11 h-11 object-contain" />
+          </div>
+
+          {payload?.error ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 text-red-600 p-4 text-sm">
+              Token tracking tidak valid: {payload.error}
+            </div>
+          ) : !publicOrder ? (
+            <div className="rounded-2xl border border-purple-100 bg-[#faf7ff] p-5 text-sm text-[#8f75d8]">
+              Memuat data tracking...
+            </div>
+          ) : (
+            <>
+              <div className="rounded-2xl border border-purple-100 bg-[#faf7ff] p-5">
+                <h2 className="text-xl font-bold text-[#4f4574]">{publicOrder.order_name}</h2>
+                <p className="text-sm text-[#8f75d8] mt-1">{publicOrder.customer_name} • {publicOrder.order_type}</p>
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-[#8f75d8]">
+                    <span>Overall Progress</span>
+                    <span>{overallProgress}%</span>
+                  </div>
+                  <div className="mt-1 h-2.5 rounded-full bg-purple-100 overflow-hidden">
+                    <div className="h-full bg-[#8f75d8]" style={{ width: `${overallProgress}%` }} />
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-xl bg-white border border-purple-100 p-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Status</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{publicOrder.status}</p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-purple-100 p-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Budget</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">Rp {Number(publicOrder.budget || 0).toLocaleString('id-ID')}</p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-purple-100 p-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Deadline</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{publicOrder.due_date || '-'}</p>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-xl bg-white border border-purple-100 p-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Milestone Selesai</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{completedMilestones}/{safeTimeline.length}</p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-purple-100 p-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Update Terakhir</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{lastUpdateAt ? new Date(lastUpdateAt).toLocaleString('id-ID') : '-'}</p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-purple-100 p-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Sisa Deadline</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{dueBadgeText}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-purple-100 bg-white p-4">
+                <h3 className="text-sm font-bold text-[#4f4574] mb-4">Timeline Progress</h3>
+                <div className="space-y-3">
+                  {safeTimeline.length === 0 ? (
+                    <p className="text-xs text-[#8f75d8]">Belum ada update timeline.</p>
+                  ) : safeTimeline.map((item, index) => (
+                    <div key={item.id || index} className="relative rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                      <div className="absolute left-4 top-6 h-2 w-2 rounded-full bg-[#8f75d8]" />
+                      <div className="ml-5">
+                        <p className="text-xs text-[#8f75d8] font-semibold">{new Date(item.created_at).toLocaleString('id-ID')}</p>
+                        <h4 className="text-sm font-bold text-[#4f4574] mt-1">{item.title}</h4>
+                        {item.note && <p className="text-xs text-[#6f6295] mt-1">{item.note}</p>}
+                        <div className="mt-2 h-2 rounded-full bg-purple-100 overflow-hidden">
+                          <div className="h-full bg-[#8f75d8]" style={{ width: `${Math.max(0, Math.min(100, Number(item.progress_percent || 0)))}%` }} />
+                        </div>
+                        <p className="text-[11px] text-[#8f75d8] mt-1">Progress: {Number(item.progress_percent || 0)}%</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (isPublicBookingMode) {
     if (publicBookingSuccess && publicBookingSummary) {
       const waNumber = '6289619941101'
@@ -2806,10 +4713,11 @@ function App() {
         <div className="relative w-full max-w-6xl rounded-[2.25rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/45 p-4 lg:p-5">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-4 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/35">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100/80 text-purple-600 text-[11px] font-semibold mb-5">
-                <span className="w-2 h-2 rounded-full bg-[#8f75d8]"></span>
-                Public Booking
-              </div>
+              <img
+                src={dyataskLogo2}
+                alt="DyaTask"
+                className="h-12 w-auto object-contain mb-5"
+              />
               <h1 className="text-3xl font-semibold mb-1 text-[#40375f]">1on1 Consultation</h1>
               <p className="text-sm text-purple-400 mb-6">Nayanika Projects</p>
               <form onSubmit={handleAddBooking} className="space-y-3">
@@ -3090,6 +4998,7 @@ function App() {
           {/* Navigation Links */}
           <nav className="flex-1">
             <div 
+              data-mobile-nav="dashboard"
               className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
               onClick={() => setActiveTab('dashboard')}
             >
@@ -3098,17 +5007,16 @@ function App() {
             </div>
 
             <div 
+              data-mobile-nav="tasks"
               className={`nav-link ${activeTab === 'tasks' ? 'active' : ''}`}
               onClick={() => setActiveTab('tasks')}
             >
               <CheckSquare size={20} />
               {!sidebarCollapsed && <span>Tugas & Project</span>}
-              {!sidebarCollapsed && <span className="ml-auto bg-white/25 text-white text-xs px-2 py-0.5 rounded-full font-bold">
-                {tasks.filter(t => t.status !== 'done').length}
-              </span>}
             </div>
 
             <div 
+              data-mobile-nav="calendar"
               className={`nav-link ${activeTab === 'calendar' ? 'active' : ''}`}
               onClick={() => setActiveTab('calendar')}
             >
@@ -3117,7 +5025,44 @@ function App() {
               {!sidebarCollapsed && <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 pulse-badge"></span>}
             </div>
 
+            <div
+              data-mobile-nav="orders"
+              className={`nav-link ${activeTab === 'orders' ? 'active' : ''}`}
+              onClick={() => setActiveTab('orders')}
+            >
+              <FileSpreadsheet size={20} />
+              {!sidebarCollapsed && <span>Order Spreadsheet</span>}
+            </div>
+
+            <div
+              data-mobile-nav="crm"
+              className={`nav-link ${activeTab === 'crm' ? 'active' : ''}`}
+              onClick={() => setActiveTab('crm')}
+            >
+              <Users size={20} />
+              {!sidebarCollapsed && <span>Client CRM</span>}
+            </div>
+
+            <div
+              data-mobile-nav="finance"
+              className={`nav-link ${activeTab === 'finance' ? 'active' : ''}`}
+              onClick={() => setActiveTab('finance')}
+            >
+              <FileText size={20} />
+              {!sidebarCollapsed && <span>Finance & Invoice</span>}
+            </div>
+
+            <div
+              data-mobile-nav="reports"
+              className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reports')}
+            >
+              <TrendingUp size={20} />
+              {!sidebarCollapsed && <span>Reports</span>}
+            </div>
+
             <div 
+              data-mobile-secondary="true"
               className={`nav-link ${activeTab === 'notes' ? 'active' : ''}`}
               onClick={() => setActiveTab('notes')}
             >
@@ -3126,6 +5071,7 @@ function App() {
             </div>
 
             <div 
+              data-mobile-secondary="true"
               className={`nav-link ${activeTab === 'integrations' ? 'active' : ''}`}
               onClick={() => setActiveTab('integrations')}
             >
@@ -3134,6 +5080,7 @@ function App() {
             </div>
 
             <div 
+              data-mobile-secondary="true"
               className={`nav-link ${activeTab === 'settings' ? 'active' : ''}`}
               onClick={() => setActiveTab('settings')}
             >
@@ -3225,15 +5172,15 @@ function App() {
           {/* Header Bar */}
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-purple-100 dark:border-indigo-950 pb-6 mb-6">
             <div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-purple-500 uppercase tracking-widest">
-                <Sparkles size={12} />
-                <span>{appHeaderTagline || 'Modern Soft Minimalist Amethyst'}</span>
-              </div>
-              <h1 className="text-3xl font-extrabold tracking-tight mt-1">{appHeaderTitle || 'Dyatask Manager'}</h1>
+              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#4f4574]">Hallo, {headerUserName}</h1>
+              <p className="text-sm md:text-base text-purple-500 mt-2">
+                {dayGreeting} Sekarang {headerDateLabel} - Pukul {headerTimeLabel}
+              </p>
+              <p className="text-sm text-purple-400 mt-1">Have a Nice day, ya!</p>
             </div>
             
             {/* Realtime Badges */}
-	            <div className="flex flex-wrap items-center gap-2">
+	            <div className="app-header-actions flex flex-wrap items-center gap-2">
 	              <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-[11px] font-bold ${
 	                calendarIntegrationActive
 	                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-300'
@@ -3242,6 +5189,16 @@ function App() {
 	                <span className={`w-1.5 h-1.5 rounded-full ${calendarIntegrationActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
 	                {realtimeStatusText} • {securityStatusText}
 	              </div>
+
+              {pwaInstallPrompt && !isPwaStandalone && (
+                <button
+                  onClick={handleInstallPwa}
+                  className="px-3 py-1.5 rounded-lg bg-[#8f75d8]/12 hover:bg-[#8f75d8]/18 border border-[#8f75d8]/20 text-[#6f55bd] font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                >
+                  <Laptop size={13} />
+                  Install App
+                </button>
+              )}
 
               <button
                 onClick={() => setShowQuickBookingModal(true)}
@@ -3255,9 +5212,9 @@ function App() {
 
           {/* TAB CONTENT: 1. DASHBOARD */}
           {activeTab === 'dashboard' && (
-            <div>
+            <div className="mobile-page mobile-page-dashboard">
               {/* Stat Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="dashboard-stat-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 
                 {/* Stat 1: Total Booking */}
                 <div className="glass-panel p-6 glass-panel-hover transition-all">
@@ -3462,11 +5419,14 @@ function App() {
                   </div>
                 </div>
 
-                {/* Real-time sync logs & external statuses */}
+                {/* Activity audit log */}
                 <div className="glass-panel p-6 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold">Sinkronisasi Realtime</h3>
+                      <div>
+                        <h3 className="text-lg font-bold">Activity Log Realtime</h3>
+                        <p className="text-xs text-purple-400 dark:text-purple-300 mt-1">Riwayat aksi penting dan perubahan data.</p>
+                      </div>
                       <div className="flex items-center gap-2">
                         {dbConnectionStatus === 'connected' ? (
                           <>
@@ -3474,7 +5434,7 @@ function App() {
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                             </span>
-                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Terhubung</span>
+                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Live</span>
                           </>
                         ) : (
                           <>
@@ -3485,49 +5445,67 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Connection Status Card */}
-                    <div className={`p-3 rounded-lg mb-4 border text-xs ${
-                      dbConnectionStatus === 'connected'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300'
-                        : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300'
-                    }`}>
-                      <div className="font-semibold mb-1">
-                        {dbConnectionStatus === 'connected' ? '✅ Database Terhubung' : '⚠️ Database Offline'}
+                    <div className="grid grid-cols-3 gap-2 mb-4">
+                      <div className="rounded-xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-3">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Log</p>
+                        <p className="text-xl font-black mt-1">{activityLogItems.length}</p>
                       </div>
-                      <div className="text-[10px] opacity-80">
-                        Sinkronisasi terakhir: {lastSyncTime.toLocaleTimeString('id-ID')}
+                      <div className="rounded-xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-3">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Order</p>
+                        <p className="text-xl font-black mt-1">{spreadsheetOrders.length}</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/60 dark:bg-indigo-950/20 p-3">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Invoice Paid</p>
+                        <p className="text-xl font-black mt-1">{invoices.filter(invoice => String(invoice.status || '').toLowerCase() === 'paid').length}</p>
                       </div>
                     </div>
 
-                    {/* Interactive Logs List */}
-                    <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
-                      {syncLogs.map((log, index) => (
-                        <div key={index} className="text-xs font-mono p-2.5 rounded-lg bg-purple-50/40 dark:bg-indigo-950/40 border border-purple-100/30 dark:border-indigo-950/30 text-purple-600 dark:text-purple-300 break-words leading-relaxed">
-                          {log}
+                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                      {activityLogItems.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-purple-200 dark:border-indigo-900 p-4 text-center text-xs text-purple-400 dark:text-purple-300">
+                          Belum ada aktivitas penting yang tercatat.
                         </div>
-                      ))}
+                      ) : activityLogItems.map((item) => {
+                        const toneClass = item.tone === 'green'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900/40'
+                          : item.tone === 'blue'
+                            ? 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/20 dark:text-blue-300 dark:border-blue-900/40'
+                            : item.tone === 'amber'
+                              ? 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900/40'
+                              : item.tone === 'slate'
+                                ? 'bg-slate-50 text-slate-600 border-slate-100 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700'
+                                : 'bg-purple-50 text-purple-700 border-purple-100 dark:bg-indigo-950/40 dark:text-purple-300 dark:border-indigo-900/40'
+
+                        return (
+                          <div key={item.id} className="rounded-xl border border-purple-100/70 dark:border-indigo-900/50 bg-white/70 dark:bg-indigo-950/20 p-3">
+                            <div className="flex items-start gap-3">
+                              <span className={`shrink-0 mt-0.5 px-2 py-1 rounded-lg border text-[9px] font-black uppercase ${toneClass}`}>
+                                {item.type}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-xs font-bold text-[#4f4574] dark:text-white leading-snug">{item.title}</p>
+                                  <span className="shrink-0 text-[10px] text-purple-400 dark:text-purple-300">
+                                    {item.createdAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 line-clamp-2">{item.detail}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
 
                   <div className="border-t border-purple-100 dark:border-indigo-950 pt-4 mt-4">
-	                    <button 
-	                      onClick={() => {
-	                        const timestamp = new Date().toLocaleTimeString('id-ID')
-	                        const activeExternalLogs = getConfiguredIntegrationSyncLogs().filter(log => !log.includes('Supabase RLS'))
-	                        setSyncLogs(prev => [
-	                          `[${timestamp}] 🔄 Sinkronisasi manual dipicu oleh pengguna.`,
-	                          ...(activeExternalLogs.length
-	                            ? activeExternalLogs.map(log => `[${timestamp}] ${log}`)
-	                            : [`[${timestamp}] ℹ️ Belum ada integrasi eksternal aktif. Hanya database Supabase yang dicek.`]),
-	                          ...prev
-	                        ])
-	                        fetchGoogleCalendarEventsForMonth({ notifyNew: true })
-	                      }}
-                      className="w-full py-2.5 bg-purple-100 hover:bg-purple-200 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all"
-                    >
+                    <div className="w-full py-2.5 bg-purple-50 dark:bg-indigo-950/50 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl flex items-center justify-center gap-2">
                       <RefreshCw size={12} className="animate-spin" />
-                      Paksa Singkronisasi Ulang
-                    </button>
+                      Auto-refresh aktif
+                    </div>
+                    <p className="mt-2 text-[10px] text-center text-purple-400 dark:text-purple-300">
+                      Sinkron realtime + polling 15 detik • update terakhir {lastSyncTime.toLocaleTimeString('id-ID')}
+                    </p>
                   </div>
                 </div>
 
@@ -3596,7 +5574,7 @@ function App() {
 
           {/* TAB CONTENT: 2. TASKS & PROJECT MANAGEMENT */}
           {activeTab === 'tasks' && (
-            <div>
+            <div className="mobile-page mobile-page-tasks">
               {/* Task view toggle + actions */}
               <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 mb-6">
                 <div className="flex items-center gap-2">
@@ -3912,12 +5890,752 @@ function App() {
             </div>
           )}
 
+          {/* TAB CONTENT: 3. SPREADSHEET ORDER TRACKER */}
+          {activeTab === 'orders' && (
+            <div className="mobile-page mobile-page-orders">
+              <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
+                <aside className="glass-panel p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-[#4f4574]">Order Customer</h3>
+                      <p className="text-xs text-[#8f75d8] mt-1">Tracking order custom spreadsheet per klien.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (showOrderForm) {
+                          cancelEditSpreadsheetOrder()
+                        } else {
+                          setShowOrderForm(true)
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-[#6f3df3] text-[11px] font-bold"
+                    >
+                      {showOrderForm ? 'Hide Form' : 'Show Form'}
+                    </button>
+                  </div>
+
+                  {showOrderForm && (
+                    <form onSubmit={handleCreateSpreadsheetOrder} className="mt-4 space-y-2.5">
+                      <input value={newOrderCustomer} onChange={(e) => setNewOrderCustomer(e.target.value)} placeholder="Nama customer" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                      <input value={newOrderName} onChange={(e) => setNewOrderName(e.target.value)} placeholder="Nama orderan" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={newOrderType} onChange={(e) => setNewOrderType(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
+                          <option>Dashboard</option>
+                          <option>Automation</option>
+                          <option>Reporting</option>
+                          <option>Template</option>
+                          <option>Fixing</option>
+                        </select>
+                        <select value={newOrderStatus} onChange={(e) => setNewOrderStatus(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
+                          <option value="new">new</option>
+                          <option value="in_progress">in_progress</option>
+                          <option value="revision">revision</option>
+                          <option value="blocked">blocked</option>
+                          <option value="completed">completed</option>
+                        </select>
+                      </div>
+                      <select value={newOrderPaymentStatus} onChange={(e) => setNewOrderPaymentStatus(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
+                        <option value="belum_bayar">belum_bayar</option>
+                        <option value="dp">dp</option>
+                        <option value="cicilan">cicilan</option>
+                        <option value="lunas">lunas</option>
+                      </select>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" min="0" value={newOrderBudget} onChange={(e) => setNewOrderBudget(e.target.value)} placeholder="Budget" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <input type="date" value={newOrderDueDate} onChange={(e) => setNewOrderDueDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      </div>
+                      <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
+                        {editingOrderId ? 'Update Order' : 'Tambah Order'}
+                      </button>
+                      {editingOrderId && (
+                        <button
+                          type="button"
+                          onClick={cancelEditSpreadsheetOrder}
+                          className="w-full py-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#8f75d8] text-xs font-bold"
+                        >
+                          Batal Edit
+                        </button>
+                      )}
+                    </form>
+                  )}
+
+                  <div className="mt-4 space-y-2 max-h-[430px] overflow-y-auto pr-1">
+                    {spreadsheetOrders.length === 0 ? (
+                      <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">Belum ada order.</div>
+                    ) : sortedSpreadsheetOrders.map(order => {
+                      const isDoneOrder = ['completed', 'done'].includes((order.status || '').toLowerCase())
+                      return (
+                      <div
+                        key={order.id}
+                        onClick={() => setSelectedOrderId(order.id)}
+                        className={`w-full text-left rounded-xl border p-3 transition-all ${
+                          selectedSpreadsheetOrder?.id === order.id
+                            ? 'border-[#8f75d8] bg-[#f5f0ff]'
+                            : 'border-purple-100 bg-white hover:bg-[#faf7ff]'
+                        } ${isDoneOrder ? 'opacity-55 saturate-75' : ''}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-[#4f4574] truncate">{order.orderName}</p>
+                            <p className="text-[11px] text-[#8f75d8] truncate">{order.customerName} • {order.orderType}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">Rp {Number(order.budget || 0).toLocaleString('id-ID')}</p>
+                            <span className={`mt-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${String(order.paymentStatus || 'belum_bayar') === 'lunas' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : String(order.paymentStatus || '') === 'dp' ? 'bg-blue-100 text-blue-700 border-blue-200' : String(order.paymentStatus || '') === 'cicilan' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>
+                              {order.paymentStatus || 'belum_bayar'}
+                            </span>
+                            {isDoneOrder && (
+                              <span className="mt-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                Selesai
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                startEditSpreadsheetOrder(order)
+                              }}
+                              className="w-7 h-7 rounded-lg border border-purple-100 bg-white text-[#8f75d8] hover:bg-purple-50 flex items-center justify-center"
+                              title="Edit order"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteSpreadsheetOrder(order)
+                              }}
+                              className="w-7 h-7 rounded-lg border border-red-100 bg-white text-red-500 hover:bg-red-50 flex items-center justify-center"
+                              title="Hapus order"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      )
+                    })}
+                  </div>
+                </aside>
+
+                <section className="glass-panel p-5">
+                  {!selectedSpreadsheetOrder ? (
+                    <div className="text-sm text-[#8f75d8]">Pilih order dulu dari panel kiri.</div>
+                  ) : (
+                    <>
+                      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-xl font-bold text-[#4f4574]">{selectedSpreadsheetOrder.orderName}</h3>
+                          <p className="text-sm text-[#8f75d8] mt-1">{selectedSpreadsheetOrder.customerName} • {selectedSpreadsheetOrder.orderType}</p>
+                          <p className="text-xs text-slate-500 mt-1">Deadline: {selectedSpreadsheetOrder.dueDate || '-'} • Status kerja: {selectedSpreadsheetOrder.status}</p>
+                          <p className="text-xs text-slate-500 mt-1">Status bayar: <span className="font-semibold capitalize">{selectedSpreadsheetOrder.paymentStatus || 'belum_bayar'}</span></p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await copyTextToClipboard(selectedOrderPublicLink)
+                                alert('Link tracking view-only berhasil disalin.')
+                              } catch (error) {
+                                alert(`Gagal menyalin link: ${error.message}`)
+                              }
+                            }}
+                            className="px-3 py-2 rounded-xl bg-white border border-purple-200 text-[#8f75d8] text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <Copy size={12} />
+                            Copy Link View-Only
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSpreadsheetOrder(selectedSpreadsheetOrder)}
+                            className="px-3 py-2 rounded-xl bg-red-50 border border-red-100 text-red-600 text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <Trash2 size={12} />
+                            Hapus Order
+                          </button>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleAddOrderTimeline} className="mt-4 rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold mb-2">Tambah Update Timeline</p>
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_120px] gap-2">
+                          <input value={timelineInputTitle} onChange={(e) => setTimelineInputTitle(e.target.value)} placeholder="Judul update progress" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                          <input type="number" min="0" max="100" value={timelineInputProgress} onChange={(e) => setTimelineInputProgress(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        </div>
+                        <textarea value={timelineInputNote} onChange={(e) => setTimelineInputNote(e.target.value)} placeholder="Catatan update untuk customer..." className="mt-2 w-full min-h-20 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <button type="submit" className="mt-2 px-4 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">Tambah Timeline</button>
+                      </form>
+
+                      <div className="mt-4 space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                        {selectedOrderTimeline.length === 0 ? (
+                          <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">Timeline belum ada update.</div>
+                        ) : selectedOrderTimeline.map((item, idx) => (
+                          <div key={item.id} className="rounded-2xl border border-purple-100 bg-white p-4 relative">
+                            {idx < selectedOrderTimeline.length - 1 && <div className="absolute left-[19px] top-11 bottom-[-14px] w-[2px] bg-purple-100" />}
+                            <div className="flex items-start gap-3">
+                              <span className="mt-1 w-3 h-3 rounded-full bg-[#8f75d8] shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] text-[#8f75d8] font-semibold">{new Date(item.createdAt).toLocaleString('id-ID')}</p>
+                                {editingTimelineId === item.id ? (
+                                  <div className="mt-1 space-y-2">
+                                    <input
+                                      value={editTimelineTitle}
+                                      onChange={(e) => setEditTimelineTitle(e.target.value)}
+                                      className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs"
+                                      placeholder="Judul timeline"
+                                    />
+                                    <textarea
+                                      value={editTimelineNote}
+                                      onChange={(e) => setEditTimelineNote(e.target.value)}
+                                      className="w-full min-h-16 px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs"
+                                      placeholder="Catatan timeline"
+                                    />
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={editTimelineProgress}
+                                        onChange={(e) => setEditTimelineProgress(e.target.value)}
+                                        className="w-24 px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs"
+                                      />
+                                      <span className="text-xs text-[#8f75d8]">%</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button type="button" onClick={() => handleSaveTimelineEdit(item.id)} className="px-3 py-1.5 rounded-lg bg-[#8f75d8] text-white text-[11px] font-bold">Simpan</button>
+                                      <button type="button" onClick={cancelEditTimeline} className="px-3 py-1.5 rounded-lg bg-purple-50 text-[#8f75d8] text-[11px] font-bold">Batal</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <h4 className="text-sm font-bold text-[#4f4574] mt-1">{item.title}</h4>
+                                    {item.note && <p className="text-xs text-slate-600 mt-1 whitespace-pre-line">{item.note}</p>}
+                                    <div className="mt-2 h-2 rounded-full bg-purple-100 overflow-hidden">
+                                      <div className="h-full bg-[#8f75d8]" style={{ width: `${Math.max(0, Math.min(100, Number(item.progressPercent || 0)))}%` }} />
+                                    </div>
+                                    <div className="mt-1 flex items-center justify-between">
+                                      <p className="text-[11px] text-[#8f75d8]">Progress {Number(item.progressPercent || 0)}%</p>
+                                      <div className="flex items-center gap-2">
+                                        <button type="button" onClick={() => startEditTimeline(item)} className="text-[11px] font-bold text-blue-600 hover:underline">Update Progress</button>
+                                        <button type="button" onClick={() => handleDeleteTimelineItem(item.id)} className="text-[11px] font-bold text-red-600 hover:underline">Hapus</button>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'crm' && (
+            <div className="mobile-page mobile-page-crm space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="glass-panel p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Total Client</p>
+                    <Users size={18} className="text-[#8f75d8]" />
+                  </div>
+                  <p className="text-2xl font-extrabold mt-2">{crmSummary.totalClients}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Follow-up Due</p>
+                    <CalendarClock size={18} className="text-amber-500" />
+                  </div>
+                  <p className="text-2xl font-extrabold mt-2">{crmSummary.followUpsDue}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Reservasi</p>
+                    <Calendar size={18} className="text-emerald-500" />
+                  </div>
+                  <p className="text-2xl font-extrabold mt-2">{crmSummary.totalReservations}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Revenue Terkonfirmasi</p>
+                    <BadgeDollarSign size={18} className="text-[#8f75d8]" />
+                  </div>
+                  <p className="text-2xl font-extrabold mt-2">{formatCurrencyIDR(crmSummary.confirmedRevenue)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[380px_1fr] gap-5">
+                <aside className="glass-panel p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-[#4f4574]">Client CRM</h3>
+                      <p className="text-xs text-[#8f75d8] mt-1">Data dari reservasi, order spreadsheet, dan follow-up manual.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (showCrmForm) {
+                          resetCrmClientForm()
+                        } else {
+                          setShowCrmForm(true)
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[#8f75d8] hover:bg-[#8069c8] text-white text-[11px] font-bold inline-flex items-center gap-1"
+                    >
+                      <Plus size={12} />
+                      {showCrmForm ? 'Tutup' : 'Client'}
+                    </button>
+                  </div>
+
+                  {showCrmForm && (
+                    <form onSubmit={handleSubmitCrmClient} className="mt-4 space-y-2.5 rounded-2xl border border-purple-100 bg-[#fcfbff] p-3">
+                      <input value={crmClientName} onChange={(e) => setCrmClientName(e.target.value)} placeholder="Nama client" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                      <input value={crmClientCompany} onChange={(e) => setCrmClientCompany(e.target.value)} placeholder="Perusahaan / brand" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="email" value={crmClientEmail} onChange={(e) => setCrmClientEmail(e.target.value)} placeholder="Email" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <input value={crmClientPhone} onChange={(e) => setCrmClientPhone(e.target.value)} placeholder="No. HP / WA" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={crmClientStatus} onChange={(e) => setCrmClientStatus(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
+                          <option value="lead">lead</option>
+                          <option value="negotiation">negotiation</option>
+                          <option value="active">active</option>
+                          <option value="retainer">retainer</option>
+                          <option value="inactive">inactive</option>
+                        </select>
+                        <input type="date" value={crmClientNextFollowUp} onChange={(e) => setCrmClientNextFollowUp(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      </div>
+                      <textarea value={crmClientNotes} onChange={(e) => setCrmClientNotes(e.target.value)} placeholder="Catatan client..." className="w-full min-h-20 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
+                        {editingCrmClientId ? 'Update Client' : 'Simpan Client'}
+                      </button>
+                    </form>
+                  )}
+
+                  <div className="mt-4 space-y-2 max-h-[560px] overflow-y-auto pr-1">
+                    {crmClientsCombined.length === 0 ? (
+                      <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">Belum ada client.</div>
+                    ) : crmClientsCombined.map(client => {
+                      const isSelected = selectedCrmClient?.key === client.key
+                      const statusClass = client.status === 'retainer'
+                        ? 'bg-blue-100 text-blue-700'
+                        : client.status === 'active'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : client.status === 'negotiation'
+                            ? 'bg-amber-100 text-amber-700'
+                            : client.status === 'inactive'
+                              ? 'bg-slate-100 text-slate-500'
+                              : 'bg-purple-100 text-purple-700'
+
+                      return (
+                        <div
+                          key={client.key}
+                          onClick={() => setSelectedCrmClientId(client.key)}
+                          className={`rounded-xl border p-3 cursor-pointer transition-all ${isSelected ? 'border-[#8f75d8] bg-[#f5f0ff]' : 'border-purple-100 bg-white hover:bg-[#faf7ff]'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-[#4f4574] truncate">{client.name || 'Client tanpa nama'}</p>
+                              <p className="text-[11px] text-[#8f75d8] truncate">{client.company || client.email || 'Tanpa detail kontak'}</p>
+                            </div>
+                            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusClass}`}>{client.status}</span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {client.sourceLabels.map(label => (
+                              <span key={label} className="px-2 py-0.5 rounded-full bg-white border border-purple-100 text-[10px] font-bold text-[#8f75d8]">{label}</span>
+                            ))}
+                          </div>
+                          <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-slate-500">
+                            <span>{client.orders.length} order</span>
+                            <span>{client.reservations.length} reservasi</span>
+                            <span>{formatCurrencyIDR(client.paidRevenue || 0)}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </aside>
+
+                <section className="glass-panel p-5">
+                  {!selectedCrmClient ? (
+                    <div className="text-sm text-[#8f75d8]">Pilih atau tambah client dulu.</div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-2xl bg-[#8f75d8] text-white flex items-center justify-center font-bold">
+                              {(selectedCrmClient.name || 'C').slice(0, 1).toUpperCase()}
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-bold text-[#4f4574]">{selectedCrmClient.name || 'Client tanpa nama'}</h3>
+                              <p className="text-sm text-[#8f75d8]">{selectedCrmClient.company || selectedCrmClient.email || 'Kontak belum lengkap'}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                            {selectedCrmClient.email && <span className="inline-flex items-center gap-1"><Mail size={12} />{selectedCrmClient.email}</span>}
+                            {selectedCrmClient.phone && <span>{selectedCrmClient.phone}</span>}
+                            {selectedCrmClient.nextFollowUpDate && <span>Follow-up: {selectedCrmClient.nextFollowUpDate}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditCrmClient(selectedCrmClient)}
+                            className="px-3 py-2 rounded-xl bg-white border border-purple-200 text-[#8f75d8] text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <Pencil size={12} />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCrmClient(selectedCrmClient)}
+                            className="px-3 py-2 rounded-xl bg-red-50 border border-red-100 text-red-600 text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <Trash2 size={12} />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Total Potensi</p>
+                          <p className="text-lg font-extrabold mt-1">{formatCurrencyIDR(selectedCrmClient.totalRevenue)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Revenue Masuk</p>
+                          <p className="text-lg font-extrabold mt-1">{formatCurrencyIDR((selectedCrmClient.reservations.length * Number(reservationSessionPrice || 0)) + selectedCrmClient.paidRevenue)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Aktivitas</p>
+                          <p className="text-lg font-extrabold mt-1">{selectedCrmClient.activities.length}</p>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleSubmitCrmActivity} className="rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold mb-2">Tambah Follow-up</p>
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_160px] gap-2">
+                          <input value={crmActivityTitle} onChange={(e) => setCrmActivityTitle(e.target.value)} placeholder="Judul follow-up" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                          <input type="date" value={crmActivityDueDate} onChange={(e) => setCrmActivityDueDate(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        </div>
+                        <textarea value={crmActivityNote} onChange={(e) => setCrmActivityNote(e.target.value)} placeholder="Catatan follow-up..." className="mt-2 w-full min-h-16 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <button type="submit" className="mt-2 px-4 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5">
+                          <MessageSquare size={13} />
+                          Simpan Follow-up
+                        </button>
+                      </form>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <h4 className="text-sm font-bold text-[#4f4574] mb-3">Order & Reservasi</h4>
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {[...selectedCrmClient.orders.map(order => ({ ...order, rowType: 'order' })), ...selectedCrmClient.reservations.map(reservation => ({ ...reservation, rowType: 'reservation' }))].length === 0 ? (
+                              <p className="text-xs text-[#8f75d8]">Belum ada order atau reservasi.</p>
+                            ) : [...selectedCrmClient.orders.map(order => ({ ...order, rowType: 'order' })), ...selectedCrmClient.reservations.map(reservation => ({ ...reservation, rowType: 'reservation' }))].map(item => (
+                              <div key={`${item.rowType}-${item.id}`} className="rounded-xl border border-purple-100 bg-[#fcfbff] p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-[#4f4574] truncate">{item.title}</p>
+                                    <p className="text-[11px] text-[#8f75d8] mt-0.5">
+                                      {item.rowType === 'order'
+                                        ? `${item.type} • ${formatCurrencyIDR(item.budget)}`
+                                        : `${item.date || '-'}${item.time ? ` • ${item.time}` : ''}`}
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0 px-2 py-0.5 rounded-full bg-purple-100 text-[#8f75d8] text-[10px] font-bold">{item.rowType}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <h4 className="text-sm font-bold text-[#4f4574] mb-3">Activity Timeline</h4>
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {selectedCrmClient.activities.length === 0 ? (
+                              <p className="text-xs text-[#8f75d8]">Belum ada aktivitas.</p>
+                            ) : selectedCrmClient.activities.map(activity => {
+                              const isManualFollowUp = String(activity.id || '').startsWith('crm-activity-')
+                              const isDone = activity.status === 'done'
+                              return (
+                                <div key={activity.id} className={`rounded-xl border border-purple-100 bg-[#fcfbff] p-3 ${isDone ? 'opacity-60' : ''}`}>
+                                  <div className="flex items-start gap-2">
+                                    <span className={`mt-1 w-2 h-2 rounded-full ${activity.type === 'order' ? 'bg-blue-500' : activity.type === 'reservation' ? 'bg-emerald-500' : 'bg-[#8f75d8]'}`} />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-bold text-[#4f4574] truncate">{activity.title}</p>
+                                      <p className="text-[11px] text-slate-500 mt-0.5">{activity.note || activity.dueDate || '-'}</p>
+                                      <p className="text-[10px] text-[#8f75d8] mt-1">{activity.createdAt ? new Date(activity.createdAt).toLocaleString('id-ID') : activity.dueDate || '-'}</p>
+                                    </div>
+                                    {isManualFollowUp && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleCrmActivityStatus(activity.id)}
+                                        className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold ${isDone ? 'bg-purple-100 text-[#8f75d8]' : 'bg-emerald-100 text-emerald-700'}`}
+                                      >
+                                        {isDone ? 'Buka' : 'Done'}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'finance' && (
+            <div className="mobile-page mobile-page-finance space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Pendapatan Bulan Ini</p>
+                  <p className="text-2xl font-extrabold mt-2">{formatCurrencyIDR(monthlyBusinessRevenue)}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Outstanding Spreadsheet</p>
+                  <p className="text-2xl font-extrabold mt-2">{formatCurrencyIDR(spreadsheetOutstandingAmount)}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Collection Rate Spreadsheet</p>
+                  <p className="text-2xl font-extrabold mt-2">{spreadsheetCollectionRate}%</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Mode Penyimpanan</p>
+                  <p className="text-lg font-extrabold mt-2">{invoiceStorageMode === 'cloud' ? 'Supabase' : 'Local Backup'}</p>
+                </div>
+              </div>
+
+              <div className="glass-panel p-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-extrabold">Finance & Invoice Tracker</h3>
+                    <p className="text-xs text-purple-400 mt-1">Pantau invoice per klien dengan status draft, sent, paid, dan overdue.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={invoiceFilterStatus}
+                      onChange={(e) => setInvoiceFilterStatus(e.target.value)}
+                      className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs font-semibold"
+                    >
+                      <option value="all">Semua Status</option>
+                      <option value="draft">Draft</option>
+                      <option value="sent">Sent</option>
+                      <option value="paid">Paid</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (showInvoiceForm && editingInvoiceId) {
+                          resetInvoiceForm()
+                        } else {
+                          setShowInvoiceForm(prev => !prev)
+                        }
+                      }}
+                      className="px-4 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5"
+                    >
+                      <Plus size={13} />
+                      {showInvoiceForm ? 'Tutup Form' : 'Tambah Invoice'}
+                    </button>
+                  </div>
+                </div>
+
+                {showInvoiceForm && (
+                  <form onSubmit={handleSubmitInvoice} className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 rounded-2xl border border-purple-100 bg-purple-50/30 p-4">
+                    <input value={invoiceClientName} onChange={(e) => setInvoiceClientName(e.target.value)} placeholder="Nama client" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm" required />
+                    <input value={invoiceTitle} onChange={(e) => setInvoiceTitle(e.target.value)} placeholder="Judul invoice" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm" required />
+                    <select value={invoiceType} onChange={(e) => setInvoiceType(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm">
+                      <option>Custom Spreadsheet</option>
+                      <option>Dashboard</option>
+                      <option>Automation</option>
+                      <option>Consultation</option>
+                    </select>
+                    <input type="number" min="0" value={invoiceAmount} onChange={(e) => setInvoiceAmount(e.target.value)} placeholder="Nominal" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm" />
+                    <input type="date" value={invoiceIssueDate} onChange={(e) => setInvoiceIssueDate(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm" />
+                    <input type="date" value={invoiceDueDate} onChange={(e) => setInvoiceDueDate(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm" />
+                    <select value={invoiceStatus} onChange={(e) => setInvoiceStatus(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm">
+                      <option value="draft">Draft</option>
+                      <option value="sent">Sent</option>
+                      <option value="paid">Paid</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                    <input value={invoiceNotes} onChange={(e) => setInvoiceNotes(e.target.value)} placeholder="Catatan singkat" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm" />
+                    <div className="xl:col-span-4 flex items-center gap-2 pt-1">
+                      <button type="submit" className="px-4 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
+                        {editingInvoiceId ? 'Simpan Perubahan' : 'Simpan Invoice'}
+                      </button>
+                      {editingInvoiceId && (
+                        <button type="button" onClick={resetInvoiceForm} className="px-4 py-2 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold">
+                          Batal Edit
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {filteredInvoices.length === 0 ? (
+                  <div className="lg:col-span-2 glass-panel p-6 text-center text-sm text-purple-400">Belum ada invoice pada filter ini.</div>
+                ) : filteredInvoices.map((invoice) => {
+                  const dueDateKey = String(invoice.dueDate || '')
+                  const isLate = dueDateKey && dueDateKey < todayString && !['paid'].includes(String(invoice.status || '').toLowerCase())
+                  const displayStatus = isLate && invoice.status !== 'paid' ? 'overdue' : invoice.status
+                  const statusBadgeClass = displayStatus === 'paid'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : displayStatus === 'sent'
+                      ? 'bg-blue-100 text-blue-700'
+                      : displayStatus === 'overdue'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-purple-100 text-purple-700'
+
+                  return (
+                    <div key={invoice.id} className="glass-panel p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-lg font-extrabold leading-tight">{invoice.title}</h4>
+                          <p className="text-sm text-purple-400">{invoice.clientName} • {invoice.orderType}</p>
+                        </div>
+                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full uppercase ${statusBadgeClass}`}>{displayStatus}</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded-xl border border-purple-100 bg-white p-2">
+                          <p className="text-purple-400">Nominal</p>
+                          <p className="font-bold text-sm mt-1">{formatCurrencyIDR(invoice.amount)}</p>
+                        </div>
+                        <div className="rounded-xl border border-purple-100 bg-white p-2">
+                          <p className="text-purple-400">Issue</p>
+                          <p className="font-bold text-sm mt-1">{invoice.issueDate || '-'}</p>
+                        </div>
+                        <div className="rounded-xl border border-purple-100 bg-white p-2">
+                          <p className="text-purple-400">Due</p>
+                          <p className="font-bold text-sm mt-1">{invoice.dueDate || '-'}</p>
+                        </div>
+                      </div>
+
+                      {invoice.notes ? <p className="text-xs text-slate-500">{invoice.notes}</p> : null}
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => startEditInvoice(invoice)} className="px-3 py-1.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold inline-flex items-center gap-1"><Pencil size={12} />Edit</button>
+                        <button type="button" onClick={() => handleDeleteInvoice(invoice)} className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold inline-flex items-center gap-1"><Trash2 size={12} />Hapus</button>
+                        <div className="ml-auto flex items-center gap-1">
+                          {['draft', 'sent', 'paid', 'overdue'].map(status => (
+                            <button
+                              key={status}
+                              type="button"
+                              onClick={() => updateInvoiceStatus(invoice, status)}
+                              className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${invoice.status === status ? 'bg-[#8f75d8] text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100'}`}
+                            >
+                              {status}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'reports' && (
+            <div className="mobile-page mobile-page-reports space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="glass-panel p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Total Pendapatan</p>
+                  <p className="text-2xl font-extrabold mt-2">{formatCurrencyIDR(totalBusinessRevenue)}</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Total Transaksi</p>
+                  <p className="text-2xl font-extrabold mt-2">{appointments.length + spreadsheetOrders.length}</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Open Task Utama</p>
+                  <p className="text-2xl font-extrabold mt-2">{openTaskCount}</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Upcoming Meeting</p>
+                  <p className="text-2xl font-extrabold mt-2">{upcomingMeetingCount}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div className="xl:col-span-2 glass-panel p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-extrabold">Revenue 6 Bulan Terakhir</h3>
+                    <span className="text-xs text-purple-400">Reservasi + spreadsheet lunas</span>
+                  </div>
+                  <div className="grid grid-cols-6 gap-3 items-end h-44">
+                    {revenueByMonth.map((month) => {
+                      const maxValue = Math.max(...revenueByMonth.map(item => item.value), 1)
+                      const height = Math.max(8, Math.round((month.value / maxValue) * 140))
+                      return (
+                        <div key={month.key} className="flex flex-col items-center gap-2">
+                          <div className="w-full max-w-[44px] rounded-xl bg-purple-100/70 h-[150px] flex items-end overflow-hidden">
+                            <div className="w-full rounded-xl bg-gradient-to-t from-[#8f75d8] to-[#b49af0]" style={{ height: `${height}px` }} />
+                          </div>
+                          <span className="text-[11px] font-bold text-purple-500 uppercase">{month.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="glass-panel p-5">
+                  <h3 className="text-lg font-extrabold mb-4">Invoice Status</h3>
+                  <div className="space-y-2">
+                    {Object.entries(reportByStatus).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between rounded-xl border border-purple-100 bg-white px-3 py-2">
+                        <span className="text-sm font-semibold capitalize">{key}</span>
+                        <span className="text-sm font-extrabold text-[#8f75d8]">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 rounded-xl border border-purple-100 bg-purple-50/40 p-3">
+                    <p className="text-xs text-purple-400">Collection Rate</p>
+                    <p className="text-xl font-extrabold mt-1">{spreadsheetCollectionRate}%</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-panel p-5">
+                <h3 className="text-lg font-extrabold mb-4">Top Client by Paid Revenue</h3>
+                {topClients.length === 0 ? (
+                  <p className="text-sm text-purple-400">Belum ada data pendapatan dari reservasi/spreadsheet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {topClients.map((client, index) => (
+                      <div key={client.name} className="rounded-xl border border-purple-100 bg-white p-3">
+                        <p className="text-xs text-purple-400">#{index + 1}</p>
+                        <h4 className="text-base font-extrabold mt-1 truncate">{client.name}</h4>
+                        <p className="text-sm font-semibold text-[#8f75d8] mt-1">{formatCurrencyIDR(client.value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* TAB CONTENT: 3. BOOKING CALENDAR & APPOINTMENTS */}
           {activeTab === 'calendar' && (() => {
             const calendarFeed = [
               ...appointments.map(appt => ({
                 id: `appt-${appt.id}`,
-                title: appt.title,
+                title: formatAppointmentLabel(appt),
                 subtitle: appt.clientName,
                 date: appt.date,
                 time: appt.time,
@@ -3969,7 +6687,7 @@ function App() {
             }
 
             return (
-              <div className="calendar-workspace relative overflow-hidden rounded-[2.4rem] border border-white/80 bg-white/78 p-4 lg:p-5 shadow-2xl shadow-purple-200/45 backdrop-blur-xl">
+              <div className="mobile-page mobile-page-calendar calendar-workspace relative overflow-hidden rounded-[2.4rem] border border-white/80 bg-white/78 p-4 lg:p-5 shadow-2xl shadow-purple-200/45 backdrop-blur-xl">
                 <div className="pointer-events-none absolute -left-24 top-12 h-56 w-56 rounded-full bg-[#8f75d8]/14 blur-3xl" />
                 <div className="pointer-events-none absolute -right-20 bottom-0 h-64 w-64 rounded-full bg-[#ffe54c]/18 blur-3xl" />
                 <div className="relative grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-5">
@@ -4175,10 +6893,48 @@ function App() {
                         const dayGoogleEvents = googleCalendarEvents.filter(event => event.date === dateStr)
                         const dayHolidays = nationalHolidays.filter(holiday => holiday.date === dateStr)
                         const dayActivityItems = [
-                          ...dayHolidays.map(holiday => ({ id: `holiday-${holiday.id}`, title: `Libur • ${holiday.title}`, className: 'text-red-600' })),
-                          ...dayGoogleEvents.map(event => ({ id: `gcal-${event.id}`, title: `GCal • ${event.title}`, className: 'text-emerald-700' })),
-                          ...dayAppointments.map(appt => ({ id: `appt-${appt.id}`, title: `Event • ${appt.title}`, className: 'text-blue-700' })),
-                          ...dayTasks.map(task => ({ id: `task-${task.id}`, title: `Task • ${task.title}`, className: 'text-[#6f3df3]' }))
+                          ...dayHolidays.map(holiday => ({
+                            ...holiday,
+                            id: `holiday-${holiday.id}`,
+                            displayTitle: holiday.title,
+                            pillTag: '',
+                            bgColor: '#FFE3EA',
+                            borderColor: '#F8B8C8',
+                            itemType: 'holiday',
+                            editable: false
+                          })),
+                          ...dayGoogleEvents.map(event => ({
+                            ...event,
+                            id: `gcal-${event.id}`,
+                            displayTitle: event.title,
+                            pillTag: '',
+                            bgColor: '#DDF7EA',
+                            borderColor: '#A7E7C7',
+                            itemType: 'google_event',
+                            editable: false
+                          })),
+                          ...dayAppointments.map(appt => ({
+                            ...appt,
+                            id: appt.id,
+                            displayId: `appt-${appt.id}`,
+                            displayTitle: formatAppointmentLabel(appt),
+                            pillTag: '',
+                            bgColor: '#DFECFF',
+                            borderColor: '#B6D3FF',
+                            itemType: 'appointment',
+                            editable: true
+                          })),
+                          ...dayTasks.map(task => ({
+                            ...task,
+                            id: task.id,
+                            displayId: `task-${task.id}`,
+                            displayTitle: task.title,
+                            pillTag: 'TASK',
+                            bgColor: '#EFE7FF',
+                            borderColor: '#D0B9FF',
+                            itemType: 'task',
+                            editable: true
+                          }))
                         ]
                         const visibleDayActivities = dayActivityItems.slice(0, 4)
                         const hiddenActivityCount = dayActivityItems.length - visibleDayActivities.length
@@ -4201,12 +6957,27 @@ function App() {
                             {hasAppt && (
                               <div className="mt-1.5 space-y-1">
                                 {visibleDayActivities.map(activity => (
-                                  <button key={activity.id} type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className={`calendar-event-pill ${activity.className}`}>
-                                    {activity.title}
+                                  <button
+                                    key={activity.displayId || activity.id}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setBookingDate(dateStr)
+                                      setSelectedCalendarDate(dateStr)
+                                      if (activity.editable) {
+                                        setCalendarActionItem(activity)
+                                      }
+                                    }}
+                                    className={`calendar-event-pill px-2 py-1 rounded-full text-[11px] font-semibold leading-tight text-[#4f4574] ${activity.editable ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
+                                    style={{ backgroundColor: activity.bgColor, borderColor: activity.borderColor }}
+                                    title={activity.editable ? 'Klik untuk edit atau hapus' : activity.title}
+                                  >
+                                    {activity.pillTag && <span className="font-extrabold mr-1.5 opacity-80">{activity.pillTag}</span>}
+                                    <span>{activity.displayTitle}</span>
                                   </button>
                                 ))}
                                 {hiddenActivityCount > 0 && (
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill text-[#6f3df3]">
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalendarDate(dateStr) }} className="calendar-event-pill px-2 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                                     +{hiddenActivityCount} aktivitas
                                   </button>
                                 )}
@@ -4227,7 +6998,7 @@ function App() {
 
           {/* TAB CONTENT: 4. ENCRYPTED NOTES VAULT */}
           {activeTab === 'notes' && (
-            <div>
+            <div className="mobile-page mobile-page-notes">
               {/* Security Advisory alert */}
               <div className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-indigo-950/50 rounded-2xl flex items-start gap-3.5 mb-6">
                 <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-indigo-900 flex items-center justify-center text-purple-600 dark:text-purple-300 shrink-0">
@@ -4420,6 +7191,71 @@ function App() {
                   </div>
                 </div>
 
+              </div>
+            </div>
+          )}
+
+          {/* Calendar Item Action Modal */}
+          {calendarActionItem && (
+            <div className="fixed inset-0 bg-slate-500/25 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setCalendarActionItem(null)}>
+              <div className="w-full max-w-sm rounded-[2rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-[#8f75d8]/15 text-[#8f75d8] flex items-center justify-center shrink-0">
+                    {calendarActionItem.itemType === 'appointment' ? <Calendar size={18} /> : <CheckSquare size={18} />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#8f75d8] font-bold">
+                      {calendarActionItem.itemType === 'appointment' ? 'Reservasi' : 'Task'}
+                    </p>
+                    <h3 className="mt-1 text-lg font-extrabold text-[#4f4574] dark:text-white truncate">{calendarActionItem.title}</h3>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {calendarActionItem.itemType === 'appointment'
+                        ? `${calendarActionItem.clientName || 'Klien'} • ${calendarActionItem.date} ${calendarActionItem.time || ''}`
+                        : `${calendarActionItem.category || 'Task'} • ${calendarActionItem.calendarDate || todayString} ${calendarActionItem.dueTime || ''}`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => openCalendarEditModal(calendarActionItem)}
+                    className="py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-md shadow-purple-200 inline-flex items-center justify-center gap-2"
+                  >
+                    <Pencil size={14} />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDeleteConfirmModal(calendarActionItem)}
+                    className="py-3 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold inline-flex items-center justify-center gap-2"
+                  >
+                    <Trash2 size={14} />
+                    Hapus
+                  </button>
+                </div>
+
+                {calendarActionItem.itemType === 'task' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleTaskStatus(calendarActionItem.id)
+                      setCalendarActionItem(null)
+                    }}
+                    className="mt-3 w-full py-3 rounded-2xl bg-purple-50 hover:bg-purple-100 text-[#6f3df3] text-xs font-bold inline-flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle size={14} />
+                    {calendarActionItem.status === 'done' ? 'Batal Selesai' : 'Tandai Selesai'}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setCalendarActionItem(null)}
+                  className="mt-4 w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           )}
@@ -4700,7 +7536,7 @@ function App() {
 
           {/* TAB CONTENT: 5. INTEGRATIONS LOG */}
           {activeTab === 'integrations' && (
-            <div className="space-y-6">
+            <div className="mobile-page mobile-page-integrations space-y-6">
 
               <div>
                 <h3 className="text-lg font-bold">Integrasi Layanan Eksternal</h3>
@@ -4788,7 +7624,7 @@ function App() {
 
           {/* TAB CONTENT: 6. SETTINGS & MACOS CONFIGURATIONS */}
           {activeTab === 'settings' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="mobile-page mobile-page-settings grid grid-cols-1 lg:grid-cols-3 gap-8">
               
               {/* Left panel: Preferences */}
               <div className="lg:col-span-2 glass-panel p-6 space-y-6">
@@ -4942,6 +7778,19 @@ function App() {
                   {showAvailabilitySettings && (
                     <div className="p-3 rounded-xl border border-purple-200/60 dark:border-indigo-900/60 bg-white/40 dark:bg-indigo-950/20 space-y-3">
                       <p className="text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300">Pengaturan Hari/Jam Reservasi</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="p-2.5 rounded-lg border border-purple-100 dark:border-indigo-900/60 bg-white dark:bg-indigo-950/20">
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-1">Harga Default Reservasi 1:1 / Sesi</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={reservationSessionPrice}
+                            onChange={(e) => setReservationSessionPrice(Number(e.target.value || 0))}
+                            className="w-full px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
+                          />
+                          <p className="text-[10px] text-purple-400 mt-1">Dipakai otomatis untuk hitung pendapatan reservasi di tab Finance & Reports.</p>
+                        </div>
+                      </div>
                       {(() => {
                         const selectedDayConfig = bookingAvailability.daySchedules?.[selectedAvailabilityDay] || { enabled: false, startHour: '09:00', endHour: '17:00' }
 
@@ -5162,6 +8011,65 @@ function App() {
         
       </div>
 
+      <button
+        type="button"
+        className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings'].includes(activeTab) ? 'active' : ''}`}
+        onClick={() => setShowMobileMoreMenu(prev => !prev)}
+        aria-label="Buka menu lainnya"
+      >
+        <MoreHorizontal size={20} />
+      </button>
+
+      {showMobileMoreMenu && (
+        <>
+          <button
+            type="button"
+            className="mobile-more-backdrop"
+            onClick={() => setShowMobileMoreMenu(false)}
+            aria-label="Tutup menu lainnya"
+          />
+          <div className="mobile-more-drawer glass-panel">
+            <div className="mobile-more-head">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">More</p>
+                <h3 className="text-base font-bold">Menu Lainnya</h3>
+              </div>
+              <button type="button" onClick={() => setShowMobileMoreMenu(false)} aria-label="Tutup menu">
+                <X size={18} />
+              </button>
+            </div>
+
+            <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('notes'); setShowMobileMoreMenu(false) }}>
+              <Lock size={18} />
+              <span>Catatan Terenkripsi</span>
+            </button>
+            <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('integrations'); setShowMobileMoreMenu(false) }}>
+              <RefreshCw size={18} />
+              <span>Integrasi Realtime</span>
+            </button>
+            <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('settings'); setShowMobileMoreMenu(false) }}>
+              <Settings size={18} />
+              <span>Pengaturan macOS</span>
+            </button>
+
+            <div className="mobile-more-divider" />
+
+            <button type="button" className="mobile-more-item" onClick={() => { setIsProfileModalOpen(true); setShowMobileMoreMenu(false) }}>
+              <User size={18} />
+              <span>Profil</span>
+            </button>
+            <button type="button" className="mobile-more-item" onClick={() => { toggleTheme(); setShowMobileMoreMenu(false) }}>
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              <span>{theme === 'dark' ? 'Tema Terang' : 'Tema Gelap'}</span>
+            </button>
+            <button type="button" className="mobile-more-item danger" onClick={() => { handleSignOut(); setShowMobileMoreMenu(false) }}>
+              <ExternalLink size={18} />
+              <span>Keluar</span>
+            </button>
+          </div>
+        </>
+      )}
+
       {showNewFolderModal && (
         <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowNewFolderModal(false)}>
           <div className="w-full max-w-md rounded-[2rem] bg-white dark:bg-slate-900 p-8 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
@@ -5368,17 +8276,9 @@ function App() {
       )}
 
       {/* 🚀 SIMULATED MAC PUSH NOTIFICATION TOAST */}
-      {notifications.length > 0 && (
+      {activeNotifications.length > 0 && (
         <div className={`notification-banner glass-panel p-3 ${theme === 'dark' ? 'notif-dark' : 'notif-light'}`}>
-          <div className={`mb-2 h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-white/20' : 'bg-black/10'}`}>
-            <div
-              className={`h-full transition-[width] duration-1000 ease-linear ${theme === 'dark' ? 'bg-cyan-300' : 'bg-emerald-400'}`}
-              style={{
-                width: `${Math.max(0, Math.min(100, ((60000 - (notificationNowMs - notifications[0].createdAt)) / 60000) * 100))}%`
-              }}
-            />
-          </div>
-          {!showNotificationList && notifications.length > 1 ? (
+          {!showNotificationList && activeNotifications.length > 1 ? (
             <button
               onClick={() => setShowNotificationList(true)}
               className="w-full flex items-center justify-between gap-3 text-left"
@@ -5389,16 +8289,16 @@ function App() {
                 </div>
                 <div className="min-w-0">
                   <h4 className={`text-xs font-bold truncate ${theme === 'dark' ? 'text-cyan-300' : 'text-emerald-700'}`}>Pesan Masuk • DyaTask</h4>
-                  <p className={`text-[11px] truncate ${theme === 'dark' ? 'text-cyan-100/90' : 'text-slate-700'}`}>Ada {notifications.length} notifikasi baru. Klik untuk lihat daftar.</p>
+                  <p className={`text-[11px] truncate ${theme === 'dark' ? 'text-cyan-100/90' : 'text-slate-700'}`}>Ada {activeNotifications.length} notifikasi belum dikonfirmasi. Klik untuk lihat daftar.</p>
                 </div>
               </div>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${theme === 'dark' ? 'bg-cyan-500 text-slate-900' : 'bg-emerald-500 text-white'}`}>{notifications.length}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${theme === 'dark' ? 'bg-cyan-500 text-slate-900' : 'bg-emerald-500 text-white'}`}>{activeNotifications.length}</span>
             </button>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
               <div className="flex items-center justify-between">
                 <h4 className={`text-xs font-bold ${theme === 'dark' ? 'text-cyan-300' : 'text-emerald-700'}`}>Pesan Masuk • DyaTask</h4>
-                {notifications.length > 1 && (
+                {activeNotifications.length > 1 && (
                   <button
                     onClick={() => setShowNotificationList(false)}
                     className={`text-[10px] px-2 py-0.5 rounded border ${theme === 'dark' ? 'bg-slate-800 text-cyan-100 border-cyan-500/30' : 'bg-emerald-100 text-emerald-700 border-emerald-300'}`}
@@ -5407,7 +8307,7 @@ function App() {
                   </button>
                 )}
               </div>
-              {notifications.map((item) => (
+              {activeNotifications.map((item) => (
                 <div key={item.id} className={`rounded-lg border p-2.5 ${theme === 'dark' ? 'border-cyan-500/30 bg-slate-900/70' : 'border-emerald-300 bg-white/85'}`}>
                   <div className="flex items-start gap-2.5">
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${theme === 'dark' ? 'bg-cyan-500 text-slate-900' : 'bg-emerald-500 text-white'}`}>D</div>
@@ -5417,6 +8317,14 @@ function App() {
                         <button onClick={() => removeNotificationById(item.id)} className={`text-xs font-bold ${theme === 'dark' ? 'text-cyan-200 hover:text-white' : 'text-emerald-700 hover:text-emerald-900'}`}>✕</button>
                       </div>
                       <p className={`text-[11px] mt-0.5 line-clamp-2 ${theme === 'dark' ? 'text-cyan-100/90' : 'text-slate-700'}`}>{item.body}</p>
+                      <div className="mt-2">
+                        <button
+                          onClick={() => confirmNotificationById(item.id)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-semibold ${theme === 'dark' ? 'bg-cyan-500 text-slate-900 hover:bg-cyan-400' : 'bg-emerald-500 text-white hover:bg-emerald-600'}`}
+                        >
+                          Konfirmasi
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -5445,7 +8353,7 @@ function App() {
                 </button>
               </div>
               <p className={`text-[10px] ${theme === 'dark' ? 'text-cyan-200/80' : 'text-slate-700'}`}>
-                Notifikasi hilang otomatis dalam 1 menit.
+                Notifikasi tetap tersimpan sampai dikonfirmasi atau dihapus manual.
               </p>
             </div>
           )}
@@ -5465,7 +8373,7 @@ function App() {
               </div>
               <div className="min-w-0">
                 <h4 className="text-sm font-extrabold">Riwayat Notifikasi</h4>
-                <p className="text-[11px] text-slate-400">{notifications.length} pesan tersimpan sementara</p>
+                <p className="text-[11px] text-slate-400">{notifications.length} total • {activeNotifications.length} belum dikonfirmasi</p>
               </div>
             </div>
             <button
@@ -5481,8 +8389,8 @@ function App() {
             {notifications.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-purple-200 dark:border-indigo-800 p-5 text-center">
                 <img src={dyataskMiniLogo} alt="" className="w-10 h-10 object-contain mx-auto opacity-70 mb-2" />
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">Belum ada notifikasi baru.</p>
-                <p className="text-[11px] text-slate-400 mt-1">Event Google Calendar baru akan muncul di sini saat terdeteksi.</p>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">Belum ada notifikasi.</p>
+                <p className="text-[11px] text-slate-400 mt-1">Semua notifikasi akan tersimpan di sini sampai kamu hapus.</p>
               </div>
             ) : notifications.map(item => (
               <div key={item.id} className={`rounded-2xl border p-3 ${
@@ -5504,7 +8412,20 @@ function App() {
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 leading-relaxed line-clamp-2">{item.body}</p>
-                    <p className="text-[10px] text-[#8f75d8] mt-2 font-semibold">{new Date(item.createdAt).toLocaleTimeString('id-ID')}</p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="text-[10px] text-[#8f75d8] font-semibold">{new Date(item.createdAt).toLocaleString('id-ID')}</p>
+                      {item.confirmed ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Terkonfirmasi</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => confirmNotificationById(item.id)}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-[#8f75d8] hover:bg-[#8069c8] text-white font-semibold transition-colors"
+                        >
+                          Konfirmasi
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5520,7 +8441,7 @@ function App() {
             }}
             className="mt-3 w-full py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
           >
-            Clear Notification
+            Hapus Semua Riwayat
           </button>
         </div>
       )}
@@ -5690,9 +8611,9 @@ function App() {
           className="fixed bottom-12 right-14 w-20 h-20 flex items-center justify-center active:scale-95 transition-all z-40"
         >
           <img src={dyataskMiniLogo} alt="" className="w-20 h-20 object-contain drop-shadow-xl hover:scale-105 transition-transform" />
-          {notifications.length > 0 && (
+          {activeNotifications.length > 0 && (
             <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-emerald-500 text-white text-[10px] font-extrabold flex items-center justify-center border-2 border-white dark:border-slate-950">
-              {Math.min(notifications.length, 9)}
+              {Math.min(activeNotifications.length, 9)}
             </span>
           )}
         </button>

@@ -1,19 +1,48 @@
 {
   "name": "Dyatask Manager - Superapp for Freelancer",
   "short_name": "DyaTask",
-  "description": "DyaTask Manager untuk task, kalender, project, dan notifikasi freelancer.",
+  "description": "DyaTask Manager untuk task, kalender, order spreadsheet, CRM, finance, dan notifikasi freelancer.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F3F1F8",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#F4F0FF",
   "theme_color": "#8F75D8",
   "orientation": "any",
+  "categories": ["productivity", "business", "utilities"],
   "icons": [
     {
       "src": "/favicon.png",
       "sizes": "964x945",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Buka ringkasan kerja DyaTask.",
+      "url": "/",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
