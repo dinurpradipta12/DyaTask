@@ -4,6 +4,7 @@ import './mobile-tablet.css'
 import dyataskLogo from './logo-dyatask.png'
 import dyataskMiniLogo from './minilogo-dyatask.png'
 import dyataskLogo2 from './logo-dyatask2.png'
+import workspaceTeamMigrationSql from '../supabase/migrations/20260524170000_workspace_team_assistants.sql?raw'
 import { supabase, supabaseAdmin } from './supabaseClient'
 import {
   LayoutDashboard,
@@ -42,6 +43,7 @@ import {
   Folder,
   FolderOpen,
   Users,
+  UserPlus,
   MessageSquare,
   CalendarClock,
   BadgeDollarSign,
@@ -126,6 +128,36 @@ const initialNotes = [
   }
 ]
 
+const TEAM_PERMISSION_DEFAULTS = {
+  tasks: true,
+  reservations: true,
+  orders: true,
+  crm: true,
+  finance: true,
+  reports: true,
+  notes: false,
+  integrations: false,
+  settings: false
+}
+
+const TEAM_PERMISSION_LABELS = {
+  tasks: 'Tasks & Project',
+  reservations: 'Reservasi',
+  orders: 'Spreadsheet Order',
+  crm: 'Client CRM',
+  finance: 'Finance & Invoice',
+  reports: 'Reports',
+  notes: 'Catatan Terenkripsi',
+  integrations: 'Integrasi',
+  settings: 'Settings'
+}
+
+const WORKSPACE_ROLE_LABELS = {
+  owner: 'Owner',
+  assistant: 'Assistant',
+  viewer: 'Viewer'
+}
+
 function App() {
   const formatDateLocal = (date) => {
     const year = date.getFullYear()
@@ -153,7 +185,12 @@ function App() {
   const [loginVisualImage, setLoginVisualImage] = useState(() => localStorage.getItem('dyatask_login_visual_image') || '')
   const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem('dyatask_theme')
-    return savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark'
+    const hasUserThemeChoice = localStorage.getItem('dyatask_theme_user_selected') === 'true'
+    if (hasUserThemeChoice && (savedTheme === 'light' || savedTheme === 'dark')) return savedTheme
+
+    localStorage.setItem('dyatask_theme', 'light')
+    document.documentElement.classList.remove('dark')
+    return 'light'
   })
   const [searchQuery, setSearchQuery] = useState('')
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false)
@@ -423,12 +460,27 @@ function App() {
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
   const [showMobileMoreMenu, setShowMobileMoreMenu] = useState(false)
+  const [workspaceContext, setWorkspaceContext] = useState(null)
+  const [workspaceOwnerName, setWorkspaceOwnerName] = useState('')
+  const [workspaceMembers, setWorkspaceMembers] = useState([])
+  const [workspaceInviteUsername, setWorkspaceInviteUsername] = useState('')
+  const [workspaceInviteRole, setWorkspaceInviteRole] = useState('assistant')
+  const [workspaceInviteToken, setWorkspaceInviteToken] = useState('')
+  const [workspaceInvitePermissions, setWorkspaceInvitePermissions] = useState({ ...TEAM_PERMISSION_DEFAULTS })
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [migrationOneClickCopied, setMigrationOneClickCopied] = useState(false)
+  const [pendingInviteToken, setPendingInviteToken] = useState(() => localStorage.getItem('dyatask_pending_workspace_invite_token') || '')
+  const [inviteLandingToken, setInviteLandingToken] = useState(() => localStorage.getItem('dyatask_pending_workspace_invite_token') || '')
+  const [inviteConfirmModalOpen, setInviteConfirmModalOpen] = useState(false)
+  const [inviteConfirmInput, setInviteConfirmInput] = useState('')
+  const [inviteDirectLoading, setInviteDirectLoading] = useState(false)
   const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1180
   })
   const [mobileTaskFolderOpen, setMobileTaskFolderOpen] = useState(false)
   const [mobileOrderDetailOpen, setMobileOrderDetailOpen] = useState(false)
+  const [mobileCrmDetailOpen, setMobileCrmDetailOpen] = useState(false)
   const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
   const [pwaInstallPrompt, setPwaInstallPrompt] = useState(null)
   const [isPwaStandalone, setIsPwaStandalone] = useState(() => {
@@ -465,6 +517,15 @@ function App() {
   const searchParams = new URLSearchParams(window.location.search)
   const publicBookingToken = searchParams.get('booking')
   const publicTrackingToken = searchParams.get('track')
+  const inviteTokenFromUrl = searchParams.get('invite') || searchParams.get('invite_token') || ''
+  const inviteUsernameFromUrl = searchParams.get('u') || searchParams.get('username') || ''
+  const actorUserId = session?.user?.id || null
+  const scopedUserId = workspaceContext?.ownerUserId || actorUserId
+  const workspaceRole = workspaceContext?.role || 'owner'
+  const workspacePermissions = { ...TEAM_PERMISSION_DEFAULTS, ...(workspaceContext?.permissions || {}) }
+  const canManageTeam = workspaceRole === 'owner'
+  const hasWritePermission = (areaKey) => workspaceRole === 'owner' || (workspaceRole === 'assistant' && !!workspacePermissions?.[areaKey])
+  const canReadArea = (areaKey) => workspaceRole === 'owner' || !!workspacePermissions?.[areaKey] || areaKey === 'reports'
 
   useEffect(() => {
     const handleViewportResize = () => setIsMobileTabletView(window.innerWidth <= 1180)
@@ -479,19 +540,45 @@ function App() {
     if (!isMobileTabletView || activeTab !== 'orders') {
       setMobileOrderDetailOpen(false)
     }
+    if (!isMobileTabletView || activeTab !== 'crm') {
+      setMobileCrmDetailOpen(false)
+    }
   }, [isMobileTabletView, activeTab])
+
+  useEffect(() => {
+    const areaByTab = {
+      dashboard: 'reports',
+      tasks: 'tasks',
+      calendar: 'reservations',
+      notes: 'notes',
+      integrations: 'integrations',
+      settings: 'settings',
+      orders: 'orders',
+      finance: 'finance',
+      crm: 'crm',
+      reports: 'reports'
+    }
+    const requiredArea = areaByTab[activeTab]
+    if (workspaceRole !== 'owner' && requiredArea && !canReadArea(requiredArea)) {
+      setActiveTab('dashboard')
+    }
+  }, [activeTab, workspaceRole, workspacePermissions])
   const isPublicBookingMode = !!publicBookingToken
   const isPublicTrackingMode = !!publicTrackingToken
 
   const saveIntegrationConfig = async () => {
-    if (!session?.user?.id || !activeIntegrationModal) return
+    if (!actorUserId || !activeIntegrationModal) return
+    if (!hasWritePermission('integrations')) {
+      alert('Akun Anda tidak punya izin mengubah konfigurasi integrasi.')
+      return
+    }
     const updated = { ...integrationConfigs, [activeIntegrationModal]: integrationFormData }
     setIntegrationConfigs(updated)
 
     const { error } = await supabase
       .from('user_integration_configs')
       .upsert({
-        user_id: session.user.id,
+        user_id: actorUserId,
         configs: updated
       }, { onConflict: 'user_id' })
 
@@ -699,9 +786,9 @@ function App() {
     cicilan: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'cicilan').length,
     lunas: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'lunas').length
   }
-  const invoiceStorageKey = session?.user?.id ? `dyatask_invoices_${session.user.id}` : 'dyatask_invoices_guest'
-  const crmClientsStorageKey = session?.user?.id ? `dyatask_crm_clients_${session.user.id}` : 'dyatask_crm_clients_guest'
-  const crmActivitiesStorageKey = session?.user?.id ? `dyatask_crm_activities_${session.user.id}` : 'dyatask_crm_activities_guest'
+  const invoiceStorageKey = scopedUserId ? `dyatask_invoices_${scopedUserId}` : 'dyatask_invoices_guest'
+  const crmClientsStorageKey = scopedUserId ? `dyatask_crm_clients_${scopedUserId}` : 'dyatask_crm_clients_guest'
+  const crmActivitiesStorageKey = scopedUserId ? `dyatask_crm_activities_${scopedUserId}` : 'dyatask_crm_activities_guest'
   const filteredInvoices = invoices.filter((item) => invoiceFilterStatus === 'all' || item.status === invoiceFilterStatus)
   const openTaskCount = tasks.filter(item => item.status !== 'done' && item.parentTaskId == null).length
   const upcomingMeetingCount = appointments.filter(item => {
@@ -1095,6 +1182,16 @@ function App() {
   const headerUserName = String(
     session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'User'
   ).trim()
+  const formatDisplayName = (value) => String(value || 'User')
+    .trim()
+    .replace(/[-_.]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+  const assistantDisplayName = formatDisplayName(headerUserName)
+  const workspaceOwnerDisplayName = workspaceOwnerName ? formatDisplayName(workspaceOwnerName) : 'pemilik workspace'
+  const isAssistantWorkspace = workspaceRole === 'assistant'
   const headerHour = headerNow.getHours()
   const dayGreeting = headerHour < 12 ? 'Good Morning!' : headerHour < 18 ? 'Good Afternoon!' : 'Good Evening!'
   const headerDateLabel = headerNow.toLocaleDateString('id-ID', {
@@ -1760,6 +1857,214 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    const tokenFromUrl = String(inviteTokenFromUrl || '').trim()
+    if (!tokenFromUrl) return
+    setPendingInviteToken(tokenFromUrl)
+    setInviteLandingToken(tokenFromUrl)
+    localStorage.setItem('dyatask_pending_workspace_invite_token', tokenFromUrl)
+    if (inviteUsernameFromUrl) {
+      setAuthUsername(inviteUsernameFromUrl)
+    }
+    setAuthTab('signin')
+  }, [inviteTokenFromUrl, inviteUsernameFromUrl])
+
+  useEffect(() => {
+    if (!pendingInviteToken) return
+    localStorage.setItem('dyatask_pending_workspace_invite_token', pendingInviteToken)
+  }, [pendingInviteToken])
+
+  useEffect(() => {
+    if (!actorUserId) {
+      setWorkspaceContext(null)
+      setWorkspaceMembers([])
+      return
+    }
+
+    let cancelled = false
+    const fallbackContext = {
+      ownerUserId: actorUserId,
+      role: 'owner',
+      permissions: { ...TEAM_PERMISSION_DEFAULTS, notes: true, integrations: true, settings: true }
+    }
+
+    const resolveWorkspaceOwnerName = async (ownerUserId) => {
+      if (!ownerUserId || ownerUserId === actorUserId) {
+        setWorkspaceOwnerName(headerUserName)
+        return
+      }
+
+      const isGenericOwnerLabel = (value) => {
+        const label = String(value || '').trim().toLowerCase()
+        return !label || label === 'owner' || label === 'superuser / developer'
+      }
+
+      const { data: ownerLabel, error: ownerLabelError } = await supabase.rpc('get_workspace_owner_label', {
+        p_owner_user_id: ownerUserId
+      })
+      if (cancelled) return
+      if (!ownerLabelError && !isGenericOwnerLabel(ownerLabel)) {
+        setWorkspaceOwnerName(String(ownerLabel).trim())
+        return
+      }
+
+      if (!supabaseAdmin) {
+        setWorkspaceOwnerName('')
+        return
+      }
+
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', ownerUserId)
+        .maybeSingle()
+
+      if (cancelled) return
+      const profileName = String(profile?.full_name || profile?.email?.split('@')?.[0] || '').trim()
+      if (!isGenericOwnerLabel(profileName)) {
+        setWorkspaceOwnerName(profileName)
+        return
+      }
+
+      const { data: ownerUser } = await supabaseAdmin.auth.admin.getUserById(ownerUserId)
+      if (cancelled) return
+      const authOwnerName = String(
+        ownerUser?.user?.user_metadata?.full_name || ownerUser?.user?.email?.split('@')?.[0] || ''
+      ).trim()
+      setWorkspaceOwnerName(isGenericOwnerLabel(authOwnerName) ? '' : authOwnerName)
+    }
+
+    const loadWorkspaceContext = async () => {
+      const { error: ensureError } = await supabase.rpc('ensure_owner_workspace_membership', { p_user_id: actorUserId })
+      if (ensureError) {
+        console.warn('Workspace ensure owner gagal, pakai fallback:', ensureError.message)
+      }
+
+      const { data: membershipRows, error: membershipError } = await supabase
+        .from('workspace_members')
+        .select('owner_user_id, member_user_id, member_email, role, permissions, created_at')
+        .eq('status', 'active')
+
+      if (cancelled) return
+
+      if (!membershipError) {
+        const actorEmail = String(session?.user?.email || '').toLowerCase()
+        const relevantRows = (membershipRows || []).filter(row => (
+          row.member_user_id === actorUserId
+          || (row.role === 'owner' && row.owner_user_id === actorUserId)
+          || (!row.member_user_id && String(row.member_email || '').toLowerCase() === actorEmail)
+        ))
+
+        const preferredRow = relevantRows.sort((a, b) => {
+          const rank = (row) => {
+            if (row.member_user_id === actorUserId && row.owner_user_id !== actorUserId) return 0
+            if (row.role === 'owner' && row.owner_user_id === actorUserId) return 1
+            return 2
+          }
+          return rank(a) - rank(b) || new Date(a.created_at || 0) - new Date(b.created_at || 0)
+        })[0]
+
+        if (preferredRow?.owner_user_id) {
+          setWorkspaceContext({
+            ownerUserId: preferredRow.owner_user_id,
+            role: preferredRow.role || 'owner',
+            permissions: { ...TEAM_PERMISSION_DEFAULTS, ...(preferredRow.permissions || {}) }
+          })
+          await resolveWorkspaceOwnerName(preferredRow.owner_user_id)
+          return
+        }
+      }
+
+      const { data, error } = await supabase.rpc('get_workspace_context')
+      if (cancelled) return
+
+      if (error) {
+        console.warn('Workspace context fallback aktif:', error.message)
+        setWorkspaceContext(fallbackContext)
+        await resolveWorkspaceOwnerName(fallbackContext.ownerUserId)
+        return
+      }
+
+      const row = Array.isArray(data) ? data[0] : data
+      if (!row?.owner_user_id) {
+        setWorkspaceContext(fallbackContext)
+        await resolveWorkspaceOwnerName(fallbackContext.ownerUserId)
+        return
+      }
+
+      setWorkspaceContext({
+        ownerUserId: row.owner_user_id,
+        role: row.role || 'owner',
+        permissions: { ...TEAM_PERMISSION_DEFAULTS, ...(row.permissions || {}) }
+      })
+      await resolveWorkspaceOwnerName(row.owner_user_id)
+    }
+
+    loadWorkspaceContext()
+
+    return () => {
+      cancelled = true
+    }
+  }, [actorUserId, session?.user?.email, headerUserName])
+
+  useEffect(() => {
+    if (!actorUserId || !workspaceContext?.ownerUserId) {
+      setWorkspaceMembers([])
+      return
+    }
+
+    let cancelled = false
+
+    const loadWorkspaceMembers = async () => {
+      const query = canManageTeam
+        ? supabase
+          .from('workspace_members')
+          .select('*')
+          .eq('owner_user_id', workspaceContext.ownerUserId)
+          .order('created_at', { ascending: true })
+        : supabase
+          .from('workspace_members')
+          .select('*')
+          .eq('member_user_id', actorUserId)
+          .limit(1)
+
+      const { data, error } = await query
+      if (cancelled) return
+      if (error) {
+        console.warn('Load workspace members gagal:', error.message)
+        return
+      }
+
+      const rows = (data || []).map(item => ({
+        id: item.id,
+        ownerUserId: item.owner_user_id,
+        memberUserId: item.member_user_id,
+        memberEmail: item.member_email,
+        role: item.role,
+        status: item.status,
+        inviteToken: item.invite_token,
+        permissions: { ...TEAM_PERMISSION_DEFAULTS, ...(item.permissions || {}) },
+        acceptedAt: item.accepted_at,
+        createdAt: item.created_at
+      }))
+      setWorkspaceMembers(rows)
+    }
+
+    loadWorkspaceMembers()
+
+    const channel = supabase
+      .channel(`workspace_members_realtime_${workspaceContext.ownerUserId}_${actorUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspace_members' }, () => {
+        loadWorkspaceMembers()
+      })
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [actorUserId, workspaceContext?.ownerUserId, canManageTeam])
+
   // Monitor Supabase Connection Status & Real-time Sync Events
   useEffect(() => {
     let connectionCheckInterval
@@ -1882,13 +2187,13 @@ function App() {
   }, [session])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!actorUserId) return
 
     const loadIntegrationConfigs = async () => {
       const { data, error } = await supabase
         .from('user_integration_configs')
         .select('configs')
-        .eq('user_id', session.user.id)
+        .eq('user_id', actorUserId)
         .maybeSingle()
 
       if (error) {
@@ -1909,7 +2214,7 @@ function App() {
           const { error: migrateError } = await supabase
             .from('user_integration_configs')
             .upsert({
-              user_id: session.user.id,
+              user_id: actorUserId,
               configs: legacy
             }, { onConflict: 'user_id' })
 
@@ -1930,15 +2235,16 @@ function App() {
     }
 
     loadIntegrationConfigs()
-  }, [session?.user?.id])
+  }, [actorUserId])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
 
     const loadInvoices = async () => {
       const { data, error } = await supabase
         .from('finance_invoices')
         .select('*')
+        .eq('user_id', scopedUserId)
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -1979,7 +2285,7 @@ function App() {
     return () => {
       supabase.removeChannel(invoiceChannel)
     }
-  }, [session?.user?.id, invoiceStorageKey])
+  }, [scopedUserId, invoiceStorageKey])
 
   useEffect(() => {
     if (!availableTimeSlotsForSelectedDate.length) return
@@ -1989,22 +2295,22 @@ function App() {
   }, [bookingDate, appointments, bookingAvailability, bookingTime, availableTimeSlotsForSelectedDate])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     try {
-      const raw = localStorage.getItem(`dyatask_order_payment_status_${session.user.id}`)
+      const raw = localStorage.getItem(`dyatask_order_payment_status_${scopedUserId}`)
       setOrderPaymentStatusMap(raw ? JSON.parse(raw) : {})
     } catch {
       setOrderPaymentStatusMap({})
     }
-  }, [session?.user?.id])
+  }, [scopedUserId])
 
   useEffect(() => {
-    if (!session?.user?.id) return
-    localStorage.setItem(`dyatask_order_payment_status_${session.user.id}`, JSON.stringify(orderPaymentStatusMap))
-  }, [session?.user?.id, orderPaymentStatusMap])
+    if (!scopedUserId) return
+    localStorage.setItem(`dyatask_order_payment_status_${scopedUserId}`, JSON.stringify(orderPaymentStatusMap))
+  }, [scopedUserId, orderPaymentStatusMap])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     try {
       const raw = localStorage.getItem(crmClientsStorageKey)
       const parsed = raw ? JSON.parse(raw) : []
@@ -2012,10 +2318,10 @@ function App() {
     } catch {
       setCrmClients([])
     }
-  }, [session?.user?.id, crmClientsStorageKey])
+  }, [scopedUserId, crmClientsStorageKey])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     try {
       const raw = localStorage.getItem(crmActivitiesStorageKey)
       const parsed = raw ? JSON.parse(raw) : []
@@ -2023,20 +2329,20 @@ function App() {
     } catch {
       setCrmActivities([])
     }
-  }, [session?.user?.id, crmActivitiesStorageKey])
+  }, [scopedUserId, crmActivitiesStorageKey])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     localStorage.setItem(crmClientsStorageKey, JSON.stringify(crmClients))
-  }, [session?.user?.id, crmClients, crmClientsStorageKey])
+  }, [scopedUserId, crmClients, crmClientsStorageKey])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     localStorage.setItem(crmActivitiesStorageKey, JSON.stringify(crmActivities))
-  }, [session?.user?.id, crmActivities, crmActivitiesStorageKey])
+  }, [scopedUserId, crmActivities, crmActivitiesStorageKey])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     let cancelled = false
 
     const loadCrmRecords = async () => {
@@ -2044,12 +2350,12 @@ function App() {
         supabase
           .from('crm_clients')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', scopedUserId)
           .order('updated_at', { ascending: false }),
         supabase
           .from('crm_activities')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', scopedUserId)
           .order('created_at', { ascending: false })
       ])
 
@@ -2089,13 +2395,13 @@ function App() {
     loadCrmRecords()
 
     const crmClientsChannel = supabase
-      .channel(`crm_clients_realtime_${session.user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_clients', filter: `user_id=eq.${session.user.id}` }, loadCrmRecords)
+      .channel(`crm_clients_realtime_${scopedUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_clients', filter: `user_id=eq.${scopedUserId}` }, loadCrmRecords)
       .subscribe()
 
     const crmActivitiesChannel = supabase
-      .channel(`crm_activities_realtime_${session.user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_activities', filter: `user_id=eq.${session.user.id}` }, loadCrmRecords)
+      .channel(`crm_activities_realtime_${scopedUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_activities', filter: `user_id=eq.${scopedUserId}` }, loadCrmRecords)
       .subscribe()
 
     return () => {
@@ -2103,10 +2409,10 @@ function App() {
       supabase.removeChannel(crmClientsChannel)
       supabase.removeChannel(crmActivitiesChannel)
     }
-  }, [session?.user?.id])
+  }, [scopedUserId])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
     let cancelled = false
 
     const mapActivityLog = (item) => ({
@@ -2125,7 +2431,7 @@ function App() {
       const { data, error } = await supabase
         .from('activity_logs')
         .select('*')
-        .eq('user_id', session.user.id)
+        .eq('user_id', scopedUserId)
         .order('created_at', { ascending: false })
         .limit(80)
 
@@ -2143,8 +2449,8 @@ function App() {
     const interval = setInterval(loadActivityLogs, 15000)
 
     const activityChannel = supabase
-      .channel(`activity_logs_realtime_${session.user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs', filter: `user_id=eq.${session.user.id}` }, () => {
+      .channel(`activity_logs_realtime_${scopedUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs', filter: `user_id=eq.${scopedUserId}` }, () => {
         loadActivityLogs()
       })
       .subscribe()
@@ -2154,7 +2460,7 @@ function App() {
       clearInterval(interval)
       supabase.removeChannel(activityChannel)
     }
-  }, [session?.user?.id])
+  }, [scopedUserId])
 
   // Fetch real data from Supabase once authenticated
   useEffect(() => {
@@ -2186,7 +2492,7 @@ function App() {
     };
 
     const fetchProjectFolders = async () => {
-      const storageKey = `dyatask_project_folders_${session.user.id}`
+      const storageKey = `dyatask_project_folders_${scopedUserId}`
       const { data, error } = await supabase
         .from('project_folders')
         .select('*')
@@ -2346,7 +2652,7 @@ function App() {
   }, [calendarYear, calendarMonth, integrationConfigs])
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
 
     const fetchSpreadsheetOrders = async () => {
       const { data, error } = await supabase
@@ -2420,10 +2726,10 @@ function App() {
       supabase.removeChannel(ordersChannel)
       supabase.removeChannel(timelineChannel)
     }
-  }, [session?.user?.id, orderPaymentStatusMap])
+  }, [scopedUserId, orderPaymentStatusMap])
 
   useEffect(() => {
-    if (!session?.user?.id || !spreadsheetOrders.length) return
+    if (!scopedUserId || !spreadsheetOrders.length) return
 
     const formatDate = (date) => {
       const year = date.getFullYear()
@@ -2488,7 +2794,7 @@ function App() {
     checkDeadlineReminder()
     const interval = setInterval(checkDeadlineReminder, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [session?.user?.id, spreadsheetOrders])
+  }, [scopedUserId, spreadsheetOrders])
 
   const [publicTrackingPayload, setPublicTrackingPayload] = useState(null)
   useEffect(() => {
@@ -2543,12 +2849,12 @@ function App() {
 
     setActivityLogs(prev => [localLog, ...prev].slice(0, 80))
 
-    if (!session?.user?.id) return
+    if (!scopedUserId) return
 
     const { error } = await supabase
       .from('activity_logs')
       .insert([{
-        user_id: session.user.id,
+        user_id: scopedUserId,
         event_type: type,
         title,
         detail,
@@ -2626,7 +2932,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!session?.user?.id || !invoices.length) return
+    if (!scopedUserId || !invoices.length) return
 
     const today = new Date()
     const toDateKey = (date) => {
@@ -2681,7 +2987,7 @@ function App() {
         )
       }
     })
-  }, [session?.user?.id, invoices])
+  }, [scopedUserId, invoices])
 
   useEffect(() => {
     let cancelled = false
@@ -2838,6 +3144,7 @@ function App() {
     const nextTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(nextTheme)
     localStorage.setItem('dyatask_theme', nextTheme)
+    localStorage.setItem('dyatask_theme_user_selected', 'true')
     if (nextTheme === 'dark') {
       document.documentElement.classList.add('dark')
     } else {
@@ -2855,8 +3162,12 @@ function App() {
 
   const handleCreateProjectFolder = async (e) => {
     e.preventDefault()
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin menambah folder project.')
+      return
+    }
     const folderName = newFolderName.trim()
-    if (!folderName || !session?.user?.id) return
+    if (!folderName || !scopedUserId) return
 
     if (allProjectOptions.includes(folderName)) {
       setSelectedProjectName(folderName)
@@ -2869,7 +3180,7 @@ function App() {
     const folderObj = {
       name: folderName,
       color: newFolderColor,
-      user_id: session.user.id
+      user_id: scopedUserId
     }
 
     const { data, error } = await supabase
@@ -2884,7 +3195,7 @@ function App() {
     }
 
     if (error) {
-      const storageKey = `dyatask_project_folders_${session.user.id}`
+      const storageKey = `dyatask_project_folders_${scopedUserId}`
       const nextFolders = [...projectFolderRecords, createdFolder]
       localStorage.setItem(storageKey, JSON.stringify(nextFolders))
       setProjectFolderRecords(nextFolders)
@@ -2906,6 +3217,10 @@ function App() {
   // Add Task
   const handleAddTask = async (e) => {
     e.preventDefault()
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin menambah task.')
+      return
+    }
     if (!newTaskTitle.trim()) return
 
     const taskObj = {
@@ -2919,7 +3234,7 @@ function App() {
       parent_task_id: null,
       task_type: 'task',
       has_reminder: true,
-      user_id: session?.user?.id
+      user_id: scopedUserId
     }
 
     let { data, error } = await supabase
@@ -2975,7 +3290,7 @@ function App() {
           parent_task_id: createdTask.id,
           task_type: 'subtask',
           has_reminder: true,
-          user_id: session?.user?.id,
+          user_id: scopedUserId,
           sort_order: index
         }))
 
@@ -3040,6 +3355,10 @@ function App() {
   // Quick Task from Floating launcher
   const handleFloatingQuickAdd = async (e) => {
     e.preventDefault()
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin quick add task.')
+      return
+    }
     if (!floatingTaskTitle.trim()) return
 
     const taskObj = {
@@ -3050,7 +3369,7 @@ function App() {
       status: 'todo',
       due_time: '12:00',
       has_reminder: true,
-      user_id: session?.user?.id
+      user_id: scopedUserId
     }
 
     const { data, error } = await supabase
@@ -3090,6 +3409,10 @@ function App() {
 
   // Complete Task toggle
   const toggleTaskStatus = async (id) => {
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin mengubah status task.')
+      return
+    }
     const taskToToggle = tasks.find(t => t.id === id);
     if (!taskToToggle) return;
 
@@ -3124,6 +3447,10 @@ function App() {
   }
 
   const deleteTask = async (id) => {
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin menghapus task.')
+      return
+    }
     const { error } = await supabase
       .from('tasks')
       .delete()
@@ -3181,6 +3508,10 @@ function App() {
 
   const saveCalendarEditModal = async () => {
     if (!activeCalendarEditItem) return
+    if (!hasWritePermission(activeCalendarEditItem.itemType === 'task' ? 'tasks' : 'reservations')) {
+      alert('Akun Anda tidak punya izin mengubah item kalender ini.')
+      return
+    }
 
     if (activeCalendarEditItem.itemType === 'appointment') {
       if (!calendarEditForm.title?.trim() || !calendarEditForm.clientName?.trim()) {
@@ -3259,6 +3590,10 @@ function App() {
   // Handle Bookings
   const handleAddBooking = async (e) => {
     e.preventDefault()
+    if (session && !hasWritePermission('reservations')) {
+      alert('Akun Anda tidak punya izin menambah reservasi.')
+      return
+    }
     if (!bookingClient.trim() || !bookingTitle.trim()) return
     if (!isDateAllowed(bookingDate)) {
       alert('Tanggal tersebut di luar hari reservasi yang diizinkan.')
@@ -3276,7 +3611,7 @@ function App() {
       date: bookingDate,
       status: 'confirmed',
       email: bookingEmail || 'guest@dyatask.com',
-      user_id: session?.user?.id
+      user_id: scopedUserId
     }
 
     const publicBookingPayload = {
@@ -3392,11 +3727,15 @@ function App() {
 
   const handleSubmitInvoice = async (e) => {
     e.preventDefault()
-    if (!session?.user?.id) return
+    if (!hasWritePermission('finance')) {
+      alert('Akun Anda tidak punya izin mengelola invoice.')
+      return
+    }
+    if (!scopedUserId) return
     if (!invoiceClientName.trim() || !invoiceTitle.trim()) return
 
     const payload = {
-      user_id: session.user.id,
+      user_id: scopedUserId,
       client_name: invoiceClientName.trim(),
       title: invoiceTitle.trim(),
       order_type: invoiceType,
@@ -3491,6 +3830,10 @@ function App() {
 
   const handleDeleteInvoice = async (invoice) => {
     if (!invoice) return
+    if (!hasWritePermission('finance')) {
+      alert('Akun Anda tidak punya izin menghapus invoice.')
+      return
+    }
     const ok = window.confirm(`Hapus invoice "${invoice.title}"?`)
     if (!ok) return
 
@@ -3513,6 +3856,10 @@ function App() {
 
   const updateInvoiceStatus = async (invoice, nextStatus) => {
     if (!invoice || !nextStatus) return
+    if (!hasWritePermission('finance')) {
+      alert('Akun Anda tidak punya izin mengubah status invoice.')
+      return
+    }
 
     if (invoiceStorageMode === 'cloud') {
       const { error } = await supabase
@@ -3538,7 +3885,11 @@ function App() {
 
   const handleCreateSpreadsheetOrder = async (e) => {
     e.preventDefault()
-    if (!session?.user?.id) return
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin mengelola order spreadsheet.')
+      return
+    }
+    if (!scopedUserId) return
     if (!newOrderCustomer.trim() || !newOrderName.trim()) return
     const paymentValue = newOrderPaymentStatus || 'belum_bayar'
 
@@ -3617,7 +3968,7 @@ function App() {
     }
 
     const orderPayload = {
-      user_id: session.user.id,
+      user_id: scopedUserId,
       customer_name: newOrderCustomer.trim(),
       order_name: newOrderName.trim(),
       order_type: newOrderType,
@@ -3637,7 +3988,7 @@ function App() {
     if (error) {
       if (String(error.message || '').toLowerCase().includes('payment_status')) {
         const retryPayload = {
-          user_id: session.user.id,
+          user_id: scopedUserId,
           customer_name: newOrderCustomer.trim(),
           order_name: newOrderName.trim(),
           order_type: newOrderType,
@@ -3714,7 +4065,11 @@ function App() {
 
   const handleAddOrderTimeline = async (e) => {
     e.preventDefault()
-    if (!session?.user?.id || !selectedSpreadsheetOrder) return
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin menambah timeline order.')
+      return
+    }
+    if (!actorUserId || !selectedSpreadsheetOrder) return
     if (!timelineInputTitle.trim()) return
 
     const { data, error } = await supabase
@@ -3724,7 +4079,7 @@ function App() {
         title: timelineInputTitle.trim(),
         note: timelineInputNote.trim(),
         progress_percent: Number(timelineInputProgress || 0),
-        updated_by: session.user.email || session.user.id
+        updated_by: session?.user?.email || actorUserId || 'system'
       }])
       .select()
       .single()
@@ -3749,6 +4104,10 @@ function App() {
 
   const handleDeleteSpreadsheetOrder = async (order) => {
     if (!order) return
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin menghapus order.')
+      return
+    }
     const ok = window.confirm(`Hapus order "${order.orderName}" beserta timeline-nya?`)
     if (!ok) return
 
@@ -3782,6 +4141,10 @@ function App() {
   }
 
   const handleSaveTimelineEdit = async (itemId) => {
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin update timeline order.')
+      return
+    }
     if (!itemId || !editTimelineTitle.trim()) return
     const { data, error } = await supabase
       .from('spreadsheet_order_timeline')
@@ -3789,7 +4152,7 @@ function App() {
         title: editTimelineTitle.trim(),
         note: editTimelineNote.trim(),
         progress_percent: Number(editTimelineProgress || 0),
-        updated_by: session?.user?.email || session?.user?.id || 'system'
+        updated_by: session?.user?.email || actorUserId || 'system'
       })
       .eq('id', itemId)
       .select()
@@ -3815,6 +4178,10 @@ function App() {
   }
 
   const handleDeleteTimelineItem = async (itemId) => {
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin hapus timeline order.')
+      return
+    }
     const ok = window.confirm('Hapus timeline ini?')
     if (!ok) return
     const { error } = await supabase
@@ -3858,6 +4225,10 @@ function App() {
 
   const handleSubmitCrmClient = async (e) => {
     e.preventDefault()
+    if (!hasWritePermission('crm')) {
+      alert('Akun Anda tidak punya izin mengelola data CRM.')
+      return
+    }
     const name = crmClientName.trim()
     if (!name) return
 
@@ -3875,9 +4246,9 @@ function App() {
       updatedAt: new Date().toISOString()
     }
 
-    if (session?.user?.id) {
+    if (scopedUserId) {
       const dbPayload = {
-        user_id: session.user.id,
+        user_id: scopedUserId,
         name: payload.name,
         company: payload.company || null,
         email: payload.email || null,
@@ -3924,14 +4295,18 @@ function App() {
 
   const handleDeleteCrmClient = async (client) => {
     if (!client) return
+    if (!hasWritePermission('crm')) {
+      alert('Akun Anda tidak punya izin menghapus client CRM.')
+      return
+    }
     const ok = window.confirm(`Hapus client "${client.name}" dari CRM?`)
     if (!ok) return
 
     const manualClients = crmClients.filter(item => getCrmClientKey(item.name, item.email) === client.key)
-    if (session?.user?.id && manualClients.length) {
+    if (scopedUserId && manualClients.length) {
       const manualIds = manualClients.map(item => item.id)
       await supabase.from('crm_clients').delete().in('id', manualIds)
-      await supabase.from('crm_activities').delete().eq('client_key', client.key).eq('user_id', session.user.id)
+      await supabase.from('crm_activities').delete().eq('client_key', client.key).eq('user_id', scopedUserId)
     }
 
     setCrmClients(prev => prev.filter(item => getCrmClientKey(item.name, item.email) !== client.key))
@@ -3949,6 +4324,10 @@ function App() {
 
   const handleSubmitCrmActivity = async (e) => {
     e.preventDefault()
+    if (!hasWritePermission('crm')) {
+      alert('Akun Anda tidak punya izin menambah follow-up CRM.')
+      return
+    }
     if (!selectedCrmClient) return
     if (!crmActivityTitle.trim()) return
 
@@ -3964,11 +4343,11 @@ function App() {
       createdAt: new Date().toISOString()
     }
 
-    if (session?.user?.id) {
+    if (scopedUserId) {
       const { data, error } = await supabase
         .from('crm_activities')
         .insert([{
-          user_id: session.user.id,
+          user_id: scopedUserId,
           client_key: nextActivity.clientKey,
           client_name: nextActivity.clientName || null,
           client_email: nextActivity.clientEmail || null,
@@ -4003,15 +4382,19 @@ function App() {
   }
 
   const handleToggleCrmActivityStatus = async (activityId) => {
+    if (!hasWritePermission('crm')) {
+      alert('Akun Anda tidak punya izin mengubah status follow-up CRM.')
+      return
+    }
     const currentActivity = crmActivities.find(activity => activity.id === activityId)
     const nextStatus = currentActivity?.status === 'done' ? 'open' : 'done'
 
-    if (session?.user?.id && currentActivity && !String(activityId).startsWith('crm-activity-')) {
+    if (scopedUserId && currentActivity && !String(activityId).startsWith('crm-activity-')) {
       await supabase
         .from('crm_activities')
         .update({ status: nextStatus })
         .eq('id', activityId)
-        .eq('user_id', session.user.id)
+        .eq('user_id', scopedUserId)
     }
 
     setCrmActivities(prev => prev.map(activity => (
@@ -4033,6 +4416,10 @@ function App() {
   }
 
   const deleteAppointmentFromCalendar = async (appointment) => {
+    if (!hasWritePermission('reservations')) {
+      alert('Akun Anda tidak punya izin menghapus reservasi.')
+      return
+    }
     const { error } = await supabase
       .from('appointments')
       .delete()
@@ -4105,9 +4492,666 @@ function App() {
     }
   }
 
+  const normalizeWorkspaceInviteUsername = (value) => String(value || '').trim().replace(/^@/, '').toLowerCase()
+
+  const normalizeWorkspaceInviteEmail = (value) => {
+    const normalized = normalizeWorkspaceInviteUsername(value)
+    if (!normalized) return ''
+    if (normalized.includes('@')) return normalized
+    return `${normalized}.dyatask@gmail.com`
+  }
+
+  const buildWorkspaceInviteSessionPassword = (username, token) => {
+    const safeUsername = normalizeWorkspaceInviteUsername(username) || 'assistant'
+    const safeToken = String(token || '').trim()
+    return `DyaTaskInvite#${safeUsername}#${safeToken}`
+  }
+
+  const findAdminUserByEmail = async (email) => {
+    if (!supabaseAdmin || !email) return null
+
+    for (let page = 1; page <= 10; page += 1) {
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 })
+      if (error) throw error
+
+      const match = data?.users?.find(user => String(user.email || '').toLowerCase() === email.toLowerCase())
+      if (match) return match
+      if (!data?.users?.length || data.users.length < 1000) return null
+    }
+
+    return null
+  }
+
+  const ensureWorkspaceInviteSession = async (inviteToken) => {
+    const username = normalizeWorkspaceInviteUsername(inviteUsernameFromUrl) || `assistant-${String(inviteToken || '').trim().slice(0, 8).toLowerCase()}`
+    const email = normalizeWorkspaceInviteEmail(username)
+    const password = buildWorkspaceInviteSessionPassword(username, inviteToken)
+
+    const directSignIn = await supabase.auth.signInWithPassword({ email, password })
+    if (!directSignIn.error) return directSignIn.data?.session || null
+
+    if (!supabaseAdmin) {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: username } }
+      })
+      if (!signUpError && signUpData?.session) return signUpData.session
+
+      throw new Error(signUpError?.message || 'Akun assistant belum tersedia dan Supabase meminta konfirmasi email. Aktifkan service role key di environment atau login dengan akun yang sudah dibuat.')
+    }
+
+    const existingUser = await findAdminUserByEmail(email)
+    if (existingUser?.id) {
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
+        email_confirm: true,
+        password,
+        user_metadata: { full_name: username }
+      })
+      if (updateError) throw updateError
+    } else {
+      const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: username }
+      })
+      if (createError) throw createError
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw error
+    return data?.session || null
+  }
+
+  const getSupabaseProjectRef = () => {
+    try {
+      const rawUrl = String(import.meta.env.VITE_SUPABASE_URL || '')
+      const host = new URL(rawUrl).hostname
+      return host.split('.')[0] || ''
+    } catch {
+      return ''
+    }
+  }
+
+  const handleOneClickApplyWorkspaceSql = async () => {
+    try {
+      await copyTextToClipboard(workspaceTeamMigrationSql)
+      setMigrationOneClickCopied(true)
+      setTimeout(() => setMigrationOneClickCopied(false), 2200)
+    } catch (error) {
+      alert(`Gagal menyalin SQL: ${error.message}`)
+      return
+    }
+
+    const projectRef = getSupabaseProjectRef()
+    if (!projectRef) {
+      alert('Project ref Supabase tidak ditemukan. Pastikan VITE_SUPABASE_URL valid di .env.local.')
+      return
+    }
+
+    window.open(`https://supabase.com/dashboard/project/${projectRef}/sql/new`, '_blank', 'noopener,noreferrer')
+  }
+
+  const buildWorkspaceInviteLink = (token = workspaceInviteToken, username = workspaceInviteUsername) => {
+    const safeToken = String(token || '').trim()
+    const safeUsername = normalizeWorkspaceInviteUsername(username)
+    if (!safeToken) return ''
+    const url = new URL(window.location.href)
+    url.searchParams.set('invite', safeToken)
+    if (safeUsername) url.searchParams.set('u', safeUsername)
+    url.searchParams.delete('booking')
+    url.searchParams.delete('track')
+    return url.toString()
+  }
+
+  const getWorkspaceInviteWaText = (token = workspaceInviteToken, username = workspaceInviteUsername, role = workspaceInviteRole) => {
+    const inviteLink = buildWorkspaceInviteLink(token, username)
+    const safeUsername = normalizeWorkspaceInviteUsername(username)
+    return [
+      'Hai, kamu diundang ke workspace DyaTask.',
+      '',
+      `Username: ${safeUsername || '-'}`,
+      `Role: ${role}`,
+      `Token invite: ${String(token || '').trim() || '-'}`,
+      `Link invite: ${inviteLink || '-'}`,
+      '',
+      'Buka link lalu login ringan, kemudian masukkan token invite jika diminta.'
+    ].join('\n')
+  }
+
+  const buildWorkspaceInviteWhatsAppLink = (token = workspaceInviteToken, username = workspaceInviteUsername, role = workspaceInviteRole) => {
+    const waText = getWorkspaceInviteWaText(token, username, role)
+    return `https://wa.me/?text=${encodeURIComponent(waText)}`
+  }
+
+  const handleCopyWorkspaceInviteLink = async () => {
+    const inviteLink = buildWorkspaceInviteLink()
+    if (!inviteLink) {
+      alert('Token invite belum tersedia.')
+      return
+    }
+    try {
+      await copyTextToClipboard(inviteLink)
+      setMigrationOneClickCopied(false)
+      alert('Link invite berhasil disalin.')
+    } catch (error) {
+      alert(`Gagal menyalin link invite: ${error.message}`)
+    }
+  }
+
+  const handleCopyWorkspaceInviteToWA = async () => {
+    if (!String(workspaceInviteToken || '').trim()) {
+      alert('Token invite belum tersedia.')
+      return
+    }
+    const waText = getWorkspaceInviteWaText()
+    try {
+      await copyTextToClipboard(waText)
+      alert('Pesan WA invite berhasil disalin.')
+    } catch (error) {
+      alert(`Gagal menyalin pesan WA: ${error.message}`)
+    }
+  }
+
+  const handleOpenWorkspaceInviteWhatsApp = () => {
+    if (!String(workspaceInviteToken || '').trim()) {
+      alert('Token invite belum tersedia.')
+      return
+    }
+    window.open(buildWorkspaceInviteWhatsAppLink(), '_blank', 'noopener,noreferrer')
+  }
+
+  const handleExitInviteLanding = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('invite')
+    url.searchParams.delete('invite_token')
+    url.searchParams.delete('u')
+    url.searchParams.delete('username')
+    window.history.replaceState({}, '', url.toString())
+    localStorage.removeItem('dyatask_pending_workspace_invite_token')
+    setPendingInviteToken('')
+    setInviteLandingToken('')
+    setAuthError(null)
+    setAuthTab('signin')
+  }
+
+  const isMissingWorkspaceInviteRpcError = (error) => {
+    const message = String(error?.message || '').toLowerCase()
+    return message.includes('accept_workspace_invite_token_only') && (
+      message.includes('schema cache') || message.includes('could not find the function')
+    )
+  }
+
+  const acceptWorkspaceInviteToken = async (inviteToken, userId) => {
+    if (!userId) {
+      throw new Error('Session user tidak ditemukan.')
+    }
+
+    const { error } = await supabase.rpc('accept_workspace_invite_token_only', {
+      p_invite_token: inviteToken
+    })
+    if (!error) return
+    if (!isMissingWorkspaceInviteRpcError(error)) throw error
+
+    if (!supabaseAdmin) {
+      throw new Error('RPC accept invite belum ada di Supabase. Jalankan One-Click Apply SQL dulu, lalu coba lagi.')
+    }
+
+    const { data: inviteRow, error: findError } = await supabaseAdmin
+      .from('workspace_members')
+      .select('id')
+      .eq('invite_token', inviteToken)
+      .eq('status', 'pending')
+      .maybeSingle()
+    if (findError) throw findError
+    if (!inviteRow?.id) {
+      throw new Error('Undangan tidak ditemukan atau sudah dipakai.')
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from('workspace_members')
+      .update({
+        member_user_id: userId,
+        status: 'active',
+        accepted_at: new Date().toISOString()
+      })
+      .eq('id', inviteRow.id)
+    if (updateError) throw updateError
+  }
+
+  const handleDirectInviteWorkspaceAccess = async () => {
+    const expectedToken = String(inviteLandingToken || '').trim()
+    const confirmedToken = String(inviteConfirmInput || '').trim()
+    if (!expectedToken) {
+      alert('Token invite tidak ditemukan.')
+      return
+    }
+    if (!confirmedToken || confirmedToken !== expectedToken) {
+      alert('Token invite tidak cocok.')
+      return
+    }
+
+    setInviteDirectLoading(true)
+    try {
+      let activeSession = session
+      if (!activeSession?.user?.id) {
+        activeSession = await ensureWorkspaceInviteSession(expectedToken)
+      }
+
+      if (!activeSession?.user?.id) {
+        throw new Error('Session invite tidak berhasil dibuat.')
+      }
+
+      await acceptWorkspaceInviteToken(expectedToken, activeSession.user.id)
+
+      localStorage.removeItem('dyatask_pending_workspace_invite_token')
+      setPendingInviteToken('')
+      setInviteLandingToken('')
+      setInviteConfirmInput('')
+      setInviteConfirmModalOpen(false)
+
+      const url = new URL(window.location.href)
+      url.searchParams.delete('invite')
+      url.searchParams.delete('invite_token')
+      url.searchParams.delete('u')
+      url.searchParams.delete('username')
+      window.location.replace(url.toString())
+    } catch (error) {
+      alert(`Gagal membuka workspace asisten: ${error.message}`)
+    } finally {
+      setInviteDirectLoading(false)
+    }
+  }
+
+  const toggleWorkspaceInvitePermission = (permissionKey) => {
+    if (!Object.prototype.hasOwnProperty.call(TEAM_PERMISSION_DEFAULTS, permissionKey)) return
+    setWorkspaceInvitePermissions(prev => ({
+      ...prev,
+      [permissionKey]: !prev[permissionKey]
+    }))
+  }
+
+  const handleInviteWorkspaceMember = async (e) => {
+    e.preventDefault()
+    if (!canManageTeam) {
+      alert('Hanya owner yang bisa mengundang asisten.')
+      return
+    }
+
+    const inviteUsername = normalizeWorkspaceInviteUsername(workspaceInviteUsername)
+    if (!inviteUsername) {
+      alert('Username asisten wajib diisi.')
+      return
+    }
+
+    const email = normalizeWorkspaceInviteEmail(inviteUsername)
+
+    setTeamLoading(true)
+    const { data, error } = await supabase.rpc('invite_workspace_member', {
+      p_email: email,
+      p_role: workspaceInviteRole,
+      p_permissions: workspaceInvitePermissions
+    })
+    setTeamLoading(false)
+
+    if (error) {
+      alert(`Gagal mengundang asisten: ${error.message}`)
+      return
+    }
+
+    const token = data?.invite_token || ''
+    setWorkspaceInviteToken(token || '')
+    setWorkspaceInviteUsername(inviteUsername)
+    setWorkspaceInvitePermissions({ ...TEAM_PERMISSION_DEFAULTS })
+    const inviteLink = buildWorkspaceInviteLink(token, inviteUsername)
+
+    await createActivityLog({
+      type: 'Team',
+      title: `Undangan ${workspaceInviteRole} dibuat`,
+      detail: `${inviteUsername}${token ? ` • token ${token}` : ''}${inviteLink ? ` • link ${inviteLink}` : ''}`,
+      tone: 'blue',
+      sourceTable: 'workspace_members',
+      sourceId: data?.id || ''
+    })
+  }
+
+  const handleAcceptWorkspaceInvite = async (e) => {
+    e.preventDefault()
+    const token = workspaceInviteToken.trim()
+    if (!token) return
+
+    setTeamLoading(true)
+    const activeUserId = session?.user?.id || actorUserId
+    let error = null
+    try {
+      await acceptWorkspaceInviteToken(token, activeUserId)
+    } catch (inviteError) {
+      error = inviteError
+    }
+    setTeamLoading(false)
+
+    if (error) {
+      alert(`Gagal menerima undangan: ${error.message}`)
+      return
+    }
+
+    setWorkspaceInviteToken('')
+    alert('Undangan berhasil diterima. Data workspace akan otomatis tersinkron.')
+    window.location.reload()
+  }
+
+  const handleUpdateWorkspaceMember = async (memberId, updates = {}) => {
+    if (!canManageTeam) {
+      alert('Hanya owner yang bisa mengubah anggota workspace.')
+      return
+    }
+    if (!memberId) return
+
+    const target = workspaceMembers.find(item => item.id === memberId)
+    if (!target || target.role === 'owner') return
+
+    const patch = {}
+    if (updates.role && ['assistant', 'viewer'].includes(updates.role)) patch.role = updates.role
+    if (updates.status && ['active', 'pending', 'revoked'].includes(updates.status)) patch.status = updates.status
+    if (updates.permissions) patch.permissions = updates.permissions
+    if (!Object.keys(patch).length) return
+
+    const { error } = await supabase
+      .from('workspace_members')
+      .update(patch)
+      .eq('id', memberId)
+
+    if (error) {
+      alert(`Gagal update anggota: ${error.message}`)
+      return
+    }
+
+    setWorkspaceMembers(prev => prev.map(item => (
+      item.id === memberId
+        ? {
+            ...item,
+            ...patch,
+            permissions: patch.permissions ? { ...TEAM_PERMISSION_DEFAULTS, ...patch.permissions } : item.permissions
+          }
+        : item
+    )))
+  }
+
+  const handleDeleteWorkspaceMember = async (member) => {
+    if (!canManageTeam) {
+      alert('Hanya owner yang bisa menghapus assistant.')
+      return
+    }
+    if (!member?.id || member.role === 'owner') return
+
+    const ok = window.confirm(`Hapus assistant "${member.memberEmail}" dari workspace?`)
+    if (!ok) return
+
+    setTeamLoading(true)
+    const { error } = await supabase
+      .from('workspace_members')
+      .delete()
+      .eq('id', member.id)
+      .eq('owner_user_id', workspaceContext?.ownerUserId)
+    setTeamLoading(false)
+
+    if (error) {
+      alert(`Gagal menghapus assistant: ${error.message}`)
+      return
+    }
+
+    setWorkspaceMembers(prev => prev.filter(item => item.id !== member.id))
+    await createActivityLog({
+      type: 'Team',
+      title: 'Assistant dihapus',
+      detail: `${member.memberEmail} dihapus dari workspace`,
+      tone: 'red',
+      sourceTable: 'workspace_members',
+      sourceId: member.id
+    })
+  }
+
+  const getWorkspaceMemberInviteUsername = (member) => {
+    const rawEmail = String(member?.memberEmail || '').trim().toLowerCase()
+    if (!rawEmail) return ''
+    if (rawEmail.endsWith('.dyatask@gmail.com')) {
+      return rawEmail.replace(/\.dyatask@gmail\.com$/, '')
+    }
+    return rawEmail.split('@')[0] || rawEmail
+  }
+
+  const handleCopyWorkspaceMemberInviteLink = async (member) => {
+    const token = String(member?.inviteToken || '').trim()
+    if (!token) {
+      alert('Member ini belum memiliki token invite aktif.')
+      return
+    }
+
+    const inviteLink = buildWorkspaceInviteLink(token, getWorkspaceMemberInviteUsername(member))
+    try {
+      await copyTextToClipboard(inviteLink)
+      alert('Link invite assistant berhasil disalin.')
+    } catch (error) {
+      alert(`Gagal menyalin link assistant: ${error.message}`)
+    }
+  }
+
+  const renderTeamAssistantWorkspacePanel = () => {
+    const assistantMembers = workspaceMembers.filter(member => member.role !== 'owner')
+
+    return (
+    <div className="p-5 rounded-2xl border border-purple-200 dark:border-indigo-900 bg-white dark:bg-indigo-950 shadow-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h4 className="text-sm font-bold flex items-center gap-2">
+            <Users size={15} className="text-purple-500" />
+            Team Assistant Workspace
+          </h4>
+          <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">
+            Role Anda: <span className="font-bold text-purple-600 dark:text-purple-200">{WORKSPACE_ROLE_LABELS[workspaceRole] || workspaceRole}</span>
+          </p>
+        </div>
+        <span className="text-[10px] px-2 py-1 rounded-lg bg-white/70 border border-purple-100 text-purple-600 font-bold">
+          Workspace: {workspaceContext?.ownerUserId ? `${workspaceContext.ownerUserId.slice(0, 8)}...` : '-'}
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-purple-100 bg-[#f8f5ff] dark:bg-indigo-950 p-3 flex flex-col md:flex-row md:items-center gap-2 justify-between">
+        <div>
+          <p className="text-xs font-bold text-[#4f4574]">One-Click Apply SQL (Team Assistant)</p>
+          <p className="text-[10px] text-purple-400">Sekali klik: SQL migration otomatis dicopy lalu SQL Editor Supabase dibuka.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOneClickApplyWorkspaceSql}
+          className="px-3 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold"
+        >
+          {migrationOneClickCopied ? 'SQL Copied ✓' : 'One-Click Apply SQL'}
+        </button>
+      </div>
+
+      <form onSubmit={handleAcceptWorkspaceInvite} className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-2">
+        <input
+          value={workspaceInviteToken}
+          onChange={(e) => setWorkspaceInviteToken(e.target.value)}
+          placeholder="Masukkan token undangan untuk join workspace owner"
+          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+        />
+        <button
+          type="submit"
+          disabled={teamLoading || !workspaceInviteToken.trim()}
+          className="px-4 py-2.5 rounded-xl bg-[#8f75d8] text-white text-xs font-bold disabled:opacity-50"
+        >
+          Join Token
+        </button>
+      </form>
+
+      {canManageTeam && (
+        <form onSubmit={handleInviteWorkspaceMember} className="space-y-3 rounded-xl border border-purple-100 bg-[#fbfaff] dark:bg-indigo-950 p-3">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={workspaceInviteUsername}
+              onChange={(e) => setWorkspaceInviteUsername(e.target.value)}
+              placeholder="Username asisten / viewer"
+              className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+              required
+            />
+            <select
+              value={workspaceInviteRole}
+              onChange={(e) => setWorkspaceInviteRole(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+            >
+              <option value="assistant">Assistant (can edit)</option>
+              <option value="viewer">Viewer (read only)</option>
+            </select>
+          </div>
+
+          <p className="text-[10px] text-purple-400">
+            Invite dikirim berbasis username. Link invite akan membawa user ke login ringan, lalu token diproses otomatis sesudah berhasil masuk.
+          </p>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {Object.entries(TEAM_PERMISSION_LABELS).map(([permissionKey, label]) => (
+              <label key={permissionKey} className="flex items-center gap-2 text-[10px] rounded-lg border border-purple-100 bg-white px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={!!workspaceInvitePermissions?.[permissionKey]}
+                  onChange={() => toggleWorkspaceInvitePermission(permissionKey)}
+                  className="accent-[#8f75d8]"
+                />
+                <span className="text-purple-600">{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <button
+            type="submit"
+            disabled={teamLoading}
+            className="px-4 py-2 rounded-xl bg-[#8f75d8] text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60"
+          >
+            <UserPlus size={12} />
+            {teamLoading ? 'Mengundang...' : 'Undang Asisten'}
+          </button>
+
+          {workspaceInviteToken && (
+            <div className="space-y-2 rounded-xl border border-purple-100 bg-[#faf8ff] p-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400">Token undangan terbaru</p>
+                <p className="mt-1 break-all font-mono text-[11px] text-purple-700">{workspaceInviteToken}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400">Link invite</p>
+                <p className="mt-1 break-all text-[11px] text-purple-700">{buildWorkspaceInviteLink()}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyWorkspaceInviteLink}
+                  className="px-3 py-2 rounded-xl border border-purple-200 bg-white text-[11px] font-bold text-purple-600 inline-flex items-center gap-1.5"
+                >
+                  <Copy size={12} />
+                  Copy Link
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyWorkspaceInviteToWA}
+                  className="px-3 py-2 rounded-xl border border-purple-200 bg-white text-[11px] font-bold text-purple-600 inline-flex items-center gap-1.5"
+                >
+                  <MessageSquare size={12} />
+                  Copy to WA
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenWorkspaceInviteWhatsApp}
+                  className="px-3 py-2 rounded-xl bg-[#8f75d8] text-[11px] font-bold text-white inline-flex items-center gap-1.5"
+                >
+                  <ExternalLink size={12} />
+                  Open WhatsApp
+                </button>
+              </div>
+            </div>
+          )}
+        </form>
+      )}
+
+      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] dark:bg-indigo-950 p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold text-[#4f4574] dark:text-purple-100">Assistant</p>
+          <span className="text-[10px] font-bold text-purple-500">{assistantMembers.length} orang</span>
+        </div>
+
+        {assistantMembers.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-purple-100 bg-white px-3 py-3 text-[11px] text-purple-400">
+            Belum ada assistant.
+          </p>
+        ) : assistantMembers.map(member => (
+          <div key={member.id} className="rounded-lg border border-purple-100 bg-white p-3 space-y-2">
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-[#4f4574] truncate">{getWorkspaceMemberInviteUsername(member)}</p>
+              <p className="text-[10px] text-purple-400 truncate">{member.memberEmail}</p>
+            </div>
+            <div className="flex items-center flex-wrap gap-1.5">
+              <span className={`h-8 px-2.5 rounded-lg text-[10px] font-bold inline-flex items-center ${member.status === 'active' ? 'bg-emerald-50 text-emerald-600' : member.status === 'revoked' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600'}`}>
+                {member.status}
+              </span>
+              {member.inviteToken && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyWorkspaceMemberInviteLink(member)}
+                  className="h-8 px-2.5 rounded-lg border border-purple-100 bg-white text-[10px] font-bold text-purple-600 inline-flex items-center gap-1"
+                  title="Salin link invite"
+                >
+                  <Copy size={10} />
+                  Link
+                </button>
+              )}
+              {canManageTeam && (
+                <>
+                  <select
+                    value={member.role}
+                    onChange={(e) => handleUpdateWorkspaceMember(member.id, { role: e.target.value })}
+                    className="h-8 px-2 rounded-lg border border-purple-100 bg-white text-[10px]"
+                  >
+                    <option value="assistant">assistant</option>
+                    <option value="viewer">viewer</option>
+                  </select>
+                  <select
+                    value={member.status}
+                    onChange={(e) => handleUpdateWorkspaceMember(member.id, { status: e.target.value })}
+                    className="h-8 px-2 rounded-lg border border-purple-100 bg-white text-[10px]"
+                  >
+                    <option value="active">active</option>
+                    <option value="pending">pending</option>
+                    <option value="revoked">revoked</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteWorkspaceMember(member)}
+                    disabled={teamLoading}
+                    className="h-8 w-8 rounded-lg border border-red-100 bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50 inline-flex items-center justify-center"
+                    title="Hapus assistant"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    )
+  }
+
   // Note client-side encryption simulation
   const handleEncryptNote = (e) => {
     e.preventDefault()
+    if (!hasWritePermission('notes')) {
+      alert('Akun Anda tidak punya izin menambah catatan aman.')
+      return
+    }
     if (!noteInputTitle.trim() || !noteInputContent.trim()) return
     if (!masterPassword) {
       alert('Tolong masukkan Master Password untuk mengenkripsi catatan!')
@@ -4134,7 +5178,7 @@ function App() {
             iv: Math.random().toString(36).substring(2, 10),
             salt: Math.random().toString(36).substring(2, 10),
             plaintext_hint: noteInputContent.substring(0, 25) + '...',
-            user_id: session?.user?.id
+            user_id: actorUserId
           }
 
           const { data, error } = await supabase
@@ -4459,7 +5503,7 @@ function App() {
   // Update user profile to Supabase
   const handleUpdateProfile = async (e) => {
     e.preventDefault()
-    if (!session?.user?.id) return
+    if (!actorUserId) return
 
     try {
       let avatarUrl = profileFormData.avatar_url
@@ -4469,7 +5513,7 @@ function App() {
         setUploadingAvatar(true)
         try {
           const fileExt = profileFormData.avatar_file.name.split('.').pop()?.toLowerCase() || 'png'
-          const fileName = `${session.user.id}/${Date.now()}.${fileExt}`
+          const fileName = `${actorUserId}/${Date.now()}.${fileExt}`
           
           const { error: uploadError } = await supabase.storage
             .from('avatars')
@@ -4510,6 +5554,46 @@ function App() {
       if (error) {
         alert('Gagal memperbarui profil: ' + error.message)
         return
+      }
+
+      const profileSyncPayload = {
+        email: session?.user?.email || `${authUsername || 'user'}.dyatask@gmail.com`,
+        full_name: profileFormData.full_name,
+        updated_at: new Date().toISOString()
+      }
+      let { error: profileSyncError } = await supabase
+        .from('profiles')
+        .update(profileSyncPayload)
+        .eq('id', actorUserId)
+
+      if (profileSyncError && supabaseAdmin) {
+        const { error: adminProfileSyncError } = await supabaseAdmin
+          .from('profiles')
+          .upsert({
+            id: actorUserId,
+            ...profileSyncPayload
+          }, { onConflict: 'id' })
+        profileSyncError = adminProfileSyncError
+      }
+
+      if (profileSyncError) {
+        console.warn('Sinkronisasi public.profiles gagal:', profileSyncError.message)
+      }
+
+      if (supabaseAdmin) {
+        const { error: adminAuthSyncError } = await supabaseAdmin.auth.admin.updateUserById(actorUserId, {
+          user_metadata: {
+            ...(session?.user?.user_metadata || {}),
+            full_name: profileFormData.full_name,
+            avatar_url: avatarUrl,
+            tanggal_lahir: profileFormData.tanggal_lahir,
+            email: profileFormData.email,
+            nomer_hp: profileFormData.nomer_hp
+          }
+        })
+        if (adminAuthSyncError) {
+          console.warn('Sinkronisasi auth admin gagal:', adminAuthSyncError.message)
+        }
       }
 
       // Force refresh session data from server
@@ -4837,6 +5921,131 @@ function App() {
     )
   }
 
+  if (inviteLandingToken) {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(255,229,76,0.22),_transparent_22%),radial-gradient(circle_at_top_right,_rgba(143,117,216,0.20),_transparent_24%),linear-gradient(180deg,_#faf7ff_0%,_#f7f4ff_100%)] px-5 py-8 md:px-8 md:py-10">
+        <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl items-center justify-center">
+          <div className="w-full rounded-[2rem] border border-white/80 bg-white p-7 shadow-[0_30px_80px_rgba(143,117,216,0.15)] md:p-10">
+            <div className="mb-8 flex items-center justify-between gap-4">
+              <img src={dyataskLogo2} alt="DyaTask" className="h-12 w-auto object-contain" />
+              <button
+                type="button"
+                onClick={handleExitInviteLanding}
+                className="rounded-2xl border border-purple-100 bg-[#faf8ff] px-4 py-2 text-xs font-semibold text-purple-600"
+              >
+                Tutup
+              </button>
+            </div>
+
+            <div className="rounded-[1.8rem] border border-purple-200/70 bg-[#f7f3ff] p-5 shadow-[0_18px_45px_rgba(143,117,216,0.12)]">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#8f75d8] shadow-sm">
+                  <UserPlus size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f75d8]">Invite Workspace</p>
+                  <h2 className="mt-2 text-[2rem] leading-none font-semibold text-[#20182f]">Buka Workspace Asisten</h2>
+                  <p className="mt-3 text-sm leading-7 text-[#73698f]">
+                    Halaman ini khusus user invite. Tekan tombol masuk, lalu konfirmasi token invite untuk membuka workspace owner sesuai role yang diberikan.
+                  </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-purple-100 bg-white px-4 py-3">
+                      <span className="block text-[10px] uppercase tracking-[0.16em] text-purple-400">Username invite</span>
+                      <span className="mt-1 block truncate text-base font-semibold text-[#4f4574]">
+                        {String(inviteUsernameFromUrl || '-').trim()}
+                      </span>
+                    </div>
+                    <div className="rounded-2xl border border-purple-100 bg-white px-4 py-3">
+                      <span className="block text-[10px] uppercase tracking-[0.16em] text-purple-400">Token invite</span>
+                      <span className="mt-1 block truncate font-mono text-base font-semibold text-[#4f4574]">
+                        {inviteLandingToken}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-[1.8rem] border border-purple-100 bg-[#fcfbff] p-6 text-center">
+              <h3 className="text-[2.25rem] leading-none font-semibold text-[#1f182e]">Masuk ke Workspace</h3>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[#7d7297]">
+                Tidak ada form login biasa di halaman ini. Sistem akan membuat akses ringan untuk asisten, lalu membuka workspace setelah token invite terverifikasi.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteConfirmInput('')
+                  setInviteConfirmModalOpen(true)
+                }}
+                className="mt-7 inline-flex min-w-[240px] items-center justify-center rounded-[1.35rem] bg-[#1f1b27] px-6 py-4 text-base font-semibold text-white shadow-[0_18px_30px_rgba(31,27,39,0.18)]"
+              >
+                Login ke Workspace
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {inviteConfirmModalOpen && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#20182f]/28 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-[1.8rem] border border-white/80 bg-white p-6 shadow-[0_30px_80px_rgba(32,24,47,0.18)]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f75d8]">Konfirmasi Token</p>
+                  <h4 className="mt-2 text-2xl font-semibold text-[#20182f]">Verifikasi invite</h4>
+                  <p className="mt-2 text-sm leading-6 text-[#7d7297]">
+                    Masukkan token invite untuk memastikan link ini dibuka oleh asisten yang benar.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInviteConfirmModalOpen(false)}
+                  className="rounded-2xl border border-purple-100 p-2 text-purple-400"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <div className="rounded-2xl border border-purple-100 bg-[#faf8ff] px-4 py-3">
+                  <span className="block text-[10px] uppercase tracking-[0.16em] text-purple-400">Token dari link</span>
+                  <span className="mt-1 block truncate font-mono text-sm font-semibold text-[#4f4574]">{inviteLandingToken}</span>
+                </div>
+                <label className="block">
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-purple-400">Input token invite</span>
+                  <input
+                    type="text"
+                    value={inviteConfirmInput}
+                    onChange={(e) => setInviteConfirmInput(e.target.value)}
+                    placeholder="Tempel token invite"
+                    className="w-full rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-[#4f4574] focus:outline-none focus:ring-2 focus:ring-purple-200"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setInviteConfirmModalOpen(false)}
+                  className="flex-1 rounded-2xl border border-purple-100 px-4 py-3 text-sm font-semibold text-purple-500"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDirectInviteWorkspaceAccess}
+                  disabled={inviteDirectLoading || !inviteConfirmInput.trim()}
+                  className="flex-1 rounded-2xl bg-[#8f75d8] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {inviteDirectLoading ? 'Memproses...' : 'Buka Workspace'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (!session) {
     return (
       <div className="auth-page">
@@ -5019,96 +6228,116 @@ function App() {
 
           {/* Navigation Links */}
           <nav className="flex-1">
-            <div 
-              data-mobile-nav="dashboard"
-              className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dashboard')}
-            >
-              <LayoutDashboard size={20} />
-              {!sidebarCollapsed && <span>Dashboard</span>}
-            </div>
+            {canReadArea('reports') && (
+              <div 
+                data-mobile-nav="dashboard"
+                className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveTab('dashboard')}
+              >
+                <LayoutDashboard size={20} />
+                {!sidebarCollapsed && <span>Dashboard</span>}
+              </div>
+            )}
 
-            <div 
-              data-mobile-nav="tasks"
-              className={`nav-link ${activeTab === 'tasks' ? 'active' : ''}`}
-              onClick={() => setActiveTab('tasks')}
-            >
-              <CheckSquare size={20} />
-              {!sidebarCollapsed && <span>Tugas & Project</span>}
-            </div>
+            {canReadArea('tasks') && (
+              <div 
+                data-mobile-nav="tasks"
+                className={`nav-link ${activeTab === 'tasks' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tasks')}
+              >
+                <CheckSquare size={20} />
+                {!sidebarCollapsed && <span>Tugas & Project</span>}
+              </div>
+            )}
 
-            <div 
-              data-mobile-nav="calendar"
-              className={`nav-link ${activeTab === 'calendar' ? 'active' : ''}`}
-              onClick={() => setActiveTab('calendar')}
-            >
-              <Calendar size={20} />
-              {!sidebarCollapsed && <span>Reservasi & Jadwal</span>}
-              {!sidebarCollapsed && <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 pulse-badge"></span>}
-            </div>
+            {canReadArea('reservations') && (
+              <div 
+                data-mobile-nav="calendar"
+                className={`nav-link ${activeTab === 'calendar' ? 'active' : ''}`}
+                onClick={() => setActiveTab('calendar')}
+              >
+                <Calendar size={20} />
+                {!sidebarCollapsed && <span>Reservasi & Jadwal</span>}
+                {!sidebarCollapsed && <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 pulse-badge"></span>}
+              </div>
+            )}
 
-            <div
-              data-mobile-nav="orders"
-              className={`nav-link ${activeTab === 'orders' ? 'active' : ''}`}
-              onClick={() => setActiveTab('orders')}
-            >
-              <FileSpreadsheet size={20} />
-              {!sidebarCollapsed && <span>Order Spreadsheet</span>}
-            </div>
+            {canReadArea('orders') && (
+              <div
+                data-mobile-nav="orders"
+                className={`nav-link ${activeTab === 'orders' ? 'active' : ''}`}
+                onClick={() => setActiveTab('orders')}
+              >
+                <FileSpreadsheet size={20} />
+                {!sidebarCollapsed && <span>Order Spreadsheet</span>}
+              </div>
+            )}
 
-            <div
-              data-mobile-nav="crm"
-              className={`nav-link ${activeTab === 'crm' ? 'active' : ''}`}
-              onClick={() => setActiveTab('crm')}
-            >
-              <Users size={20} />
-              {!sidebarCollapsed && <span>Client CRM</span>}
-            </div>
+            {canReadArea('crm') && (
+              <div
+                data-mobile-nav="crm"
+                className={`nav-link ${activeTab === 'crm' ? 'active' : ''}`}
+                onClick={() => setActiveTab('crm')}
+              >
+                <Users size={20} />
+                {!sidebarCollapsed && <span>Client CRM</span>}
+              </div>
+            )}
 
-            <div
-              data-mobile-nav="finance"
-              className={`nav-link ${activeTab === 'finance' ? 'active' : ''}`}
-              onClick={() => setActiveTab('finance')}
-            >
-              <FileText size={20} />
-              {!sidebarCollapsed && <span>Finance & Invoice</span>}
-            </div>
+            {canReadArea('finance') && (
+              <div
+                data-mobile-nav="finance"
+                className={`nav-link ${activeTab === 'finance' ? 'active' : ''}`}
+                onClick={() => setActiveTab('finance')}
+              >
+                <FileText size={20} />
+                {!sidebarCollapsed && <span>Finance & Invoice</span>}
+              </div>
+            )}
 
-            <div
-              data-mobile-nav="reports"
-              className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              <TrendingUp size={20} />
-              {!sidebarCollapsed && <span>Reports</span>}
-            </div>
+            {canReadArea('reports') && (
+              <div
+                data-mobile-nav="reports"
+                className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
+                onClick={() => setActiveTab('reports')}
+              >
+                <TrendingUp size={20} />
+                {!sidebarCollapsed && <span>Reports</span>}
+              </div>
+            )}
 
-            <div 
-              data-mobile-secondary="true"
-              className={`nav-link ${activeTab === 'notes' ? 'active' : ''}`}
-              onClick={() => setActiveTab('notes')}
-            >
-              <Lock size={20} />
-              {!sidebarCollapsed && <span>Catatan Terenkripsi</span>}
-            </div>
+            {canReadArea('notes') && (
+              <div 
+                data-mobile-secondary="true"
+                className={`nav-link ${activeTab === 'notes' ? 'active' : ''}`}
+                onClick={() => setActiveTab('notes')}
+              >
+                <Lock size={20} />
+                {!sidebarCollapsed && <span>Catatan Terenkripsi</span>}
+              </div>
+            )}
 
-            <div 
-              data-mobile-secondary="true"
-              className={`nav-link ${activeTab === 'integrations' ? 'active' : ''}`}
-              onClick={() => setActiveTab('integrations')}
-            >
-              <RefreshCw size={20} />
-              {!sidebarCollapsed && <span>Integrasi Realtime</span>}
-            </div>
+            {canReadArea('integrations') && (
+              <div 
+                data-mobile-secondary="true"
+                className={`nav-link ${activeTab === 'integrations' ? 'active' : ''}`}
+                onClick={() => setActiveTab('integrations')}
+              >
+                <RefreshCw size={20} />
+                {!sidebarCollapsed && <span>Integrasi Realtime</span>}
+              </div>
+            )}
 
-            <div 
-              data-mobile-secondary="true"
-              className={`nav-link ${activeTab === 'settings' ? 'active' : ''}`}
-              onClick={() => setActiveTab('settings')}
-            >
-              <Settings size={20} />
-              {!sidebarCollapsed && <span>Pengaturan macOS</span>}
-            </div>
+            {canReadArea('settings') && (
+              <div 
+                data-mobile-secondary="true"
+                className={`nav-link ${activeTab === 'settings' ? 'active' : ''}`}
+                onClick={() => setActiveTab('settings')}
+              >
+                <Settings size={20} />
+                {!sidebarCollapsed && <span>Pengaturan macOS</span>}
+              </div>
+            )}
           </nav>
 
           {/* User profile section in Sidebar footer */}
@@ -5144,21 +6373,23 @@ function App() {
                   <p className="text-xs text-yellow-900/75 truncate">{session?.user?.email}</p>
                 </div>
               </button>
-              <div className="flex gap-2">
-                <button 
-                  onClick={toggleTheme}
-                  className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
-                >
-                  {theme === 'dark' ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} className="text-white" />}
-                  <span>{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
-                </button>
-                <button 
-                  onClick={handleSignOut}
-                  className="flex-1 h-8 rounded-lg border border-red-200 bg-red-50/80 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/20 dark:hover:bg-red-900/30 flex items-center justify-center text-xs font-semibold text-red-600 dark:text-red-400 gap-1 transition-all"
-                >
-                  Keluar
-                </button>
-              </div>
+	              <div className="flex gap-2">
+	                <button 
+	                  onClick={toggleTheme}
+	                  className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
+	                >
+	                  {theme === 'dark' ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} className="text-white" />}
+	                  <span>{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
+	                </button>
+	                {!isAssistantWorkspace && (
+	                  <button 
+	                    onClick={handleSignOut}
+	                    className="flex-1 h-8 rounded-lg border border-red-200 bg-red-50/80 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/20 dark:hover:bg-red-900/30 flex items-center justify-center text-xs font-semibold text-red-600 dark:text-red-400 gap-1 transition-all"
+	                  >
+	                    Keluar
+	                  </button>
+	                )}
+	              </div>
             </div>
           </div>}
 
@@ -5194,12 +6425,22 @@ function App() {
           {/* Header Bar */}
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-purple-100 dark:border-indigo-950 pb-6 mb-6">
             <div>
-              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#4f4574]">Hallo, {headerUserName}</h1>
-              <p className="text-sm md:text-base text-purple-500 mt-2">
-                {dayGreeting} Sekarang {headerDateLabel} - Pukul {headerTimeLabel}
-              </p>
-              <p className="text-sm text-purple-400 mt-1">Have a Nice day, ya!</p>
-            </div>
+	              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#4f4574]">
+	                Hallo, {isAssistantWorkspace ? assistantDisplayName : headerUserName}
+	              </h1>
+	              {isAssistantWorkspace ? (
+	                <p className="text-sm md:text-base text-purple-500 mt-2">
+	                  Pantau terus kegiatan {workspaceOwnerDisplayName} pada aplikasi ini
+	                </p>
+	              ) : (
+	                <>
+	                  <p className="text-sm md:text-base text-purple-500 mt-2">
+	                    {dayGreeting} Sekarang {headerDateLabel} - Pukul {headerTimeLabel}
+	                  </p>
+	                  <p className="text-sm text-purple-400 mt-1">Have a Nice day, ya!</p>
+	                </>
+	              )}
+	            </div>
             
             {/* Realtime Badges */}
 	            <div className="app-header-actions flex flex-wrap items-center gap-2">
@@ -6385,7 +7626,7 @@ function App() {
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-[380px_1fr] gap-5">
-                <aside className="glass-panel p-5">
+                <aside className={`glass-panel p-5 ${isMobileTabletView && mobileCrmDetailOpen ? 'hidden' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-bold text-[#4f4574]">Client CRM</h3>
@@ -6450,7 +7691,10 @@ function App() {
                       return (
                         <div
                           key={client.key}
-                          onClick={() => setSelectedCrmClientId(client.key)}
+                          onClick={() => {
+                            setSelectedCrmClientId(client.key)
+                            if (isMobileTabletView) setMobileCrmDetailOpen(true)
+                          }}
                           className={`rounded-xl border p-3 cursor-pointer transition-all ${isSelected ? 'border-[#8f75d8] bg-[#f5f0ff]' : 'border-purple-100 bg-white hover:bg-[#faf7ff]'}`}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -6476,11 +7720,23 @@ function App() {
                   </div>
                 </aside>
 
-                <section className="glass-panel p-5">
+                <section className={`glass-panel p-5 ${isMobileTabletView && !mobileCrmDetailOpen ? 'hidden' : ''}`}>
                   {!selectedCrmClient ? (
                     <div className="text-sm text-[#8f75d8]">Pilih atau tambah client dulu.</div>
                   ) : (
                     <div className="space-y-5">
+                      {isMobileTabletView && (
+                        <div className="mb-2">
+                          <button
+                            type="button"
+                            onClick={() => setMobileCrmDetailOpen(false)}
+                            className="w-8 h-8 rounded-lg border border-purple-200/70 dark:border-indigo-900/60 bg-white/80 dark:bg-indigo-950/40 text-purple-600 dark:text-purple-300 flex items-center justify-center"
+                            title="Kembali ke list client"
+                          >
+                            <ArrowLeft size={14} />
+                          </button>
+                        </div>
+                      )}
                       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-3">
@@ -7662,7 +8918,7 @@ function App() {
                   <div className="flex gap-3 pt-1">
                     <button
                       onClick={async () => {
-                        if (!session?.user?.id || !activeIntegrationModal) return
+                        if (!actorUserId || !activeIntegrationModal) return
                         const updated = { ...integrationConfigs }
                         delete updated[activeIntegrationModal]
                         setIntegrationConfigs(updated)
@@ -7670,7 +8926,7 @@ function App() {
                         const { error } = await supabase
                           .from('user_integration_configs')
                           .upsert({
-                            user_id: session.user.id,
+                            user_id: actorUserId,
                             configs: updated
                           }, { onConflict: 'user_id' })
 
@@ -7838,10 +9094,10 @@ function App() {
 
           {/* TAB CONTENT: 6. SETTINGS & MACOS CONFIGURATIONS */}
           {activeTab === 'settings' && (
-            <div className="mobile-page mobile-page-settings grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="mobile-page mobile-page-settings grid grid-cols-1 xl:grid-cols-[minmax(0,1.25fr)_minmax(460px,0.95fr)] gap-8">
               
               {/* Left panel: Preferences */}
-              <div className="lg:col-span-2 glass-panel p-6 space-y-6">
+              <div className="glass-panel p-6 space-y-6">
                 <div>
                   <h3 className="text-lg font-bold">Pengaturan Integrasi macOS Macbook</h3>
                   <p className="text-xs text-purple-400 dark:text-purple-300">Sesuaikan integrasi sistem aplikasi DyaTask Manager</p>
@@ -8171,50 +9427,54 @@ function App() {
                 </div>
               </div>
 
-              {/* Right panel: Macbook Simulator preview */}
-              <div className="glass-panel p-6 flex flex-col justify-between">
-                <div>
-                  <h3 className="text-base font-bold mb-2">Simulator Macbook macOS</h3>
-                  <p className="text-xs text-purple-400 dark:text-purple-300 mb-4">Pratinjau tampilan jendela mandiri DyaTask di Macbook OS Anda</p>
-                  
-                  {/* Macbook window mock */}
-                  <div className="macbook-window">
-                    <div className="macbook-titlebar">
-                      <div className="macbook-dot macbook-red"></div>
-                      <div className="macbook-dot macbook-yellow"></div>
-                      <div className="macbook-dot macbook-green"></div>
-                      <span className="text-[10px] text-zinc-400 font-bold ml-2">{appHeaderTitle || 'Dyatask Manager'}</span>
-                    </div>
+              {/* Right panel: Team Assistant + Macbook Simulator preview */}
+              <div className="space-y-6">
+                {renderTeamAssistantWorkspacePanel()}
 
-                    <div className="p-4 bg-zinc-950 text-white font-mono text-[9px] space-y-1 select-none">
-                      <p className="text-purple-400">--- DyaTask macOS Service Daemon ---</p>
-                      <p>STATUS: RUNNING</p>
-                      <p>AUTOSTART: {autoStart ? 'ENABLED' : 'DISABLED'}</p>
-                      <p>WAKE_ON_ALERT: {autoOpenOnAlert ? 'ENABLED' : 'DISABLED'}</p>
-                      <p>LAUNCHER_SHORTCUT: [Option + Space]</p>
-                      <p className="text-emerald-400">⚡ CalSync: OK, Sheets: OK</p>
-                      <p className="text-zinc-500">[LOG] Listen on port 4500...</p>
+                <div className="glass-panel p-6 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-base font-bold mb-2">Simulator Macbook macOS</h3>
+                    <p className="text-xs text-purple-400 dark:text-purple-300 mb-4">Pratinjau tampilan jendela mandiri DyaTask di Macbook OS Anda</p>
+                    
+                    {/* Macbook window mock */}
+                    <div className="macbook-window">
+                      <div className="macbook-titlebar">
+                        <div className="macbook-dot macbook-red"></div>
+                        <div className="macbook-dot macbook-yellow"></div>
+                        <div className="macbook-dot macbook-green"></div>
+                        <span className="text-[10px] text-zinc-400 font-bold ml-2">{appHeaderTitle || 'Dyatask Manager'}</span>
+                      </div>
+
+                      <div className="p-4 bg-zinc-950 text-white font-mono text-[9px] space-y-1 select-none">
+                        <p className="text-purple-400">--- DyaTask macOS Service Daemon ---</p>
+                        <p>STATUS: RUNNING</p>
+                        <p>AUTOSTART: {autoStart ? 'ENABLED' : 'DISABLED'}</p>
+                        <p>WAKE_ON_ALERT: {autoOpenOnAlert ? 'ENABLED' : 'DISABLED'}</p>
+                        <p>LAUNCHER_SHORTCUT: [Option + Space]</p>
+                        <p className="text-emerald-400">⚡ CalSync: OK, Sheets: OK</p>
+                        <p className="text-zinc-500">[LOG] Listen on port 4500...</p>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="pt-6 border-t border-purple-100/40 dark:border-indigo-950/40 mt-4">
-                  <button 
-                    onClick={() => {
-                      triggerMockNotification(
-                        'DyaTask Notification Aktif',
-                        'Jika banner ini muncul di macOS, izin notifikasi sudah aktif.',
-                        'local'
-                      )
-                    }}
-                    className="w-full py-2.5 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
-                  >
-                    <BellRing size={12} />
-                    Uji / Aktifkan Izin Notifikasi macOS
-                  </button>
-                  <p className="mt-2 text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
-                    Jika macOS meminta izin, pilih Allow. Kalau tidak muncul, aktifkan manual di System Settings &gt; Notifications &gt; DyaTask.
-                  </p>
+                  <div className="pt-6 border-t border-purple-100/40 dark:border-indigo-950/40 mt-4">
+                    <button 
+                      onClick={() => {
+                        triggerMockNotification(
+                          'DyaTask Notification Aktif',
+                          'Jika banner ini muncul di macOS, izin notifikasi sudah aktif.',
+                          'local'
+                        )
+                      }}
+                      className="w-full py-2.5 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
+                    >
+                      <BellRing size={12} />
+                      Uji / Aktifkan Izin Notifikasi macOS
+                    </button>
+                    <p className="mt-2 text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
+                      Jika macOS meminta izin, pilih Allow. Kalau tidak muncul, aktifkan manual di System Settings &gt; Notifications &gt; DyaTask.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -8253,18 +9513,24 @@ function App() {
               </button>
             </div>
 
-            <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('notes'); setShowMobileMoreMenu(false) }}>
-              <Lock size={18} />
-              <span>Catatan Terenkripsi</span>
-            </button>
-            <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('integrations'); setShowMobileMoreMenu(false) }}>
-              <RefreshCw size={18} />
-              <span>Integrasi Realtime</span>
-            </button>
-            <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('settings'); setShowMobileMoreMenu(false) }}>
-              <Settings size={18} />
-              <span>Pengaturan macOS</span>
-            </button>
+            {canReadArea('notes') && (
+              <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('notes'); setShowMobileMoreMenu(false) }}>
+                <Lock size={18} />
+                <span>Catatan Terenkripsi</span>
+              </button>
+            )}
+            {canReadArea('integrations') && (
+              <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('integrations'); setShowMobileMoreMenu(false) }}>
+                <RefreshCw size={18} />
+                <span>Integrasi Realtime</span>
+              </button>
+            )}
+            {canReadArea('settings') && (
+              <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('settings'); setShowMobileMoreMenu(false) }}>
+                <Settings size={18} />
+                <span>Pengaturan macOS</span>
+              </button>
+            )}
 
             <div className="mobile-more-divider" />
 
@@ -8276,10 +9542,12 @@ function App() {
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               <span>{theme === 'dark' ? 'Tema Terang' : 'Tema Gelap'}</span>
             </button>
-            <button type="button" className="mobile-more-item danger" onClick={() => { handleSignOut(); setShowMobileMoreMenu(false) }}>
-              <ExternalLink size={18} />
-              <span>Keluar</span>
-            </button>
+            {!isAssistantWorkspace && (
+              <button type="button" className="mobile-more-item danger" onClick={() => { handleSignOut(); setShowMobileMoreMenu(false) }}>
+                <ExternalLink size={18} />
+                <span>Keluar</span>
+              </button>
+            )}
           </div>
         </>
       )}
