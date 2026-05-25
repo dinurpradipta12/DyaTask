@@ -379,6 +379,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
+  v_email TEXT := lower(COALESCE(auth.jwt()->>'email', ''));
   v_row public.workspace_members;
 BEGIN
   IF v_uid IS NULL THEN
@@ -399,6 +400,23 @@ BEGIN
   WHERE wm.invite_token = p_invite_token
     AND wm.status = 'pending'
   RETURNING * INTO v_row;
+
+  IF v_row.id IS NOT NULL THEN
+    RETURN v_row;
+  END IF;
+
+  -- Idempotent login path: token yang sama boleh dipakai lagi oleh akun assistant yang sama.
+  SELECT wm.*
+  INTO v_row
+  FROM public.workspace_members wm
+  WHERE wm.invite_token = p_invite_token
+    AND wm.status = 'active'
+    AND (
+      wm.member_user_id = v_uid
+      OR lower(wm.member_email) = v_email
+    )
+  ORDER BY wm.created_at DESC
+  LIMIT 1;
 
   IF v_row.id IS NULL THEN
     RAISE EXCEPTION 'Undangan tidak ditemukan atau sudah dipakai';
@@ -606,19 +624,23 @@ DROP POLICY IF EXISTS "Pengguna dapat melihat konfigurasi integrasi mereka sendi
 DROP POLICY IF EXISTS "Pengguna dapat menambah konfigurasi integrasi mereka sendiri" ON public.user_integration_configs;
 DROP POLICY IF EXISTS "Pengguna dapat memperbarui konfigurasi integrasi mereka sendiri" ON public.user_integration_configs;
 DROP POLICY IF EXISTS "Pengguna dapat menghapus konfigurasi integrasi mereka sendiri" ON public.user_integration_configs;
-CREATE POLICY "Pengguna dapat melihat konfigurasi integrasi mereka sendiri"
+DROP POLICY IF EXISTS "workspace integrations configs read" ON public.user_integration_configs;
+DROP POLICY IF EXISTS "workspace integrations configs insert" ON public.user_integration_configs;
+DROP POLICY IF EXISTS "workspace integrations configs update" ON public.user_integration_configs;
+DROP POLICY IF EXISTS "workspace integrations configs delete" ON public.user_integration_configs;
+CREATE POLICY "workspace integrations configs read"
     ON public.user_integration_configs FOR SELECT
-    USING (auth.uid() = user_id);
-CREATE POLICY "Pengguna dapat menambah konfigurasi integrasi mereka sendiri"
+    USING (public.workspace_can_read_area(user_id, 'integrations'));
+CREATE POLICY "workspace integrations configs insert"
     ON public.user_integration_configs FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Pengguna dapat memperbarui konfigurasi integrasi mereka sendiri"
+    WITH CHECK (public.workspace_can_write_area(user_id, 'integrations'));
+CREATE POLICY "workspace integrations configs update"
     ON public.user_integration_configs FOR UPDATE
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Pengguna dapat menghapus konfigurasi integrasi mereka sendiri"
+    USING (public.workspace_can_write_area(user_id, 'integrations'))
+    WITH CHECK (public.workspace_can_write_area(user_id, 'integrations'));
+CREATE POLICY "workspace integrations configs delete"
     ON public.user_integration_configs FOR DELETE
-    USING (auth.uid() = user_id);
+    USING (public.workspace_can_write_area(user_id, 'integrations'));
 
 -- realtime tables
 DO $$

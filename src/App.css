@@ -975,8 +975,7 @@
 .notification-banner {
   position: fixed;
   top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 32px;
   z-index: 50;
   width: 420px;
   max-width: 90vw;
@@ -997,8 +996,8 @@
 }
 
 @keyframes slide-down {
-  from { transform: translateX(-50%) translateY(-72px) scale(0.98); opacity: 0; }
-  to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+  from { transform: translateY(-72px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 /* Floating quick add button simulator */

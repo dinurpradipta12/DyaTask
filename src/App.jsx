@@ -474,6 +474,10 @@ function App() {
   const [inviteConfirmModalOpen, setInviteConfirmModalOpen] = useState(false)
   const [inviteConfirmInput, setInviteConfirmInput] = useState('')
   const [inviteDirectLoading, setInviteDirectLoading] = useState(false)
+  const [workspaceChatModalOpen, setWorkspaceChatModalOpen] = useState(false)
+  const [workspaceChatMessage, setWorkspaceChatMessage] = useState('')
+  const [workspaceChatSending, setWorkspaceChatSending] = useState(false)
+  const [workspaceChatLastReadAt, setWorkspaceChatLastReadAt] = useState(0)
   const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1180
@@ -493,6 +497,7 @@ function App() {
   const currentDeployVersionRef = useRef(import.meta.env.VITE_DEPLOY_COMMIT || 'dev')
   const announcedDeployVersionRef = useRef('')
   const dismissedDeployVersionRef = useRef(localStorage.getItem('dyatask_dismissed_deploy_version') || '')
+  const seenAssistantNoteIdsRef = useRef(new Set())
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -567,7 +572,7 @@ function App() {
   const isPublicTrackingMode = !!publicTrackingToken
 
   const saveIntegrationConfig = async () => {
-    if (!actorUserId || !activeIntegrationModal) return
+    if (!scopedUserId || !activeIntegrationModal) return
     if (!hasWritePermission('integrations')) {
       alert('Akun Anda tidak punya izin mengubah konfigurasi integrasi.')
       return
@@ -578,7 +583,7 @@ function App() {
     const { error } = await supabase
       .from('user_integration_configs')
       .upsert({
-        user_id: actorUserId,
+        user_id: scopedUserId,
         configs: updated
       }, { onConflict: 'user_id' })
 
@@ -1192,6 +1197,19 @@ function App() {
   const assistantDisplayName = formatDisplayName(headerUserName)
   const workspaceOwnerDisplayName = workspaceOwnerName ? formatDisplayName(workspaceOwnerName) : 'pemilik workspace'
   const isAssistantWorkspace = workspaceRole === 'assistant'
+  const workspaceChatButtonTitle = isAssistantWorkspace ? `Chat ${workspaceOwnerDisplayName}` : 'Chat Assistant Workspace'
+  const workspaceChatMessages = activityLogs
+    .filter(item => item?.metadata?.kind === 'workspace_chat')
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .slice(-80)
+  const workspaceChatAcknowledgements = activityLogs
+    .filter(item => item?.metadata?.kind === 'workspace_chat_ack' && item?.metadata?.ackForMessageId)
+  const workspaceChatAcknowledgedIds = new Set(workspaceChatAcknowledgements.map(item => item.metadata.ackForMessageId))
+  const workspaceUnreadChatCount = workspaceChatMessages.filter(item => (
+    item?.metadata?.senderUserId
+    && item.metadata.senderUserId !== actorUserId
+    && new Date(item.createdAt).getTime() > workspaceChatLastReadAt
+  )).length
   const headerHour = headerNow.getHours()
   const dayGreeting = headerHour < 12 ? 'Good Morning!' : headerHour < 18 ? 'Good Afternoon!' : 'Good Evening!'
   const headerDateLabel = headerNow.toLocaleDateString('id-ID', {
@@ -2187,13 +2205,13 @@ function App() {
   }, [session])
 
   useEffect(() => {
-    if (!actorUserId) return
+    if (!scopedUserId) return
 
     const loadIntegrationConfigs = async () => {
       const { data, error } = await supabase
         .from('user_integration_configs')
         .select('configs')
-        .eq('user_id', actorUserId)
+        .eq('user_id', scopedUserId)
         .maybeSingle()
 
       if (error) {
@@ -2214,7 +2232,7 @@ function App() {
           const { error: migrateError } = await supabase
             .from('user_integration_configs')
             .upsert({
-              user_id: actorUserId,
+              user_id: scopedUserId,
               configs: legacy
             }, { onConflict: 'user_id' })
 
@@ -2235,7 +2253,7 @@ function App() {
     }
 
     loadIntegrationConfigs()
-  }, [actorUserId])
+  }, [scopedUserId])
 
   useEffect(() => {
     if (!scopedUserId) return
@@ -2450,7 +2468,29 @@ function App() {
 
     const activityChannel = supabase
       .channel(`activity_logs_realtime_${scopedUserId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs', filter: `user_id=eq.${scopedUserId}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs', filter: `user_id=eq.${scopedUserId}` }, (payload) => {
+        const incoming = payload?.new || null
+        if (
+          payload?.eventType === 'INSERT'
+          && incoming?.metadata?.kind === 'workspace_chat'
+          && incoming?.metadata?.senderUserId
+          && incoming.metadata.senderUserId !== actorUserId
+          && incoming?.id
+          && !seenAssistantNoteIdsRef.current.has(incoming.id)
+        ) {
+          seenAssistantNoteIdsRef.current.add(incoming.id)
+          triggerMockNotification(
+            `Pesan dari ${incoming.metadata?.senderName || 'Workspace'}`,
+            incoming.detail || 'Pesan baru di workspace chat.',
+            'workspace-chat',
+            {
+              id: incoming.id,
+              sourceTable: 'activity_logs',
+              senderName: incoming.metadata?.senderName || 'Assistant',
+              workspaceChat: true
+            }
+          )
+        }
         loadActivityLogs()
       })
       .subscribe()
@@ -2460,7 +2500,7 @@ function App() {
       clearInterval(interval)
       supabase.removeChannel(activityChannel)
     }
-  }, [scopedUserId])
+  }, [scopedUserId, workspaceRole, actorUserId])
 
   // Fetch real data from Supabase once authenticated
   useEffect(() => {
@@ -2868,6 +2908,92 @@ function App() {
       console.warn('Gagal menyimpan activity log:', error.message)
     }
   }
+
+  const sendWorkspaceChat = async (messageText, metadata = {}) => {
+    const message = String(messageText || '').trim()
+    if (!message) return
+
+    setWorkspaceChatSending(true)
+    await createActivityLog({
+      type: 'Workspace Chat',
+      title: `${isAssistantWorkspace ? 'Assistant' : 'Owner'}: ${isAssistantWorkspace ? assistantDisplayName : headerUserName}`,
+      detail: message,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat',
+        senderRole: workspaceRole,
+        senderUserId: actorUserId,
+        senderName: isAssistantWorkspace ? assistantDisplayName : headerUserName,
+        senderEmail: session?.user?.email || '',
+        workspaceOwnerId: workspaceContext?.ownerUserId || '',
+        ...metadata
+      }
+    })
+    setWorkspaceChatSending(false)
+    setWorkspaceChatMessage('')
+  }
+
+  const handleSendWorkspaceChatMessage = async (e) => {
+    e.preventDefault()
+    await sendWorkspaceChat(workspaceChatMessage)
+  }
+
+  const sendQuickWorkspaceReminder = async (kind) => {
+    if (!isAssistantWorkspace) return
+    if (kind === 'task') {
+      const lines = tasks
+        .filter(task => task.status !== 'done' && (task.calendarDate || todayString) === todayString)
+        .slice(0, 6)
+        .map(task => `- ${task.title} • ${todayString} ${task.dueTime || ''}`.trim())
+      const body = lines.length ? `Pengingat hari ini, task aktif:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada task aktif tercatat.'
+      await sendWorkspaceChat(body, { reminderType: 'task_today' })
+      return
+    }
+    if (kind === 'event') {
+      const lines = appointments
+        .filter(appt => appt.date === todayString)
+        .slice(0, 6)
+        .map(appt => `- ${appt.title} • ${appt.date} ${appt.time || ''}`.trim())
+      const body = lines.length ? `Pengingat hari ini, event:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada event reservasi.'
+      await sendWorkspaceChat(body, { reminderType: 'event_today' })
+      return
+    }
+    if (kind === 'gcall') {
+      const lines = googleCalendarEvents
+        .filter(event => event.date === todayString)
+        .slice(0, 6)
+        .map(event => `- ${event.title} • ${event.date} ${event.time || 'All day'}`)
+      const body = lines.length ? `Pengingat hari ini, Google Calendar:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada event Google Calendar.'
+      await sendWorkspaceChat(body, { reminderType: 'gcall_today' })
+      return
+    }
+    if (kind === 'deadline') {
+      const lines = spreadsheetOrders
+        .filter(order => {
+          const status = String(order.status || '').toLowerCase()
+          return !['completed', 'done'].includes(status) && String(order.dueDate || '') === todayString
+        })
+        .slice(0, 6)
+        .map(order => `- ${order.orderName} • due ${order.dueDate}`)
+      const body = lines.length ? `Pengingat hari ini, deadline order:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada deadline order.'
+      await sendWorkspaceChat(body, { reminderType: 'deadline_today' })
+    }
+  }
+
+  const sendWorkspaceReminderAck = async (messageId) => {
+    if (workspaceRole !== 'owner' || !messageId) return
+    await sendWorkspaceChat('✅ Konfirmasi: pengingat sudah dibaca.', {
+      kind: 'workspace_chat_ack',
+      ackForMessageId: messageId
+    })
+  }
+
+  useEffect(() => {
+    if (!workspaceChatModalOpen) return
+    setWorkspaceChatLastReadAt(Date.now())
+  }, [workspaceChatModalOpen, workspaceChatMessages.length])
 
   const triggerMockNotification = (title, body, source, meta = {}) => {
     setNotifications(prev => [{
@@ -4700,13 +4826,23 @@ function App() {
 
     const { data: inviteRow, error: findError } = await supabaseAdmin
       .from('workspace_members')
-      .select('id')
+      .select('id, member_user_id, status, member_email')
       .eq('invite_token', inviteToken)
-      .eq('status', 'pending')
       .maybeSingle()
     if (findError) throw findError
     if (!inviteRow?.id) {
       throw new Error('Undangan tidak ditemukan atau sudah dipakai.')
+    }
+
+    if (inviteRow.status === 'active') {
+      if (inviteRow.member_user_id && inviteRow.member_user_id !== userId) {
+        throw new Error('Token invite sudah dipakai akun lain.')
+      }
+      return
+    }
+
+    if (inviteRow.status !== 'pending') {
+      throw new Error('Undangan tidak aktif.')
     }
 
     const { error: updateError } = await supabaseAdmin
@@ -6343,6 +6479,26 @@ function App() {
           {/* User profile section in Sidebar footer */}
           {!sidebarCollapsed && <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto">
             <div className="flex flex-col gap-3">
+              {workspaceContext?.ownerUserId && (
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceChatModalOpen(true)}
+                  className="relative flex items-center gap-3 p-3 rounded-xl border border-yellow-200 bg-[#FFF7C7] hover:bg-[#FFF3AE] text-yellow-950 transition-all active:scale-95 shadow-sm"
+                >
+                  {workspaceUnreadChatCount > 0 && (
+                    <span className="absolute -top-2 -right-2 min-w-[22px] h-6 px-1 rounded-full bg-red-500 text-white text-[11px] font-extrabold inline-flex items-center justify-center shadow-md border-2 border-white">
+                      {workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}
+                    </span>
+                  )}
+                  <div className="w-10 h-10 rounded-full bg-yellow-100 text-yellow-700 flex items-center justify-center shrink-0">
+                    <MessageSquare size={18} />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <h4 className="text-sm font-bold truncate">{workspaceChatButtonTitle}</h4>
+                    <p className="text-[11px] text-yellow-800/80 truncate">Ruang chat owner dan assistant</p>
+                  </div>
+                </button>
+              )}
               <button
                 onClick={() => setIsProfileModalOpen(true)}
                 className="flex items-center gap-3 p-3 rounded-xl bg-[#FFF08A] hover:bg-[#FFF08A]/90 transition-all active:scale-95 cursor-pointer group shadow-sm"
@@ -8918,7 +9074,7 @@ function App() {
                   <div className="flex gap-3 pt-1">
                     <button
                       onClick={async () => {
-                        if (!actorUserId || !activeIntegrationModal) return
+                        if (!scopedUserId || !activeIntegrationModal) return
                         const updated = { ...integrationConfigs }
                         delete updated[activeIntegrationModal]
                         setIntegrationConfigs(updated)
@@ -8926,7 +9082,7 @@ function App() {
                         const { error } = await supabase
                           .from('user_integration_configs')
                           .upsert({
-                            user_id: actorUserId,
+                            user_id: scopedUserId,
                             configs: updated
                           }, { onConflict: 'user_id' })
 
@@ -9574,6 +9730,114 @@ function App() {
               <div className="pt-2 space-y-3">
                 <button type="submit" className="w-full py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Buat Folder</button>
                 <button type="button" onClick={() => setShowNewFolderModal(false)} className="w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {workspaceChatModalOpen && (
+        <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setWorkspaceChatModalOpen(false)}>
+          <div className="w-full max-w-2xl rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Workspace Chat</p>
+                <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574] dark:text-purple-100">Chat Owner & Assistant</h3>
+                <p className="mt-1 text-xs text-purple-400 dark:text-purple-300">Diskusi kerja realtime untuk owner dan assistant.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWorkspaceChatModalOpen(false)}
+                className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400 hover:bg-purple-50 flex items-center justify-center"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-5 h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
+              {workspaceChatMessages.length === 0 ? (
+                <p className="text-xs text-purple-400">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
+              ) : workspaceChatMessages.map(item => {
+                const isMine = item?.metadata?.senderUserId === actorUserId
+                const isReminderMessage = item?.metadata?.reminderType && item?.metadata?.senderRole === 'assistant'
+                const canConfirmReminder = workspaceRole === 'owner' && !isMine && isReminderMessage && !workspaceChatAcknowledgedIds.has(item.id)
+                const sentTime = new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                const readLabel = workspaceChatAcknowledgedIds.has(item.id) ? 'Read' : 'Sent'
+                const mineBubbleClass = isReminderMessage
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-[#8f75d8] text-white'
+                const incomingBubbleClass = isReminderMessage
+                  ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                  : 'bg-white border border-purple-100 text-[#4f4574]'
+                return (
+                  <div key={item.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`flex items-end gap-2 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
+                        <p className="text-[10px] font-bold opacity-80">{item?.metadata?.senderName || 'User'}</p>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{item.detail}</p>
+                        {workspaceChatAcknowledgedIds.has(item.id) && (
+                          <p className="mt-1 text-[10px] font-bold opacity-80">Dikonfirmasi dibaca</p>
+                        )}
+                        {canConfirmReminder && (
+                          <button
+                            type="button"
+                            onClick={() => sendWorkspaceReminderAck(item.id)}
+                            className="mt-2 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                          >
+                            Konfirmasi Dibaca
+                          </button>
+                        )}
+                      </div>
+                      <div className={`pb-1 min-w-[48px] ${isMine ? 'text-right' : 'text-left'}`}>
+                        <p className="text-[10px] font-semibold text-purple-400">{sentTime}</p>
+                        <p className="text-[10px] font-bold text-purple-300">{readLabel}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <form onSubmit={handleSendWorkspaceChatMessage} className="mt-4 space-y-4">
+              {isAssistantWorkspace && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">Pengingat Cepat</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => sendQuickWorkspaceReminder('task')} className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-bold hover:bg-amber-200">Task Hari Ini</button>
+                    <button type="button" onClick={() => sendQuickWorkspaceReminder('event')} className="px-2.5 py-1 rounded-lg bg-sky-100 text-sky-700 text-[10px] font-bold hover:bg-sky-200">Event Hari Ini</button>
+                    <button type="button" onClick={() => sendQuickWorkspaceReminder('gcall')} className="px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 text-[10px] font-bold hover:bg-indigo-200">GCall Hari Ini</button>
+                    <button type="button" onClick={() => sendQuickWorkspaceReminder('deadline')} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 text-[10px] font-bold hover:bg-rose-200">Deadline Hari Ini</button>
+                  </div>
+                </div>
+              )}
+
+              <textarea
+                value={workspaceChatMessage}
+                onChange={(e) => setWorkspaceChatMessage(e.target.value)}
+                rows={1}
+                maxLength={500}
+                placeholder="Tulis pesan untuk owner/assistant..."
+                className="w-full h-20 rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 px-4 py-3 text-sm text-[#4f4574] dark:text-purple-100 resize-none focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                autoFocus
+              />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] font-semibold text-purple-300">{workspaceChatMessage.trim().length}/500</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceChatModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-purple-100 text-xs font-bold text-purple-500 hover:bg-purple-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={workspaceChatSending || !workspaceChatMessage.trim()}
+                    className="px-4 py-2 rounded-xl bg-[#8f75d8] text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {workspaceChatSending ? 'Mengirim...' : 'Kirim Pesan'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
