@@ -652,31 +652,49 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 0;
   position: sticky;
   top: 0;
   z-index: 10;
+  overflow-x: hidden;
+  transition: padding 220ms ease, background 220ms ease, border-color 220ms ease;
 }
 
 .sidebar-floating {
+  width: auto;
+  max-width: calc(100% - 32px);
   margin: 16px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 22px;
   box-shadow: 0 16px 38px rgba(75, 47, 138, 0.28);
   height: calc(100vh - 32px);
   backdrop-filter: blur(6px);
+  transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, border-color 220ms ease;
 }
 
 .layout-grid.sidebar-collapsed {
-  grid-template-columns: 92px 1fr;
+  grid-template-columns: 110px 1fr;
 }
 
 .sidebar.collapsed {
-  padding: 16px 10px;
+  padding: 12px 7px;
+  width: auto;
 }
 
 .sidebar.collapsed .nav-link {
   justify-content: center;
   padding: 12px 10px;
+}
+
+.sidebar .nav-link > span,
+.sidebar .sidebar-footer-fixed {
+  transition: opacity 150ms ease, transform 180ms ease;
+}
+
+.sidebar.collapsed .nav-link > span,
+.sidebar.collapsed .sidebar-footer-fixed {
+  opacity: 0;
+  transform: translateX(-6px);
 }
 
 @media (max-width: 968px) {
@@ -693,6 +711,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   padding: 11px 16px;
   border-radius: 12px;
   color: rgba(255, 255, 255, 0.86);
@@ -707,7 +726,10 @@
   font-size: 0.92rem;
   line-height: 1.1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 500;
+  min-width: 0;
 }
 
 .nav-link svg {
@@ -734,6 +756,26 @@
   border-color: rgba(255, 255, 255, 0.26);
 }
 
+.sidebar-nav-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+}
+
+.sidebar-footer-fixed {
+  flex-shrink: 0;
+}
+
 :root.dark .sidebar {
   background: linear-gradient(180deg, rgba(58, 38, 97, 0.96) 0%, rgba(44, 29, 77, 0.96) 100%);
   border-color: rgba(167, 139, 250, 0.2);
@@ -751,6 +793,11 @@
 :root.dark .nav-link:hover {
   background-color: rgba(255, 255, 255, 0.16);
   color: #ffffff;
+}
+
+main {
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /* Custom cards */

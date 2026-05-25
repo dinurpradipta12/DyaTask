@@ -236,3 +236,47 @@ ipcMain.on('focus-main-window', () => {
   mainWindow.show();
   mainWindow.focus();
 });
+
+ipcMain.handle('export-invoice-pdf', async (_event, payload = {}) => {
+  const html = String(payload.html || '').trim();
+  const fileName = String(payload.fileName || 'invoice.pdf');
+  if (!html) return { ok: false, error: 'HTML invoice kosong.' };
+
+  const pdfWindow = new BrowserWindow({
+    width: 1240,
+    height: 1754,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  try {
+    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    await new Promise((resolve) => {
+      pdfWindow.webContents.once('did-finish-load', resolve);
+    });
+
+    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { marginType: 'none' },
+      preferCSSPageSize: true
+    });
+
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow || undefined, {
+      defaultPath: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+
+    if (canceled || !filePath) return { ok: false, canceled: true };
+
+    fs.writeFileSync(filePath, pdfBuffer);
+    return { ok: true, filePath };
+  } catch (error) {
+    return { ok: false, error: error.message || 'Gagal export PDF.' };
+  } finally {
+    if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
+  }
+});

@@ -47,6 +47,10 @@ import {
   MessageSquare,
   CalendarClock,
   BadgeDollarSign,
+  Palette,
+  Mic2,
+  SlidersHorizontal,
+  Clipboard,
   MoreHorizontal,
   X
 } from 'lucide-react'
@@ -129,9 +133,16 @@ const initialNotes = [
 ]
 
 const TEAM_PERMISSION_DEFAULTS = {
+  dashboard: true,
   tasks: true,
-  reservations: true,
+  calendar: true,
   orders: true,
+  designOrders: true,
+  generalOrders: true,
+  mentoringSchedule: true,
+  contentPlanner: true,
+  invoiceFollowUp: true,
+  invoiceGenerator: true,
   crm: true,
   finance: true,
   reports: true,
@@ -141,9 +152,16 @@ const TEAM_PERMISSION_DEFAULTS = {
 }
 
 const TEAM_PERMISSION_LABELS = {
+  dashboard: 'Dashboard',
   tasks: 'Tasks & Project',
-  reservations: 'Reservasi',
-  orders: 'Spreadsheet Order',
+  calendar: 'Reservasi & Jadwal',
+  orders: 'Order Spreadsheet',
+  designOrders: 'Pages Design Order',
+  generalOrders: 'Pages Orderan (General)',
+  mentoringSchedule: 'Pages Mentoring/Speaker',
+  contentPlanner: 'Content Planner',
+  invoiceFollowUp: 'Invoice Payment & Follow Up',
+  invoiceGenerator: 'Invoice Generator',
   crm: 'Client CRM',
   finance: 'Finance & Invoice',
   reports: 'Reports',
@@ -152,10 +170,47 @@ const TEAM_PERMISSION_LABELS = {
   settings: 'Settings'
 }
 
+const normalizeTeamPermissions = (rawPermissions = {}) => {
+  const normalized = { ...TEAM_PERMISSION_DEFAULTS, ...(rawPermissions || {}) }
+  if (normalized.calendar == null && rawPermissions?.reservations != null) normalized.calendar = !!rawPermissions.reservations
+  if (normalized.designOrders == null && rawPermissions?.orders != null) normalized.designOrders = !!rawPermissions.orders
+  if (normalized.generalOrders == null && rawPermissions?.orders != null) normalized.generalOrders = !!rawPermissions.orders
+  if (normalized.contentPlanner == null && rawPermissions?.tasks != null) normalized.contentPlanner = !!rawPermissions.tasks
+  if (normalized.mentoringSchedule == null && rawPermissions?.reservations != null) normalized.mentoringSchedule = !!rawPermissions.reservations
+  if (normalized.invoiceFollowUp == null && rawPermissions?.finance != null) normalized.invoiceFollowUp = !!rawPermissions.finance
+  if (normalized.invoiceGenerator == null && rawPermissions?.finance != null) normalized.invoiceGenerator = !!rawPermissions.finance
+  return normalized
+}
+
 const WORKSPACE_ROLE_LABELS = {
   owner: 'Owner',
   assistant: 'Assistant',
   viewer: 'Viewer'
+}
+
+const SPREADSHEET_ORDER_TYPES = ['Dashboard', 'Automation', 'Reporting', 'Template', 'Fixing']
+const DESIGN_ORDER_TYPES = ['Logo Brand', 'Visual Identity', 'UI/UX App', 'Social Media Kit', 'Pitch Deck Design', 'Design Revision']
+const GENERAL_ORDER_TYPES = ['Admin Support', 'Research', 'Data Entry', 'Customer Service', 'Personal Assistant', 'Project Coordination']
+const PAGE_CONTROL_CONFIG_KEY = '__page_control_enabled_pages'
+const CONTENT_PLANNER_CONFIG_KEY = '__content_planner_items'
+
+const PAGE_TOGGLE_DEFAULTS = {
+  dashboard: true,
+  tasks: true,
+  calendar: true,
+  orders: true,
+  designOrders: true,
+  generalOrders: true,
+  mentoringSchedule: true,
+  contentPlanner: true,
+  invoiceFollowUp: true,
+  invoiceGenerator: true,
+  crm: true,
+  finance: true,
+  reports: true,
+  notes: true,
+  integrations: true,
+  settings: true
 }
 
 function App() {
@@ -178,7 +233,8 @@ function App() {
   const [showAuthPassword, setShowAuthPassword] = useState(false)
 
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false)
+  const [enabledPages, setEnabledPages] = useState(PAGE_TOGGLE_DEFAULTS)
   const [appHeaderTagline, setAppHeaderTagline] = useState(() => localStorage.getItem('dyatask_header_tagline') || 'Modern Soft Minimalist Amethyst')
   const [appHeaderTitle, setAppHeaderTitle] = useState(() => localStorage.getItem('dyatask_header_title') || 'Dyatask Manager - Superapp for Freelancer')
   const [headerNow, setHeaderNow] = useState(new Date())
@@ -225,6 +281,20 @@ function App() {
   const [showNewFolderModal, setShowNewFolderModal] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [newFolderColor, setNewFolderColor] = useState('#8B5CF6')
+  const [contentPlannerItems, setContentPlannerItems] = useState([])
+  const [contentPlannerPlatform, setContentPlannerPlatform] = useState('instagram')
+  const [contentPlannerEditingId, setContentPlannerEditingId] = useState(null)
+  const [contentPlannerTitle, setContentPlannerTitle] = useState('')
+  const [contentPlannerPillar, setContentPlannerPillar] = useState('')
+  const [contentPlannerDate, setContentPlannerDate] = useState(todayString)
+  const [contentPlannerTime, setContentPlannerTime] = useState('09:00')
+  const [contentPlannerStatus, setContentPlannerStatus] = useState('draft')
+  const [contentPlannerPostLink, setContentPlannerPostLink] = useState('')
+  const [contentPlannerInsightLink, setContentPlannerInsightLink] = useState('')
+  const [contentPlannerMoreOpenId, setContentPlannerMoreOpenId] = useState(null)
+  const [contentPlannerLinkEditId, setContentPlannerLinkEditId] = useState(null)
+  const [contentPlannerLinkDraft, setContentPlannerLinkDraft] = useState('')
+  const [contentPlannerMoreMenuPos, setContentPlannerMoreMenuPos] = useState({ top: 0, left: 0 })
 
   // Booking state
   const [appointments, setAppointments] = useState(initialAppointments)
@@ -417,6 +487,27 @@ function App() {
   const [invoiceDueDate, setInvoiceDueDate] = useState(todayString)
   const [invoiceStatus, setInvoiceStatus] = useState('draft')
   const [invoiceNotes, setInvoiceNotes] = useState('')
+  const [invoiceGeneratorEditingId, setInvoiceGeneratorEditingId] = useState(null)
+  const [invoiceGeneratorLogo, setInvoiceGeneratorLogo] = useState('')
+  const [invoiceGeneratorNumber, setInvoiceGeneratorNumber] = useState('')
+  const [invoiceGeneratorDate, setInvoiceGeneratorDate] = useState(todayString)
+  const [invoiceGeneratorDueDate, setInvoiceGeneratorDueDate] = useState(todayString)
+  const [invoiceGeneratorCompany, setInvoiceGeneratorCompany] = useState('DyaTask Studio')
+  const [invoiceGeneratorTagline, setInvoiceGeneratorTagline] = useState('Freelance Service Invoice')
+  const [invoiceGeneratorClient, setInvoiceGeneratorClient] = useState('')
+  const [invoiceGeneratorClientAddress, setInvoiceGeneratorClientAddress] = useState('')
+  const [invoiceGeneratorShipTo, setInvoiceGeneratorShipTo] = useState('')
+  const [invoiceGeneratorService, setInvoiceGeneratorService] = useState('')
+  const [invoiceGeneratorServiceDesc, setInvoiceGeneratorServiceDesc] = useState('')
+  const [invoiceGeneratorQty, setInvoiceGeneratorQty] = useState(1)
+  const [invoiceGeneratorPrice, setInvoiceGeneratorPrice] = useState(0)
+  const [invoiceGeneratorPaymentInfo, setInvoiceGeneratorPaymentInfo] = useState('Bank: BCA\nA/N: DyaTask\nNo. Rek: 1234567890')
+  const [invoiceGeneratorTerms, setInvoiceGeneratorTerms] = useState('Pembayaran maksimal sebelum jatuh tempo.')
+  const [invoiceGeneratorSigner, setInvoiceGeneratorSigner] = useState('')
+  const [invoiceGeneratorSignature, setInvoiceGeneratorSignature] = useState('')
+  const [invoiceGeneratorSourceOrderId, setInvoiceGeneratorSourceOrderId] = useState(null)
+  const [invoiceGeneratorStatus, setInvoiceGeneratorStatus] = useState('draft')
+  const [showInvoiceGeneratorForm, setShowInvoiceGeneratorForm] = useState(true)
   const [crmClients, setCrmClients] = useState([])
   const [crmActivities, setCrmActivities] = useState([])
   const [showCrmForm, setShowCrmForm] = useState(false)
@@ -468,6 +559,8 @@ function App() {
   const [workspaceInviteToken, setWorkspaceInviteToken] = useState('')
   const [workspaceInvitePermissions, setWorkspaceInvitePermissions] = useState({ ...TEAM_PERMISSION_DEFAULTS })
   const [teamLoading, setTeamLoading] = useState(false)
+  const [pageAccessMemberId, setPageAccessMemberId] = useState(null)
+  const [pageAccessDraftPermissions, setPageAccessDraftPermissions] = useState({ ...TEAM_PERMISSION_DEFAULTS })
   const [migrationOneClickCopied, setMigrationOneClickCopied] = useState(false)
   const [pendingInviteToken, setPendingInviteToken] = useState(() => localStorage.getItem('dyatask_pending_workspace_invite_token') || '')
   const [inviteLandingToken, setInviteLandingToken] = useState(() => localStorage.getItem('dyatask_pending_workspace_invite_token') || '')
@@ -494,10 +587,13 @@ function App() {
   const [floatingTaskTitle, setFloatingTaskTitle] = useState('')
   const [showQuickTaskModal, setShowQuickTaskModal] = useState(false)
   const [showQuickBookingModal, setShowQuickBookingModal] = useState(false)
+  const sidebarHoverTimerRef = useRef(null)
+  const contentPlannerAutosaveTimerRef = useRef(null)
   const currentDeployVersionRef = useRef(import.meta.env.VITE_DEPLOY_COMMIT || 'dev')
   const announcedDeployVersionRef = useRef('')
   const dismissedDeployVersionRef = useRef(localStorage.getItem('dyatask_dismissed_deploy_version') || '')
   const seenAssistantNoteIdsRef = useRef(new Set())
+  const invoicePreviewRef = useRef(null)
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -508,6 +604,7 @@ function App() {
 
   // Integration config state (synced with Supabase per user; localStorage used only as temporary fallback)
   const [integrationConfigs, setIntegrationConfigs] = useState({})
+  const [integrationConfigsLoaded, setIntegrationConfigsLoaded] = useState(false)
   const [activeIntegrationModal, setActiveIntegrationModal] = useState(null) // 'google_calendar' | 'notion' | 'email' | 'google_sheets'
   const [activeTutorialModal, setActiveTutorialModal] = useState(null)
   const [integrationFormData, setIntegrationFormData] = useState({})
@@ -527,15 +624,65 @@ function App() {
   const actorUserId = session?.user?.id || null
   const scopedUserId = workspaceContext?.ownerUserId || actorUserId
   const workspaceRole = workspaceContext?.role || 'owner'
-  const workspacePermissions = { ...TEAM_PERMISSION_DEFAULTS, ...(workspaceContext?.permissions || {}) }
+  const workspacePermissions = normalizeTeamPermissions(workspaceContext?.permissions || {})
   const canManageTeam = workspaceRole === 'owner'
   const hasWritePermission = (areaKey) => workspaceRole === 'owner' || (workspaceRole === 'assistant' && !!workspacePermissions?.[areaKey])
   const canReadArea = (areaKey) => workspaceRole === 'owner' || !!workspacePermissions?.[areaKey] || areaKey === 'reports'
+  const pageControlStorageKey = scopedUserId ? `dyatask_enabled_pages_${scopedUserId}` : 'dyatask_enabled_pages_guest'
+  const isPageEnabled = (pageKey) => enabledPages?.[pageKey] !== false
+
+  const canShowTab = (tabKey) => {
+    const tabToPage = {
+      dashboard: 'dashboard',
+      tasks: 'tasks',
+      calendar: 'calendar',
+      orders: 'orders',
+      designOrders: 'designOrders',
+      generalOrders: 'generalOrders',
+      mentoringSchedule: 'mentoringSchedule',
+      contentPlanner: 'contentPlanner',
+      invoiceFollowUp: 'invoiceFollowUp',
+      invoiceGenerator: 'invoiceGenerator',
+      crm: 'crm',
+      finance: 'finance',
+      reports: 'reports',
+      notes: 'notes',
+      integrations: 'integrations',
+      settings: 'settings'
+    }
+    const pageKey = tabToPage[tabKey]
+    return !pageKey || isPageEnabled(pageKey)
+  }
+
+  const togglePageEnabled = (pageKey) => {
+    setEnabledPages(prev => ({ ...prev, [pageKey]: !(prev?.[pageKey] !== false) }))
+  }
+
+  const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
+    .filter(tab => canShowTab(tab))
+  const sidebarCollapsed = !isMobileTabletView && !isSidebarHovered
+
+  const handleSidebarMouseEnter = () => {
+    if (isMobileTabletView) return
+    if (sidebarHoverTimerRef.current) clearTimeout(sidebarHoverTimerRef.current)
+    sidebarHoverTimerRef.current = setTimeout(() => {
+      setIsSidebarHovered(true)
+    }, 120)
+  }
+
+  const handleSidebarMouseLeave = () => {
+    if (sidebarHoverTimerRef.current) clearTimeout(sidebarHoverTimerRef.current)
+    setIsSidebarHovered(false)
+  }
 
   useEffect(() => {
     const handleViewportResize = () => setIsMobileTabletView(window.innerWidth <= 1180)
     window.addEventListener('resize', handleViewportResize)
-    return () => window.removeEventListener('resize', handleViewportResize)
+    return () => {
+      window.removeEventListener('resize', handleViewportResize)
+      if (sidebarHoverTimerRef.current) clearTimeout(sidebarHoverTimerRef.current)
+      if (contentPlannerAutosaveTimerRef.current) clearTimeout(contentPlannerAutosaveTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -551,6 +698,112 @@ function App() {
   }, [isMobileTabletView, activeTab])
 
   useEffect(() => {
+    if (editingOrderId) return
+    if (activeTab === 'designOrders') {
+      setNewOrderType(DESIGN_ORDER_TYPES[0])
+      return
+    }
+    if (activeTab === 'generalOrders') {
+      setNewOrderType(GENERAL_ORDER_TYPES[0])
+      return
+    }
+    if (activeTab === 'orders') {
+      setNewOrderType(SPREADSHEET_ORDER_TYPES[0])
+    }
+  }, [activeTab, editingOrderId])
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(pageControlStorageKey) || '{}')
+      setEnabledPages({ ...PAGE_TOGGLE_DEFAULTS, ...(saved || {}) })
+    } catch {
+      setEnabledPages(PAGE_TOGGLE_DEFAULTS)
+    }
+  }, [pageControlStorageKey])
+
+  useEffect(() => {
+    localStorage.setItem(pageControlStorageKey, JSON.stringify(enabledPages))
+  }, [enabledPages, pageControlStorageKey])
+
+  useEffect(() => {
+    if (!integrationConfigsLoaded) return
+    const cloudPages = integrationConfigs?.[PAGE_CONTROL_CONFIG_KEY]
+    if (!cloudPages || typeof cloudPages !== 'object') return
+    setEnabledPages(prev => {
+      const merged = { ...PAGE_TOGGLE_DEFAULTS, ...cloudPages }
+      return JSON.stringify(prev) === JSON.stringify(merged) ? prev : merged
+    })
+  }, [integrationConfigsLoaded, integrationConfigs, scopedUserId])
+
+  useEffect(() => {
+    if (!integrationConfigsLoaded) return
+    const cloudItems = integrationConfigs?.[CONTENT_PLANNER_CONFIG_KEY]
+    if (!Array.isArray(cloudItems)) return
+    setContentPlannerItems(cloudItems.map((item) => ({
+      id: item.id || `content-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+      platform: item.platform || 'instagram',
+      status: item.status || 'draft',
+      uploadDate: item.uploadDate || todayString,
+      uploadTime: item.uploadTime || '09:00',
+      pillar: item.pillar || '',
+      title: item.title || '',
+      postLink: item.postLink || '',
+      insightLink: item.insightLink || '',
+      taskId: item.taskId || null
+    })))
+  }, [integrationConfigsLoaded, integrationConfigs, todayString])
+
+  useEffect(() => {
+    if (!scopedUserId || !integrationConfigsLoaded) return
+    const mergedPages = { ...PAGE_TOGGLE_DEFAULTS, ...(enabledPages || {}) }
+    const currentCloudPages = integrationConfigs?.[PAGE_CONTROL_CONFIG_KEY] || null
+    if (JSON.stringify(currentCloudPages) === JSON.stringify(mergedPages)) return
+
+    const nextConfigs = { ...integrationConfigs, [PAGE_CONTROL_CONFIG_KEY]: mergedPages }
+    setIntegrationConfigs(nextConfigs)
+    supabase
+      .from('user_integration_configs')
+      .upsert({
+        user_id: scopedUserId,
+        configs: nextConfigs
+      }, { onConflict: 'user_id' })
+      .then(({ error }) => {
+        if (error) console.warn('Gagal sinkron Atur Halaman ke Supabase:', error.message)
+      })
+  }, [enabledPages, scopedUserId, integrationConfigsLoaded, integrationConfigs])
+
+  useEffect(() => {
+    if (!scopedUserId) return
+    const currentCloudItems = integrationConfigs?.[CONTENT_PLANNER_CONFIG_KEY] || []
+    if (JSON.stringify(currentCloudItems) === JSON.stringify(contentPlannerItems)) return
+
+    if (contentPlannerAutosaveTimerRef.current) clearTimeout(contentPlannerAutosaveTimerRef.current)
+    contentPlannerAutosaveTimerRef.current = setTimeout(() => {
+      const nextConfigs = { ...integrationConfigs, [CONTENT_PLANNER_CONFIG_KEY]: contentPlannerItems }
+      setIntegrationConfigs(nextConfigs)
+      supabase
+        .from('user_integration_configs')
+        .upsert({
+          user_id: scopedUserId,
+          configs: nextConfigs
+        }, { onConflict: 'user_id' })
+        .then(({ error }) => {
+          if (error) console.warn('Gagal autosave Content Planner ke Supabase:', error.message)
+        })
+    }, 400)
+
+    return () => {
+      if (contentPlannerAutosaveTimerRef.current) clearTimeout(contentPlannerAutosaveTimerRef.current)
+    }
+  }, [contentPlannerItems, scopedUserId, integrationConfigs])
+
+  useEffect(() => {
+    if (!invoiceGeneratorNumber) {
+      setInvoiceGeneratorNumber(buildAutoInvoiceNumber())
+    }
+  }, [invoices])
+
+  useEffect(() => {
     const areaByTab = {
       dashboard: 'reports',
       tasks: 'tasks',
@@ -559,6 +812,12 @@ function App() {
       integrations: 'integrations',
       settings: 'settings',
       orders: 'orders',
+      designOrders: 'orders',
+      generalOrders: 'orders',
+      mentoringSchedule: 'reservations',
+      contentPlanner: 'tasks',
+      invoiceFollowUp: 'finance',
+      invoiceGenerator: 'finance',
       finance: 'finance',
       crm: 'crm',
       reports: 'reports'
@@ -568,6 +827,13 @@ function App() {
       setActiveTab('dashboard')
     }
   }, [activeTab, workspaceRole, workspacePermissions])
+
+  useEffect(() => {
+    if (activeTab === 'pageControl') return
+    if (!canShowTab(activeTab)) {
+      setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
+    }
+  }, [activeTab, enabledPages, visiblePrimaryTabs])
   const isPublicBookingMode = !!publicBookingToken
   const isPublicTrackingMode = !!publicTrackingToken
 
@@ -751,8 +1017,28 @@ function App() {
   const normalizedPublicShareBaseUrl = publicShareBaseUrl.trim().replace(/\/+$/, '')
   const currentAppBaseUrl = `${window.location.origin}${window.location.pathname}`.replace(/\/+$/, '')
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
-  const selectedSpreadsheetOrder = spreadsheetOrders.find(order => order.id === selectedOrderId) || spreadsheetOrders[0] || null
-  const sortedSpreadsheetOrders = [...spreadsheetOrders].sort((a, b) => {
+  const activeOrderPageMode = activeTab === 'designOrders' ? 'design' : activeTab === 'generalOrders' ? 'general' : 'spreadsheet'
+  const isDesignOrderPage = activeTab === 'designOrders'
+  const isGeneralOrderPage = activeTab === 'generalOrders'
+  const orderTypeOptions = isDesignOrderPage
+    ? DESIGN_ORDER_TYPES
+    : isGeneralOrderPage
+      ? GENERAL_ORDER_TYPES
+      : SPREADSHEET_ORDER_TYPES
+  const orderTypeMatchers = {
+    spreadsheet: (value) => SPREADSHEET_ORDER_TYPES.includes(value) || /dashboard|automation|reporting|template|fixing/i.test(value),
+    design: (value) => DESIGN_ORDER_TYPES.includes(value) || /design|ui|ux|branding|logo|poster|konten|feed|thumbnail|creative|identity/i.test(value),
+    general: (value) => GENERAL_ORDER_TYPES.includes(value) || (!DESIGN_ORDER_TYPES.includes(value) && !SPREADSHEET_ORDER_TYPES.includes(value))
+  }
+  const filteredSpreadsheetOrders = spreadsheetOrders.filter(order => {
+    const orderTypeValue = String(order.orderType || '')
+    if (activeOrderPageMode === 'spreadsheet') return orderTypeMatchers.spreadsheet(orderTypeValue)
+    if (activeOrderPageMode === 'design') return orderTypeMatchers.design(orderTypeValue)
+    if (activeOrderPageMode === 'general') return orderTypeMatchers.general(orderTypeValue)
+    return true
+  })
+  const selectedSpreadsheetOrder = filteredSpreadsheetOrders.find(order => order.id === selectedOrderId) || filteredSpreadsheetOrders[0] || null
+  const sortedSpreadsheetOrders = [...filteredSpreadsheetOrders].sort((a, b) => {
     const aDone = ['completed', 'done'].includes((a.status || '').toLowerCase())
     const bDone = ['completed', 'done'].includes((b.status || '').toLowerCase())
     if (aDone !== bDone) return aDone ? 1 : -1
@@ -796,6 +1082,14 @@ function App() {
   const crmActivitiesStorageKey = scopedUserId ? `dyatask_crm_activities_${scopedUserId}` : 'dyatask_crm_activities_guest'
   const filteredInvoices = invoices.filter((item) => invoiceFilterStatus === 'all' || item.status === invoiceFilterStatus)
   const openTaskCount = tasks.filter(item => item.status !== 'done' && item.parentTaskId == null).length
+  const contentPlannerPlatforms = [
+    { key: 'instagram', label: 'Instagram' },
+    { key: 'tiktok', label: 'TikTok' },
+    { key: 'threads', label: 'Threads' }
+  ]
+  const contentPlannerItemsByPlatform = contentPlannerItems
+    .filter(item => (item.platform || 'instagram') === contentPlannerPlatform)
+    .sort((a, b) => `${a.uploadDate || ''} ${a.uploadTime || ''}`.localeCompare(`${b.uploadDate || ''} ${b.uploadTime || ''}`))
   const upcomingMeetingCount = appointments.filter(item => {
     const value = String(item.date || '')
     return value >= todayString
@@ -1201,10 +1495,25 @@ function App() {
   const workspaceChatMessages = activityLogs
     .filter(item => item?.metadata?.kind === 'workspace_chat')
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    .slice(-80)
+    .slice(-300)
   const workspaceChatAcknowledgements = activityLogs
     .filter(item => item?.metadata?.kind === 'workspace_chat_ack' && item?.metadata?.ackForMessageId)
   const workspaceChatAcknowledgedIds = new Set(workspaceChatAcknowledgements.map(item => item.metadata.ackForMessageId))
+  const workspaceChatItemsWithDateSeparator = workspaceChatMessages.reduce((acc, item) => {
+    const messageDate = new Date(item.createdAt)
+    const dateKey = `${messageDate.getFullYear()}-${String(messageDate.getMonth() + 1).padStart(2, '0')}-${String(messageDate.getDate()).padStart(2, '0')}`
+    const lastDateKey = acc.length ? acc[acc.length - 1]?.__dateKey : null
+    if (dateKey !== lastDateKey) {
+      acc.push({
+        id: `date-separator-${dateKey}`,
+        __type: 'date_separator',
+        __dateKey: dateKey,
+        label: messageDate.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+      })
+    }
+    acc.push({ ...item, __type: 'message', __dateKey: dateKey })
+    return acc
+  }, [])
   const workspaceUnreadChatCount = workspaceChatMessages.filter(item => (
     item?.metadata?.senderUserId
     && item.metadata.senderUserId !== actorUserId
@@ -1986,7 +2295,7 @@ function App() {
           setWorkspaceContext({
             ownerUserId: preferredRow.owner_user_id,
             role: preferredRow.role || 'owner',
-            permissions: { ...TEAM_PERMISSION_DEFAULTS, ...(preferredRow.permissions || {}) }
+            permissions: normalizeTeamPermissions(preferredRow.permissions || {})
           })
           await resolveWorkspaceOwnerName(preferredRow.owner_user_id)
           return
@@ -2013,7 +2322,7 @@ function App() {
       setWorkspaceContext({
         ownerUserId: row.owner_user_id,
         role: row.role || 'owner',
-        permissions: { ...TEAM_PERMISSION_DEFAULTS, ...(row.permissions || {}) }
+        permissions: normalizeTeamPermissions(row.permissions || {})
       })
       await resolveWorkspaceOwnerName(row.owner_user_id)
     }
@@ -2061,7 +2370,7 @@ function App() {
         role: item.role,
         status: item.status,
         inviteToken: item.invite_token,
-        permissions: { ...TEAM_PERMISSION_DEFAULTS, ...(item.permissions || {}) },
+        permissions: normalizeTeamPermissions(item.permissions || {}),
         acceptedAt: item.accepted_at,
         createdAt: item.created_at
       }))
@@ -2205,7 +2514,10 @@ function App() {
   }, [session])
 
   useEffect(() => {
-    if (!scopedUserId) return
+    if (!scopedUserId) {
+      setIntegrationConfigsLoaded(false)
+      return
+    }
 
     const loadIntegrationConfigs = async () => {
       const { data, error } = await supabase
@@ -2216,6 +2528,7 @@ function App() {
 
       if (error) {
         console.error('Error loading integration configs:', error)
+        setIntegrationConfigsLoaded(true)
         return
       }
 
@@ -2246,13 +2559,26 @@ function App() {
           setIntegrationConfigs({})
         }
 
+        setIntegrationConfigsLoaded(true)
         return
       }
 
       setIntegrationConfigs(data.configs || {})
+      setIntegrationConfigsLoaded(true)
     }
 
     loadIntegrationConfigs()
+
+    const configChannel = supabase
+      .channel(`user_integration_configs_${scopedUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_integration_configs', filter: `user_id=eq.${scopedUserId}` }, () => {
+        loadIntegrationConfigs()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(configChannel)
+    }
   }, [scopedUserId])
 
   useEffect(() => {
@@ -2990,6 +3316,25 @@ function App() {
     })
   }
 
+  const handleClearWorkspaceChat = async () => {
+    if (workspaceRole !== 'owner') {
+      alert('Hanya owner yang bisa clear chat.')
+      return
+    }
+    const ok = window.confirm('Hapus semua history chat owner-assistant?')
+    if (!ok) return
+    const { error } = await supabase
+      .from('activity_logs')
+      .delete()
+      .eq('user_id', scopedUserId)
+      .eq('event_type', 'Workspace Chat')
+    if (error) {
+      alert(`Gagal clear chat: ${error.message}`)
+      return
+    }
+    setActivityLogs(prev => prev.filter(item => item?.type !== 'Workspace Chat'))
+  }
+
   useEffect(() => {
     if (!workspaceChatModalOpen) return
     setWorkspaceChatLastReadAt(Date.now())
@@ -3338,6 +3683,161 @@ function App() {
     setNewFolderName('')
     setNewFolderColor('#8B5CF6')
     setShowNewFolderModal(false)
+  }
+
+  const resetContentPlannerForm = () => {
+    setContentPlannerEditingId(null)
+    setContentPlannerTitle('')
+    setContentPlannerPillar('')
+    setContentPlannerDate(todayString)
+    setContentPlannerTime('09:00')
+    setContentPlannerStatus('draft')
+    setContentPlannerPostLink('')
+    setContentPlannerInsightLink('')
+  }
+
+  const syncContentPlannerTask = async (item, existingTaskId = null) => {
+    if (!hasWritePermission('tasks')) return existingTaskId
+    const payload = {
+      title: `[${(item.platform || 'instagram').toUpperCase()}] ${item.title}`,
+      category: `Content/${item.platform || 'instagram'}`,
+      priority: 'medium',
+      color_label: '#8B5CF6',
+      status: item.status === 'posted' ? 'done' : 'todo',
+      due_time: item.uploadTime || '09:00',
+      task_date: item.uploadDate || todayString,
+      has_reminder: true,
+      user_id: scopedUserId
+    }
+
+    if (existingTaskId) {
+      const { error } = await supabase.from('tasks').update(payload).eq('id', existingTaskId)
+      if (!error) {
+        setTasks(prev => prev.map(task => task.id === existingTaskId ? {
+          ...task,
+          title: payload.title,
+          category: payload.category,
+          dueTime: payload.due_time,
+          calendarDate: payload.task_date,
+          status: payload.status
+        } : task))
+        return existingTaskId
+      }
+    }
+
+    const { data, error } = await supabase.from('tasks').insert([{ ...payload, parent_task_id: null, task_type: 'task' }]).select()
+    if (error || !data?.[0]) return existingTaskId
+    const created = data[0]
+    setTasks(prev => [{
+      id: created.id,
+      title: created.title,
+      category: created.category,
+      priority: created.priority,
+      colorLabel: created.color_label,
+      status: created.status,
+      dueTime: created.due_time,
+      hasReminder: created.has_reminder,
+      parentTaskId: created.parent_task_id || null,
+      taskType: created.task_type || 'task',
+      calendarDate: created.task_date || todayString
+    }, ...prev])
+    return created.id
+  }
+
+  const handleSubmitContentPlanner = async (e) => {
+    e.preventDefault()
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin mengelola content planner.')
+      return
+    }
+    const trimmedTitle = contentPlannerTitle.trim()
+    if (!trimmedTitle) return
+
+    const baseItem = {
+      platform: contentPlannerPlatform,
+      status: contentPlannerStatus,
+      uploadDate: contentPlannerDate || todayString,
+      uploadTime: contentPlannerTime || '09:00',
+      pillar: contentPlannerPillar.trim(),
+      title: trimmedTitle,
+      postLink: contentPlannerPostLink.trim(),
+      insightLink: contentPlannerInsightLink.trim()
+    }
+
+    if (contentPlannerEditingId) {
+      const prevItem = contentPlannerItems.find(item => item.id === contentPlannerEditingId)
+      const nextTaskId = await syncContentPlannerTask(baseItem, prevItem?.taskId || null)
+      const updatedItem = { ...prevItem, ...baseItem, taskId: nextTaskId || prevItem?.taskId || null }
+      setContentPlannerItems(prev => prev.map(item => item.id === contentPlannerEditingId ? updatedItem : item))
+      triggerMockNotification('Content Planner Diperbarui', `${updatedItem.platform.toUpperCase()} • ${updatedItem.title}`, 'system')
+      resetContentPlannerForm()
+      return
+    }
+
+    const createdId = `content-${Date.now()}`
+    const nextTaskId = await syncContentPlannerTask(baseItem, null)
+    const createdItem = { id: createdId, ...baseItem, taskId: nextTaskId || null }
+    setContentPlannerItems(prev => [createdItem, ...prev])
+    triggerMockNotification('Konten Dijadwalkan', `${createdItem.platform.toUpperCase()} • ${createdItem.title} • ${createdItem.uploadDate} ${createdItem.uploadTime}`, 'reminder')
+    resetContentPlannerForm()
+  }
+
+  const handleEditContentPlanner = (item) => {
+    setContentPlannerEditingId(item.id)
+    setContentPlannerPlatform(item.platform || 'instagram')
+    setContentPlannerTitle(item.title || '')
+    setContentPlannerPillar(item.pillar || '')
+    setContentPlannerDate(item.uploadDate || todayString)
+    setContentPlannerTime(item.uploadTime || '09:00')
+    setContentPlannerStatus(item.status || 'draft')
+    setContentPlannerPostLink(item.postLink || '')
+    setContentPlannerInsightLink(item.insightLink || '')
+    setContentPlannerMoreOpenId(null)
+  }
+
+  const handleDeleteContentPlanner = async (itemId) => {
+    if (!hasWritePermission('tasks')) {
+      alert('Akun Anda tidak punya izin menghapus konten planner.')
+      return
+    }
+    const target = contentPlannerItems.find(item => item.id === itemId)
+    if (target?.taskId) {
+      await supabase.from('tasks').delete().eq('id', target.taskId)
+      setTasks(prev => prev.filter(task => task.id !== target.taskId))
+    }
+    setContentPlannerItems(prev => prev.filter(item => item.id !== itemId))
+    setContentPlannerMoreOpenId(null)
+  }
+
+  const handleStartContentPlannerLinkInput = (item) => {
+    setContentPlannerLinkEditId(item.id)
+    setContentPlannerLinkDraft(item.postLink || '')
+  }
+
+  const handleApplyContentPlannerLink = (itemId) => {
+    const safeLink = String(contentPlannerLinkDraft || '').trim()
+    setContentPlannerItems(prev => prev.map(item => item.id === itemId ? { ...item, postLink: safeLink } : item))
+    setContentPlannerLinkEditId(null)
+    setContentPlannerLinkDraft('')
+  }
+
+  const handleToggleContentPlannerMore = (event, itemId) => {
+    event.stopPropagation()
+    event.preventDefault()
+    if (contentPlannerMoreOpenId === itemId) {
+      setContentPlannerMoreOpenId(null)
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 112
+    const menuHeight = 84
+    const nextLeft = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, rect.right - menuWidth))
+    const nextTop = Math.min(window.innerHeight - menuHeight - 8, Math.max(8, rect.top - 8))
+    setContentPlannerMoreMenuPos({
+      top: nextTop,
+      left: nextLeft
+    })
+    setContentPlannerMoreOpenId(itemId)
   }
 
   // Add Task
@@ -3851,6 +4351,68 @@ function App() {
     localStorage.setItem(invoiceStorageKey, JSON.stringify(nextInvoices))
   }
 
+  const buildAutoInvoiceNumber = () => {
+    const ym = todayString.slice(0, 7).replace('-', '')
+    const monthInvoices = invoices.filter(item => String(item.issueDate || '').slice(0, 7) === todayString.slice(0, 7)).length + 1
+    return `INV-${ym}-${String(monthInvoices).padStart(4, '0')}`
+  }
+
+  const parseInvoiceGeneratorMeta = (noteValue) => {
+    const text = String(noteValue || '')
+    if (!text.startsWith('[IGMETA]')) return null
+    try {
+      return JSON.parse(text.slice(8))
+    } catch {
+      return null
+    }
+  }
+
+  const openInvoiceGeneratorFromOrder = (order) => {
+    const autoNumber = buildAutoInvoiceNumber()
+    setInvoiceGeneratorEditingId(null)
+    setInvoiceGeneratorNumber(autoNumber)
+    setInvoiceGeneratorDate(todayString)
+    setInvoiceGeneratorDueDate(order?.dueDate || todayString)
+    setInvoiceGeneratorClient(order?.customerName || '')
+    setInvoiceGeneratorClientAddress('')
+    setInvoiceGeneratorShipTo('')
+    setInvoiceGeneratorService(order?.orderType || 'Custom Service')
+    setInvoiceGeneratorServiceDesc(order?.orderName || '')
+    setInvoiceGeneratorQty(1)
+    setInvoiceGeneratorPrice(Number(order?.budget || 0))
+    setInvoiceGeneratorSigner(headerUserName || '')
+    setInvoiceGeneratorSignature(headerUserName || '')
+    setInvoiceGeneratorSourceOrderId(order?.id || null)
+    setInvoiceGeneratorStatus('draft')
+    setActiveTab('invoiceGenerator')
+  }
+
+  const loadInvoiceGeneratorFromInvoice = (invoice) => {
+    const meta = parseInvoiceGeneratorMeta(invoice?.notes)
+    if (!meta) return
+    setInvoiceGeneratorEditingId(invoice.id)
+    setInvoiceGeneratorLogo(meta.logo || '')
+    setInvoiceGeneratorNumber(meta.invoiceNumber || buildAutoInvoiceNumber())
+    setInvoiceGeneratorDate(meta.invoiceDate || invoice.issueDate || todayString)
+    setInvoiceGeneratorDueDate(meta.dueDate || invoice.dueDate || todayString)
+    setInvoiceGeneratorCompany(meta.company || 'DyaTask Studio')
+    setInvoiceGeneratorTagline(meta.tagline || 'Freelance Service Invoice')
+    setInvoiceGeneratorClient(meta.client || invoice.clientName || '')
+    setInvoiceGeneratorClientAddress(meta.clientAddress || '')
+    setInvoiceGeneratorShipTo(meta.shipTo || '')
+    setInvoiceGeneratorService(meta.service || invoice.orderType || 'Custom Service')
+    setInvoiceGeneratorServiceDesc(meta.serviceDescription || invoice.title || '')
+    setInvoiceGeneratorQty(Number(meta.qty || 1))
+    setInvoiceGeneratorPrice(Number(meta.price || invoice.amount || 0))
+    setInvoiceGeneratorPaymentInfo(meta.paymentInfo || '')
+    setInvoiceGeneratorTerms(meta.terms || '')
+    setInvoiceGeneratorSigner(meta.signer || '')
+    setInvoiceGeneratorSignature(meta.signature || '')
+    setInvoiceGeneratorSourceOrderId(meta.sourceOrderId || null)
+    setInvoiceGeneratorStatus(meta.status || invoice.status || 'draft')
+    setActiveTab('invoiceGenerator')
+  }
+
   const handleSubmitInvoice = async (e) => {
     e.preventDefault()
     if (!hasWritePermission('finance')) {
@@ -3938,6 +4500,142 @@ function App() {
     }
 
     resetInvoiceForm()
+  }
+
+  const handleSubmitInvoiceGenerator = async (e) => {
+    e.preventDefault()
+    if (!hasWritePermission('finance')) {
+      alert('Akun Anda tidak punya izin mengelola invoice.')
+      return
+    }
+    if (!scopedUserId) return
+    if (!invoiceGeneratorClient.trim() || !invoiceGeneratorServiceDesc.trim()) {
+      alert('Client dan deskripsi jasa wajib diisi.')
+      return
+    }
+
+    const qty = Math.max(1, Number(invoiceGeneratorQty || 1))
+    const price = Math.max(0, Number(invoiceGeneratorPrice || 0))
+    const total = qty * price
+    const notesPayload = `[IGMETA]${JSON.stringify({
+      logo: invoiceGeneratorLogo,
+      invoiceNumber: invoiceGeneratorNumber || buildAutoInvoiceNumber(),
+      invoiceDate: invoiceGeneratorDate,
+      dueDate: invoiceGeneratorDueDate,
+      company: invoiceGeneratorCompany,
+      tagline: invoiceGeneratorTagline,
+      client: invoiceGeneratorClient,
+      clientAddress: invoiceGeneratorClientAddress,
+      shipTo: invoiceGeneratorShipTo,
+      service: invoiceGeneratorService,
+      serviceDescription: invoiceGeneratorServiceDesc,
+      qty,
+      price,
+      paymentInfo: invoiceGeneratorPaymentInfo,
+      terms: invoiceGeneratorTerms,
+      signer: invoiceGeneratorSigner,
+      signature: invoiceGeneratorSignature,
+      sourceOrderId: invoiceGeneratorSourceOrderId,
+      status: invoiceGeneratorStatus
+    })}`
+
+    const payload = {
+      user_id: scopedUserId,
+      client_name: invoiceGeneratorClient.trim(),
+      title: invoiceGeneratorServiceDesc.trim(),
+      order_type: invoiceGeneratorService || 'Custom Service',
+      amount: total,
+      issue_date: invoiceGeneratorDate || todayString,
+      due_date: invoiceGeneratorDueDate || null,
+      status: invoiceGeneratorStatus || 'draft',
+      notes: notesPayload
+    }
+
+    if (invoiceGeneratorEditingId) {
+      const { error } = await supabase.from('finance_invoices').update(payload).eq('id', invoiceGeneratorEditingId)
+      if (error) {
+        alert(`Gagal update invoice generator: ${error.message}`)
+        return
+      }
+    } else {
+      const { error } = await supabase.from('finance_invoices').insert([payload])
+      if (error) {
+        alert(`Gagal membuat invoice generator: ${error.message}`)
+        return
+      }
+    }
+
+    setInvoiceGeneratorEditingId(null)
+    setInvoiceGeneratorNumber(buildAutoInvoiceNumber())
+    alert('Invoice generator berhasil disimpan dan sinkron ke Supabase.')
+  }
+
+  const escapeHtml = (value) => String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+
+  const buildInvoicePdfHtml = () => {
+    const previewNode = invoicePreviewRef.current
+    if (!previewNode) return ''
+    const styleBlocks = Array.from(document.querySelectorAll('style')).map(styleEl => styleEl.textContent || '').join('\n')
+    const stylesheetLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map(linkEl => `<link rel="stylesheet" href="${linkEl.href}">`)
+      .join('\n')
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  ${stylesheetLinks}
+  <style>${styleBlocks}</style>
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    html, body { margin: 0; padding: 0; background: #ffffff; }
+    body { display: flex; justify-content: center; align-items: flex-start; }
+  </style>
+</head>
+<body>
+  ${previewNode.outerHTML}
+</body>
+</html>`
+  }
+
+  const handleExportInvoicePdf = async () => {
+    const ipcRenderer = getElectronIpcRenderer()
+    const fileName = `${(invoiceGeneratorNumber || 'invoice').replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`
+    const exportHtml = buildInvoicePdfHtml()
+    if (!exportHtml) {
+      alert('Preview invoice belum siap diexport.')
+      return
+    }
+    if (!ipcRenderer?.invoke) {
+      const printWindow = window.open('', '_blank', 'width=900,height=1200')
+      if (!printWindow) {
+        alert('Popup terblokir. Izinkan popup lalu coba lagi.')
+        return
+      }
+      printWindow.document.open()
+      printWindow.document.write(exportHtml)
+      printWindow.document.close()
+      printWindow.focus()
+      setTimeout(() => printWindow.print(), 250)
+      return
+    }
+    const result = await ipcRenderer.invoke('export-invoice-pdf', {
+      html: exportHtml,
+      fileName
+    })
+    if (!result?.ok && !result?.canceled) {
+      alert(`Gagal export PDF: ${result?.error || 'Unknown error'}`)
+    }
+  }
+
+  const formatInvoiceStatusLabel = (statusValue) => {
+    const value = String(statusValue || '').toLowerCase()
+    if (value === 'sent') return 'follow_up'
+    return value || 'draft'
   }
 
   const startEditInvoice = (invoice) => {
@@ -5073,6 +5771,22 @@ function App() {
     }
   }
 
+  const openWorkspaceMemberPageAccess = (member) => {
+    if (!member?.id) return
+    setPageAccessMemberId(member.id)
+    setPageAccessDraftPermissions(normalizeTeamPermissions(member.permissions || {}))
+  }
+
+  const toggleWorkspaceMemberPageAccess = (permissionKey) => {
+    setPageAccessDraftPermissions(prev => ({ ...prev, [permissionKey]: !prev?.[permissionKey] }))
+  }
+
+  const saveWorkspaceMemberPageAccess = async () => {
+    if (!pageAccessMemberId) return
+    await handleUpdateWorkspaceMember(pageAccessMemberId, { permissions: pageAccessDraftPermissions })
+    setPageAccessMemberId(null)
+  }
+
   const renderTeamAssistantWorkspacePanel = () => {
     const assistantMembers = workspaceMembers.filter(member => member.role !== 'owner')
 
@@ -5245,6 +5959,15 @@ function App() {
               )}
               {canManageTeam && (
                 <>
+                  <button
+                    type="button"
+                    onClick={() => openWorkspaceMemberPageAccess(member)}
+                    className="h-8 px-2.5 rounded-lg border border-purple-100 bg-white text-[10px] font-bold text-purple-600 inline-flex items-center gap-1"
+                    title="Atur akses halaman assistant"
+                  >
+                    <SlidersHorizontal size={10} />
+                    Akses Halaman
+                  </button>
                   <select
                     value={member.role}
                     onChange={(e) => handleUpdateWorkspaceMember(member.id, { role: e.target.value })}
@@ -5277,6 +6000,58 @@ function App() {
           </div>
         ))}
       </div>
+
+      {canManageTeam && pageAccessMemberId && (
+        <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPageAccessMemberId(null)}>
+          <div className="w-full max-w-xl rounded-[1.6rem] bg-white p-5 shadow-2xl border border-purple-100/80" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Assistant Access</p>
+                <h4 className="text-lg font-extrabold text-[#4f4574]">Atur Akses Halaman</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPageAccessMemberId(null)}
+                className="h-8 w-8 rounded-lg border border-purple-100 text-purple-400 hover:bg-purple-50 inline-flex items-center justify-center"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {Object.entries(TEAM_PERMISSION_LABELS).map(([permissionKey, label]) => (
+                <label key={permissionKey} className="flex items-center gap-2 text-[11px] rounded-lg border border-purple-100 bg-white px-2.5 py-2">
+                  <input
+                    type="checkbox"
+                    checked={!!pageAccessDraftPermissions?.[permissionKey]}
+                    onChange={() => toggleWorkspaceMemberPageAccess(permissionKey)}
+                    className="accent-[#8f75d8]"
+                  />
+                  <span className="text-purple-700">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPageAccessMemberId(null)}
+                className="px-3 py-2 rounded-lg border border-purple-100 text-xs font-bold text-purple-500 hover:bg-purple-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={saveWorkspaceMemberPageAccess}
+                disabled={teamLoading}
+                className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-xs font-bold disabled:opacity-50"
+              >
+                Simpan Akses
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     )
   }
@@ -6344,27 +7119,23 @@ function App() {
       <div className={`layout-grid ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         
         {/* 1. Sidebar Navigation */}
-        <aside className={`sidebar sidebar-floating ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <aside
+          className={`sidebar sidebar-floating ${sidebarCollapsed ? 'collapsed' : ''}`}
+          onMouseEnter={handleSidebarMouseEnter}
+          onMouseLeave={handleSidebarMouseLeave}
+        >
           {/* Brand Header */}
           <div className="flex items-center justify-center pt-2 mb-5 px-1">
             <img
               src={sidebarCollapsed ? dyataskMiniLogo : dyataskLogo}
               alt="DyaTask"
-              className={`${sidebarCollapsed ? 'w-16 h-16 -my-2' : 'w-56 h-24 -my-2'} object-contain drop-shadow-md`}
+              className={`${sidebarCollapsed ? 'w-12 h-12 -my-1' : 'w-56 h-24 -my-2'} object-contain drop-shadow-md transition-all duration-200 ease-out`}
             />
           </div>
 
-          <button
-            onClick={() => setSidebarCollapsed(prev => !prev)}
-            className="absolute -right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full border border-white/50 dark:border-indigo-900 bg-white/95 dark:bg-indigo-950 text-purple-600 text-xs font-bold shadow-md hover:shadow-lg hover:scale-105 transition-all z-20"
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {sidebarCollapsed ? '›' : '‹'}
-          </button>
-
           {/* Navigation Links */}
-          <nav className="flex-1">
-            {canReadArea('reports') && (
+          <nav className="flex-1 sidebar-nav-scroll">
+            {canReadArea('dashboard') && canShowTab('dashboard') && (
               <div 
                 data-mobile-nav="dashboard"
                 className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
@@ -6375,7 +7146,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('tasks') && (
+            {canReadArea('tasks') && canShowTab('tasks') && (
               <div 
                 data-mobile-nav="tasks"
                 className={`nav-link ${activeTab === 'tasks' ? 'active' : ''}`}
@@ -6386,7 +7157,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('reservations') && (
+            {canReadArea('calendar') && canShowTab('calendar') && (
               <div 
                 data-mobile-nav="calendar"
                 className={`nav-link ${activeTab === 'calendar' ? 'active' : ''}`}
@@ -6398,7 +7169,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('orders') && (
+            {canReadArea('orders') && canShowTab('orders') && (
               <div
                 data-mobile-nav="orders"
                 className={`nav-link ${activeTab === 'orders' ? 'active' : ''}`}
@@ -6409,7 +7180,67 @@ function App() {
               </div>
             )}
 
-            {canReadArea('crm') && (
+            {canReadArea('designOrders') && canShowTab('designOrders') && (
+              <div
+                className={`nav-link ${activeTab === 'designOrders' ? 'active' : ''}`}
+                onClick={() => setActiveTab('designOrders')}
+              >
+                <Palette size={20} />
+                {!sidebarCollapsed && <span>Pages Design Order</span>}
+              </div>
+            )}
+
+            {canReadArea('generalOrders') && canShowTab('generalOrders') && (
+              <div
+                className={`nav-link ${activeTab === 'generalOrders' ? 'active' : ''}`}
+                onClick={() => setActiveTab('generalOrders')}
+              >
+                <Clipboard size={20} />
+                {!sidebarCollapsed && <span>Pages Orderan (General)</span>}
+              </div>
+            )}
+
+            {canReadArea('mentoringSchedule') && canShowTab('mentoringSchedule') && (
+              <div
+                className={`nav-link ${activeTab === 'mentoringSchedule' ? 'active' : ''}`}
+                onClick={() => setActiveTab('mentoringSchedule')}
+              >
+                <Mic2 size={20} />
+                {!sidebarCollapsed && <span>Pages Mentoring/Speaker</span>}
+              </div>
+            )}
+
+            {canReadArea('contentPlanner') && canShowTab('contentPlanner') && (
+              <div
+                className={`nav-link ${activeTab === 'contentPlanner' ? 'active' : ''}`}
+                onClick={() => setActiveTab('contentPlanner')}
+              >
+                <CalendarClock size={20} />
+                {!sidebarCollapsed && <span>Content Planner</span>}
+              </div>
+            )}
+
+            {canReadArea('invoiceFollowUp') && canShowTab('invoiceFollowUp') && (
+              <div
+                className={`nav-link ${activeTab === 'invoiceFollowUp' ? 'active' : ''}`}
+                onClick={() => setActiveTab('invoiceFollowUp')}
+              >
+                <Mail size={20} />
+                {!sidebarCollapsed && <span>Invoice Follow Up</span>}
+              </div>
+            )}
+
+            {canReadArea('invoiceGenerator') && canShowTab('invoiceGenerator') && (
+              <div
+                className={`nav-link ${activeTab === 'invoiceGenerator' ? 'active' : ''}`}
+                onClick={() => setActiveTab('invoiceGenerator')}
+              >
+                <FileText size={20} />
+                {!sidebarCollapsed && <span>Invoice Generator</span>}
+              </div>
+            )}
+
+            {canReadArea('crm') && canShowTab('crm') && (
               <div
                 data-mobile-nav="crm"
                 className={`nav-link ${activeTab === 'crm' ? 'active' : ''}`}
@@ -6420,7 +7251,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('finance') && (
+            {canReadArea('finance') && canShowTab('finance') && (
               <div
                 data-mobile-nav="finance"
                 className={`nav-link ${activeTab === 'finance' ? 'active' : ''}`}
@@ -6431,7 +7262,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('reports') && (
+            {canReadArea('reports') && canShowTab('reports') && (
               <div
                 data-mobile-nav="reports"
                 className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
@@ -6442,7 +7273,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('notes') && (
+            {canReadArea('notes') && canShowTab('notes') && (
               <div 
                 data-mobile-secondary="true"
                 className={`nav-link ${activeTab === 'notes' ? 'active' : ''}`}
@@ -6453,7 +7284,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('integrations') && (
+            {canReadArea('integrations') && canShowTab('integrations') && (
               <div 
                 data-mobile-secondary="true"
                 className={`nav-link ${activeTab === 'integrations' ? 'active' : ''}`}
@@ -6464,7 +7295,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('settings') && (
+            {canReadArea('settings') && canShowTab('settings') && (
               <div 
                 data-mobile-secondary="true"
                 className={`nav-link ${activeTab === 'settings' ? 'active' : ''}`}
@@ -6474,10 +7305,11 @@ function App() {
                 {!sidebarCollapsed && <span>Pengaturan macOS</span>}
               </div>
             )}
+
           </nav>
 
           {/* User profile section in Sidebar footer */}
-          {!sidebarCollapsed && <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto">
+          {!sidebarCollapsed && <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto sidebar-footer-fixed">
             <div className="flex flex-col gap-3">
               {workspaceContext?.ownerUserId && (
                 <button
@@ -6485,11 +7317,11 @@ function App() {
                   onClick={() => setWorkspaceChatModalOpen(true)}
                   className="relative flex items-center gap-3 p-3 rounded-xl border border-yellow-200 bg-[#FFF7C7] hover:bg-[#FFF3AE] text-yellow-950 transition-all active:scale-95 shadow-sm"
                 >
-                  {workspaceUnreadChatCount > 0 && (
-                    <span className="absolute -top-2 -right-2 min-w-[22px] h-6 px-1 rounded-full bg-red-500 text-white text-[11px] font-extrabold inline-flex items-center justify-center shadow-md border-2 border-white">
-                      {workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}
-                    </span>
-                  )}
+                  <span className={`absolute -top-2 -right-2 min-w-[22px] h-6 px-1 rounded-full text-white text-[11px] font-extrabold inline-flex items-center justify-center shadow-md border-2 border-white ${
+                    workspaceUnreadChatCount > 0 ? 'bg-red-500' : 'bg-purple-300'
+                  }`}>
+                    {workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}
+                  </span>
                   <div className="w-10 h-10 rounded-full bg-yellow-100 text-yellow-700 flex items-center justify-center shrink-0">
                     <MessageSquare size={18} />
                   </div>
@@ -6530,13 +7362,23 @@ function App() {
                 </div>
               </button>
 	              <div className="flex gap-2">
-	                <button 
-	                  onClick={toggleTheme}
-	                  className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
-	                >
-	                  {theme === 'dark' ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} className="text-white" />}
-	                  <span>{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
-	                </button>
+	                {workspaceRole === 'owner' ? (
+	                  <button
+	                    onClick={() => setActiveTab('pageControl')}
+	                    className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
+	                  >
+	                    <SlidersHorizontal size={14} className="text-white" />
+	                    <span>Atur Halaman</span>
+	                  </button>
+	                ) : (
+	                  <button
+	                    onClick={toggleTheme}
+	                    className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
+	                  >
+	                    {theme === 'dark' ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} className="text-white" />}
+	                    <span>{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
+	                  </button>
+	                )}
 	                {!isAssistantWorkspace && (
 	                  <button 
 	                    onClick={handleSignOut}
@@ -6551,32 +7393,52 @@ function App() {
 
           {sidebarCollapsed && (
             <div className="border-t border-white/25 dark:border-indigo-900/60 pt-4 mt-auto flex justify-center">
-              <button
-                type="button"
-                onClick={() => setIsProfileModalOpen(true)}
-                className="w-11 h-11 rounded-full bg-[#FFF08A] hover:bg-[#FFF08A]/90 p-1.5 shadow-md active:scale-95 transition-all overflow-hidden flex items-center justify-center"
-                title="Buka profil"
-              >
-                {session?.user?.user_metadata?.avatar_url ? (
-                  <img
-                    src={session.user.user_metadata.avatar_url}
-                    alt={session?.user?.user_metadata?.full_name || 'Foto profil'}
-                    className="w-full h-full rounded-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none'
-                      e.currentTarget.nextElementSibling?.classList.remove('hidden')
-                    }}
-                  />
-                ) : null}
-                <User size={18} className={`text-yellow-800 ${session?.user?.user_metadata?.avatar_url ? 'hidden' : ''}`} />
-              </button>
+              <div className="flex flex-col items-center gap-2">
+                {workspaceContext?.ownerUserId && (
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceChatModalOpen(true)}
+                    className="relative w-11 h-11 rounded-full bg-white/95 hover:bg-white p-0 shadow-md active:scale-95 transition-all flex items-center justify-center"
+                    title={workspaceChatButtonTitle}
+                  >
+                    <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-extrabold inline-flex items-center justify-center border border-white ${
+                      workspaceUnreadChatCount > 0 ? 'bg-red-500' : 'bg-purple-300'
+                    }`}>
+                      {workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}
+                    </span>
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-300 flex items-center justify-center">
+                      <MessageSquare size={15} className="text-amber-800" />
+                    </div>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="w-11 h-11 rounded-full bg-[#FFF08A] hover:bg-[#FFF08A]/90 p-1.5 shadow-md active:scale-95 transition-all overflow-hidden flex items-center justify-center"
+                  title="Buka profil"
+                >
+                  {session?.user?.user_metadata?.avatar_url ? (
+                    <img
+                      src={session.user.user_metadata.avatar_url}
+                      alt={session?.user?.user_metadata?.full_name || 'Foto profil'}
+                      className="w-full h-full rounded-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden')
+                      }}
+                    />
+                  ) : null}
+                  <User size={18} className={`text-yellow-800 ${session?.user?.user_metadata?.avatar_url ? 'hidden' : ''}`} />
+                </button>
+              </div>
             </div>
           )}
 
         </aside>
 
         {/* 2. Main Content Area */}
-        <main className="p-6 md:p-8 overflow-y-auto max-h-screen">
+        <main className="p-6 md:p-8 overflow-y-auto max-h-screen" onMouseEnter={handleSidebarMouseLeave}>
           
           {/* Header Bar */}
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-purple-100 dark:border-indigo-950 pb-6 mb-6">
@@ -7486,15 +8348,23 @@ function App() {
             </div>
           )}
 
-          {/* TAB CONTENT: 3. SPREADSHEET ORDER TRACKER */}
-          {activeTab === 'orders' && (
+          {/* TAB CONTENT: 3. ORDER WORKSPACES */}
+          {['orders', 'designOrders', 'generalOrders'].includes(activeTab) && (
             <div className="mobile-page mobile-page-orders">
               <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
                 <aside className={`glass-panel p-5 ${isMobileTabletView && mobileOrderDetailOpen ? 'hidden' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-bold text-[#4f4574]">Order Customer</h3>
-                      <p className="text-xs text-[#8f75d8] mt-1">Tracking order custom spreadsheet per klien.</p>
+                      <h3 className="text-lg font-bold text-[#4f4574]">
+                        {activeTab === 'designOrders' ? 'Design Order Projects' : activeTab === 'generalOrders' ? 'Orderan General Projects' : 'Order Spreadsheet Projects'}
+                      </h3>
+                      <p className="text-xs text-[#8f75d8] mt-1">
+                        {activeTab === 'designOrders'
+                          ? 'Semua project desain dengan progress timeline per project.'
+                          : activeTab === 'generalOrders'
+                            ? 'Semua jenis orderan umum dengan tracking progress.'
+                            : 'Tracking order custom spreadsheet per klien.'}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -7513,15 +8383,26 @@ function App() {
 
                   {showOrderForm && (
                     <form onSubmit={handleCreateSpreadsheetOrder} className="mt-4 space-y-2.5">
-                      <input value={newOrderCustomer} onChange={(e) => setNewOrderCustomer(e.target.value)} placeholder="Nama customer" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
-                      <input value={newOrderName} onChange={(e) => setNewOrderName(e.target.value)} placeholder="Nama orderan" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                      <input
+                        value={newOrderCustomer}
+                        onChange={(e) => setNewOrderCustomer(e.target.value)}
+                        placeholder={isDesignOrderPage ? 'Nama brand / client' : isGeneralOrderPage ? 'Nama client / divisi' : 'Nama customer'}
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs"
+                        required
+                      />
+                      <input
+                        value={newOrderName}
+                        onChange={(e) => setNewOrderName(e.target.value)}
+                        placeholder={isDesignOrderPage ? 'Nama project desain' : isGeneralOrderPage ? 'Nama kebutuhan order umum' : 'Nama orderan'}
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs"
+                        required
+                      />
                       <div className="grid grid-cols-2 gap-2">
                         <select value={newOrderType} onChange={(e) => setNewOrderType(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
-                          <option>Dashboard</option>
-                          <option>Automation</option>
-                          <option>Reporting</option>
-                          <option>Template</option>
-                          <option>Fixing</option>
+                          {!orderTypeOptions.includes(newOrderType) && <option>{newOrderType}</option>}
+                          {orderTypeOptions.map(optionValue => (
+                            <option key={optionValue}>{optionValue}</option>
+                          ))}
                         </select>
                         <select value={newOrderStatus} onChange={(e) => setNewOrderStatus(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
                           <option value="new">new</option>
@@ -7537,12 +8418,26 @@ function App() {
                         <option value="cicilan">cicilan</option>
                         <option value="lunas">lunas</option>
                       </select>
+                      <p className="text-[11px] text-purple-400">
+                        {isDesignOrderPage
+                          ? 'Tips: pakai Timeline untuk milestone: brief, concept, first draft, revision, final delivery.'
+                          : isGeneralOrderPage
+                            ? 'Tips: pakai Timeline untuk checkpoint proses: request, execution, review, handover.'
+                            : 'Gunakan timeline untuk update progress detail ke klien.'}
+                      </p>
                       <div className="grid grid-cols-2 gap-2">
-                        <input type="number" min="0" value={newOrderBudget} onChange={(e) => setNewOrderBudget(e.target.value)} placeholder="Budget" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <input
+                          type="number"
+                          min="0"
+                          value={newOrderBudget}
+                          onChange={(e) => setNewOrderBudget(e.target.value)}
+                          placeholder={isDesignOrderPage ? 'Fee desain' : isGeneralOrderPage ? 'Fee layanan' : 'Budget'}
+                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs"
+                        />
                         <input type="date" value={newOrderDueDate} onChange={(e) => setNewOrderDueDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
                       </div>
                       <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
-                        {editingOrderId ? 'Update Order' : 'Tambah Order'}
+                        {editingOrderId ? 'Update Project' : isDesignOrderPage ? 'Tambah Project Desain' : isGeneralOrderPage ? 'Tambah Order General' : 'Tambah Order'}
                       </button>
                       {editingOrderId && (
                         <button
@@ -7557,7 +8452,7 @@ function App() {
                   )}
 
                   <div className="mt-4 space-y-2 max-h-[430px] overflow-y-auto pr-1">
-                    {spreadsheetOrders.length === 0 ? (
+                    {sortedSpreadsheetOrders.length === 0 ? (
                       <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">Belum ada order.</div>
                     ) : sortedSpreadsheetOrders.map(order => {
                       const isDoneOrder = ['completed', 'done'].includes((order.status || '').toLowerCase())
@@ -7589,6 +8484,17 @@ function App() {
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openInvoiceGeneratorFromOrder(order)
+                              }}
+                              className="w-7 h-7 rounded-lg border border-emerald-100 bg-white text-emerald-600 hover:bg-emerald-50 flex items-center justify-center"
+                              title="Generate to Invoice"
+                            >
+                              <FileText size={12} />
+                            </button>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -7644,6 +8550,14 @@ function App() {
                           <p className="text-xs text-slate-500 mt-1">Status bayar: <span className="font-semibold capitalize">{selectedSpreadsheetOrder.paymentStatus || 'belum_bayar'}</span></p>
                         </div>
                         <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openInvoiceGeneratorFromOrder(selectedSpreadsheetOrder)}
+                            className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <FileText size={12} />
+                            Generate to Invoice
+                          </button>
                           <button
                             type="button"
                             onClick={async () => {
@@ -8018,6 +8932,392 @@ function App() {
                     </div>
                   )}
                 </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'mentoringSchedule' && (
+            <div className="mobile-page space-y-5">
+              <div className="glass-panel p-5">
+                <h3 className="text-xl font-extrabold text-[#4f4574]">Pages Mentoring / Speaker Event Schedule</h3>
+                <p className="text-sm text-purple-400 mt-1">Catat jadwal kelas, mentoring, dan event speaker yang akan datang atau sedang berjalan.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Total Sesi Terjadwal</p>
+                  <p className="text-2xl font-extrabold mt-2">{appointments.length}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Sesi Upcoming</p>
+                  <p className="text-2xl font-extrabold mt-2">{upcomingMeetingCount}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Task Event Aktif</p>
+                  <p className="text-2xl font-extrabold mt-2">{openTaskCount}</p>
+                </div>
+              </div>
+              <div className="glass-panel p-5">
+                <h4 className="text-sm font-bold text-[#4f4574] mb-3">Jadwal Kelas / Mentoring / Speaker</h4>
+                <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                  {todayCalendarItems.length === 0 ? (
+                    <p className="text-sm text-purple-400">Belum ada jadwal.</p>
+                  ) : todayCalendarItems
+                    .filter(item => ['appointment', 'google_event', 'task'].includes(item.source))
+                    .map(item => (
+                      <div key={`${item.source}-${item.id}`} className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                        <p className="text-sm font-bold text-[#4f4574] truncate">{item.title}</p>
+                        <p className="text-xs text-purple-400 mt-0.5">{item.date} • {item.time || 'All day'} • {item.source === 'google_event' ? 'Google Calendar' : item.source === 'appointment' ? 'Mentoring' : 'Task'}</p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'contentPlanner' && (
+            <div className="mobile-page space-y-5 min-w-0 overflow-x-hidden">
+              <div className="glass-panel p-5 min-w-0">
+                <h3 className="text-xl font-extrabold text-[#4f4574]">Content Planner</h3>
+                <p className="text-sm text-purple-400 mt-1">Folder terpisah per platform: Instagram, TikTok, Threads. Jadwal upload otomatis tersambung ke kalender + notifikasi.</p>
+              </div>
+
+              <div className="glass-panel p-5 min-w-0">
+                <form onSubmit={handleSubmitContentPlanner} className="space-y-2.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    <input value={contentPlannerTitle} onChange={(e) => setContentPlannerTitle(e.target.value)} placeholder="Judul konten" className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                    <input value={contentPlannerPillar} onChange={(e) => setContentPlannerPillar(e.target.value)} placeholder="Content pillar / value" className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                    <select value={contentPlannerPlatform} onChange={(e) => setContentPlannerPlatform(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm">
+                      {contentPlannerPlatforms.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                    </select>
+                    <select value={contentPlannerStatus} onChange={(e) => setContentPlannerStatus(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm">
+                      <option value="draft">Draft</option>
+                      <option value="scheduled">Scheduled</option>
+                      <option value="posted">Posted</option>
+                    </select>
+                    <input type="date" value={contentPlannerDate} onChange={(e) => setContentPlannerDate(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                    <input type="time" value={contentPlannerTime} onChange={(e) => setContentPlannerTime(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    {contentPlannerEditingId && (
+                      <button type="button" onClick={resetContentPlannerForm} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-[#8f75d8] text-xs font-bold">Batal Edit</button>
+                    )}
+                    <button type="submit" className="px-3.5 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
+                      {contentPlannerEditingId ? 'Update Konten' : 'Tambah Konten'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="glass-panel p-5">
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  {contentPlannerPlatforms.map(item => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setContentPlannerPlatform(item.key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${contentPlannerPlatform === item.key ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#8f75d8] border-purple-100'}`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-purple-100 bg-white">
+                  <div className="overflow-x-auto overflow-y-visible pb-12">
+                  <table className="w-full min-w-[980px] text-xs">
+                    <thead className="bg-purple-50 text-[#6f5ca7]">
+                      <tr>
+                        <th className="text-left px-3 py-2">Status</th>
+                        <th className="text-left px-3 py-2">Tanggal Upload</th>
+                        <th className="text-left px-3 py-2">Pillar/Value</th>
+                        <th className="text-left px-3 py-2">Judul Konten</th>
+                        <th className="text-left px-3 py-2">Link Posting</th>
+                        <th className="text-left px-3 py-2">More</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contentPlannerItemsByPlatform.length === 0 ? (
+                        <tr><td colSpan={6} className="px-3 py-6 text-center text-purple-400">Belum ada konten untuk folder ini.</td></tr>
+                      ) : contentPlannerItemsByPlatform.map(item => (
+                        <tr key={item.id} className="border-t border-purple-50">
+                          <td className="px-3 py-2.5">
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${
+                              item.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : item.status === 'scheduled' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'
+                            }`}>{item.status}</span>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">{item.uploadDate} {item.uploadTime || '09:00'}</td>
+                          <td className="px-3 py-2.5">{item.pillar || '-'}</td>
+                          <td className="px-3 py-2.5 font-semibold text-[#4f4574]">{item.title}</td>
+                          <td className="px-3 py-2.5">
+                            {contentPlannerLinkEditId === item.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  value={contentPlannerLinkDraft}
+                                  onChange={(e) => setContentPlannerLinkDraft(e.target.value)}
+                                  placeholder="https://..."
+                                  className="h-8 w-52 px-2 rounded-md border border-purple-100 bg-white text-[11px]"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleApplyContentPlannerLink(item.id)}
+                                  className="h-8 px-2.5 rounded-md bg-emerald-600 text-white text-[11px] font-bold"
+                                >
+                                  OK
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartContentPlannerLinkInput(item)}
+                                  className="h-8 px-2.5 rounded-md border border-purple-100 bg-white text-[#8f75d8] text-[11px] font-bold"
+                                >
+                                  Input Link
+                                </button>
+                                {item.postLink && (
+                                  <a
+                                    href={item.postLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="h-8 px-2.5 rounded-md bg-[#8f75d8] text-white text-[11px] font-bold inline-flex items-center"
+                                  >
+                                    Go to Post
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <button type="button" onClick={(e) => handleToggleContentPlannerMore(e, item.id)} className="h-7 w-7 rounded-md border border-purple-100 inline-flex items-center justify-center text-[#8f75d8]">
+                              <MoreHorizontal size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+
+                {contentPlannerMoreOpenId && (
+                  <>
+                    <div
+                      onClick={() => setContentPlannerMoreOpenId(null)}
+                      className="fixed inset-0 z-30"
+                    />
+                    <div
+                      className="fixed z-40 w-28 rounded-lg border border-purple-100 bg-white shadow-sm"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ top: `${contentPlannerMoreMenuPos.top}px`, left: `${contentPlannerMoreMenuPos.left}px` }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = contentPlannerItemsByPlatform.find(entry => entry.id === contentPlannerMoreOpenId)
+                          if (target) handleEditContentPlanner(target)
+                          setContentPlannerMoreOpenId(null)
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs hover:bg-purple-50"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteContentPlanner(contentPlannerMoreOpenId)}
+                        className="w-full text-left px-2.5 py-2 text-xs text-red-500 hover:bg-red-50"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+
+          {activeTab === 'invoiceFollowUp' && (
+            <div className="mobile-page space-y-5">
+              <div className="glass-panel p-5">
+                <h3 className="text-xl font-extrabold text-[#4f4574]">Invoice Payment & Follow Up</h3>
+                <p className="text-sm text-purple-400 mt-1">Sinkron dari invoice + status pembayaran project dalam satu alur data.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Invoice Open</p>
+                  <p className="text-2xl font-extrabold mt-2">{invoices.filter(item => !['paid', 'lunas'].includes(String(item.status || '').toLowerCase())).length}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Order Belum Lunas</p>
+                  <p className="text-2xl font-extrabold mt-2">{spreadsheetOrders.filter(order => String(order.paymentStatus || '').toLowerCase() !== 'lunas').length}</p>
+                </div>
+                <div className="glass-panel p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Outstanding</p>
+                  <p className="text-2xl font-extrabold mt-2">{formatCurrencyIDR(spreadsheetOutstandingAmount)}</p>
+                </div>
+              </div>
+              <div className="glass-panel p-5">
+                <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                  {invoices.length === 0 ? (
+                    <p className="text-sm text-purple-400">Belum ada invoice.</p>
+                  ) : invoices.map(invoice => (
+                    <div key={invoice.id} className="rounded-xl border border-purple-100 bg-white p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-[#4f4574] truncate">{invoice.title}</p>
+                        <p className="text-xs text-purple-400">{invoice.clientName} • Due {invoice.dueDate || '-'}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold text-[#8f75d8]">{formatCurrencyIDR(invoice.amount || 0)}</p>
+                        <p className="text-[11px] text-slate-500 uppercase">{invoice.status || 'draft'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'invoiceGenerator' && (
+            <div className="mobile-page space-y-5">
+              <div className="glass-panel p-5">
+                <h3 className="text-xl font-extrabold text-[#4f4574]">Invoice Generator</h3>
+                <p className="text-sm text-purple-400 mt-1">A4 portrait, auto nomor invoice, logo custom, teks editable, payment info, dan tanda tangan.</p>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
+                <div className="space-y-4">
+                  <div className="glass-panel p-4 flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-[#4f4574]">Form Invoice Generator</h4>
+                    <button
+                      type="button"
+                      onClick={() => setShowInvoiceGeneratorForm(prev => !prev)}
+                      className="px-3 py-1.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-[#6f3df3] text-[11px] font-bold"
+                    >
+                      {showInvoiceGeneratorForm ? 'Hide Form' : 'Show Form'}
+                    </button>
+                  </div>
+
+                  {showInvoiceGeneratorForm && (
+                    <form onSubmit={handleSubmitInvoiceGenerator} className="glass-panel p-5 space-y-2.5">
+                      <input type="file" accept="image/*" onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = () => setInvoiceGeneratorLogo(String(reader.result || ''))
+                        reader.readAsDataURL(file)
+                      }} className="w-full text-xs" />
+                      <input value={invoiceGeneratorCompany} onChange={(e) => setInvoiceGeneratorCompany(e.target.value)} placeholder="Nama perusahaan" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <input value={invoiceGeneratorTagline} onChange={(e) => setInvoiceGeneratorTagline(e.target.value)} placeholder="Tagline" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input value={invoiceGeneratorNumber} onChange={(e) => setInvoiceGeneratorNumber(e.target.value)} placeholder="Nomor invoice" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <input type="date" value={invoiceGeneratorDate} onChange={(e) => setInvoiceGeneratorDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      </div>
+                      <input type="date" value={invoiceGeneratorDueDate} onChange={(e) => setInvoiceGeneratorDueDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <select value={invoiceGeneratorStatus} onChange={(e) => setInvoiceGeneratorStatus(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs">
+                        <option value="draft">draft</option>
+                        <option value="sent">follow_up</option>
+                        <option value="paid">paid</option>
+                      </select>
+                      <p className="text-[11px] text-purple-400">Jika status `paid` / `lunas`, preview invoice akan menampilkan stamp LUNAS.</p>
+                      <input value={invoiceGeneratorClient} onChange={(e) => setInvoiceGeneratorClient(e.target.value)} placeholder="Invoice To" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <textarea rows={2} value={invoiceGeneratorClientAddress} onChange={(e) => setInvoiceGeneratorClientAddress(e.target.value)} placeholder="Alamat client" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                      <textarea rows={2} value={invoiceGeneratorShipTo} onChange={(e) => setInvoiceGeneratorShipTo(e.target.value)} placeholder="Ship To / alamat kerja" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                      <input value={invoiceGeneratorService} onChange={(e) => setInvoiceGeneratorService(e.target.value)} placeholder="Jenis jasa/orderan" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <textarea rows={2} value={invoiceGeneratorServiceDesc} onChange={(e) => setInvoiceGeneratorServiceDesc(e.target.value)} placeholder="Deskripsi jasa" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" min="1" value={invoiceGeneratorQty} onChange={(e) => setInvoiceGeneratorQty(e.target.value)} placeholder="Qty" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <input type="number" min="0" value={invoiceGeneratorPrice} onChange={(e) => setInvoiceGeneratorPrice(e.target.value)} placeholder="Harga" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      </div>
+                      <textarea rows={3} value={invoiceGeneratorPaymentInfo} onChange={(e) => setInvoiceGeneratorPaymentInfo(e.target.value)} placeholder="Info pembayaran (Bank, A/N, No Rek)" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                      <textarea rows={2} value={invoiceGeneratorTerms} onChange={(e) => setInvoiceGeneratorTerms(e.target.value)} placeholder="Terms & Condition" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                      <input value={invoiceGeneratorSigner} onChange={(e) => setInvoiceGeneratorSigner(e.target.value)} placeholder="Nama penanggung jawab" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <input value={invoiceGeneratorSignature} onChange={(e) => setInvoiceGeneratorSignature(e.target.value)} placeholder="Tanda tangan (teks)" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">{invoiceGeneratorEditingId ? 'Update Invoice' : 'Simpan Invoice'}</button>
+                    </form>
+                  )}
+
+                  <div className="glass-panel p-5">
+                    <h4 className="text-sm font-bold text-[#4f4574] mb-3">List Invoice Generator</h4>
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {invoices.filter(item => parseInvoiceGeneratorMeta(item.notes)).length === 0 ? (
+                        <p className="text-sm text-purple-400">Belum ada invoice generator.</p>
+                      ) : invoices.filter(item => parseInvoiceGeneratorMeta(item.notes)).map(item => (
+                        <div key={item.id} className="rounded-xl border border-purple-100 bg-white p-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-[#4f4574] truncate">{item.title}</p>
+                            <p className="text-xs text-purple-400 truncate">{item.clientName} • {item.issueDate}</p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button type="button" onClick={() => loadInvoiceGeneratorFromInvoice(item)} className="px-2 py-1 rounded-lg border border-purple-100 text-[11px] font-bold text-[#8f75d8]">Edit</button>
+                            <button type="button" onClick={() => updateInvoiceStatus(item, 'sent')} className="px-2 py-1 rounded-lg border border-amber-100 text-[11px] font-bold text-amber-700">Follow Up</button>
+                            <button type="button" onClick={() => updateInvoiceStatus(item, 'paid')} className="px-2 py-1 rounded-lg border border-emerald-100 text-[11px] font-bold text-emerald-700">Lunas</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="glass-panel p-3 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={handleExportInvoicePdf}
+                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5"
+                    >
+                      <FileText size={13} />
+                      Export Invoice to PDF (High Res)
+                    </button>
+                  </div>
+                  <div className="glass-panel p-5 overflow-auto">
+                    <div ref={invoicePreviewRef} className="relative mx-auto bg-white text-[#111] shadow-sm overflow-hidden" style={{ width: '210mm', minHeight: '297mm', padding: '16mm' }}>
+                      {['paid', 'lunas'].includes(String(invoiceGeneratorStatus || '').toLowerCase()) && (
+                        <div className="absolute right-8 top-20 rotate-[-18deg] border-4 border-emerald-500 text-emerald-600 px-6 py-2 text-3xl font-black tracking-[0.12em] opacity-80">
+                          LUNAS
+                        </div>
+                      )}
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          {invoiceGeneratorLogo ? <img src={invoiceGeneratorLogo} alt="logo" className="h-12 w-auto object-contain" /> : null}
+                          <div>
+                            <p className="font-extrabold text-lg">{invoiceGeneratorCompany}</p>
+                            <p className="text-[11px] text-slate-500">{invoiceGeneratorTagline}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-4xl font-black tracking-tight">INVOICE</p>
+                          <p className="text-xs mt-1">DATE: {invoiceGeneratorDate}</p>
+                        </div>
+                      </div>
+                      <div className="mt-6 grid grid-cols-2 gap-4 bg-slate-100 p-4 text-xs">
+                        <div><p className="font-bold mb-1">INVOICE TO</p><p className="font-semibold">{invoiceGeneratorClient}</p><p className="whitespace-pre-line mt-1">{invoiceGeneratorClientAddress}</p></div>
+                        <div><p className="font-bold mb-1">SHIP TO</p><p className="whitespace-pre-line mt-1">{invoiceGeneratorShipTo}</p></div>
+                      </div>
+                      <div className="mt-5 flex items-center justify-between text-xs">
+                        <p>DATE: {invoiceGeneratorDate}</p>
+                        <p className="font-bold">INVOICE NO: {invoiceGeneratorNumber}</p>
+                      </div>
+                      <table className="w-full mt-2 text-xs border-t border-b border-slate-400">
+                        <thead><tr className="text-left"><th className="py-2">ITEM</th><th>PRICE</th><th>QTY</th><th className="text-right">TOTAL</th></tr></thead>
+                        <tbody><tr><td className="py-2"><p className="font-semibold">{invoiceGeneratorService}</p><p className="text-slate-500">{invoiceGeneratorServiceDesc}</p></td><td>{formatCurrencyIDR(Number(invoiceGeneratorPrice || 0))}</td><td>{Number(invoiceGeneratorQty || 1)}</td><td className="text-right font-bold">{formatCurrencyIDR(Number(invoiceGeneratorQty || 1) * Number(invoiceGeneratorPrice || 0))}</td></tr></tbody>
+                      </table>
+                      <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+                        <div><p className="font-bold">Payment Info:</p><p className="whitespace-pre-line mt-1">{invoiceGeneratorPaymentInfo}</p></div>
+                        <div className="text-right">
+                          <p className="font-bold">TOTAL DUE</p>
+                          <p className="text-3xl font-black mt-1">{formatCurrencyIDR(Number(invoiceGeneratorQty || 1) * Number(invoiceGeneratorPrice || 0))}</p>
+                          <p className="mt-2 text-[11px] font-semibold uppercase">Status: {formatInvoiceStatusLabel(invoiceGeneratorStatus)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-5 grid grid-cols-2 gap-4 text-xs">
+                        <div><p className="font-bold">Terms & Condition</p><p className="whitespace-pre-line mt-1">{invoiceGeneratorTerms}</p></div>
+                        <div className="text-right"><p className="font-bold">Account Manager</p><p className="italic text-lg mt-2">{invoiceGeneratorSignature || invoiceGeneratorSigner}</p><p className="font-bold mt-1">{invoiceGeneratorSigner}</p></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -9248,6 +10548,69 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'pageControl' && (
+            <div className="mobile-page space-y-6">
+              <div className="glass-panel p-6">
+                <h3 className="text-xl font-extrabold text-[#4f4574]">Kontrol Halaman Workspace</h3>
+                <p className="text-sm text-purple-400 mt-1">Pilih halaman yang ingin dipakai. Yang nonaktif otomatis hilang dari sidebar.</p>
+              </div>
+
+              <div className="glass-panel p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {[
+                    ['dashboard', 'Dashboard'],
+                    ['tasks', 'Tugas & Project'],
+                    ['calendar', 'Reservasi & Jadwal'],
+                    ['orders', 'Order Spreadsheet'],
+                    ['designOrders', 'Pages Design Order'],
+                    ['generalOrders', 'Pages Orderan (General)'],
+                    ['mentoringSchedule', 'Pages Mentoring/Speaker Event Schedule'],
+                    ['contentPlanner', 'Content Planner'],
+                    ['invoiceFollowUp', 'Invoice Payment & Follow Up'],
+                    ['invoiceGenerator', 'Invoice Generator'],
+                    ['crm', 'Client CRM'],
+                    ['finance', 'Finance & Invoice'],
+                    ['reports', 'Reports'],
+                    ['notes', 'Catatan Terenkripsi'],
+                    ['integrations', 'Integrasi Realtime'],
+                    ['settings', 'Pengaturan macOS']
+                  ].map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => togglePageEnabled(key)}
+                      className={`rounded-xl border px-3 py-3 text-left transition-all ${
+                        isPageEnabled(key)
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-purple-100 bg-white text-purple-400'
+                      }`}
+                    >
+                      <p className="text-sm font-bold">{label}</p>
+                      <p className="text-[11px] mt-1">{isPageEnabled(key) ? 'Aktif' : 'Nonaktif'}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass-panel p-6">
+                <h4 className="text-base font-extrabold text-[#4f4574]">Saran Halaman Freelancer</h4>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-purple-500">
+                  {[
+                    'Leads & Pipeline Client',
+                    'Proposal & Quotation',
+                    'Time Tracking per Project',
+                    'Revision Tracker',
+                    'Invoice & Payment Follow-up',
+                    'Content Planner',
+                    'Knowledge Base SOP'
+                  ].map((item) => (
+                    <div key={item} className="rounded-xl border border-purple-100 bg-white px-3 py-2">{item}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB CONTENT: 6. SETTINGS & MACOS CONFIGURATIONS */}
           {activeTab === 'settings' && (
             <div className="mobile-page mobile-page-settings grid grid-cols-1 xl:grid-cols-[minmax(0,1.25fr)_minmax(460px,0.95fr)] gap-8">
@@ -9669,22 +11032,28 @@ function App() {
               </button>
             </div>
 
-            {canReadArea('notes') && (
+            {canReadArea('notes') && canShowTab('notes') && (
               <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('notes'); setShowMobileMoreMenu(false) }}>
                 <Lock size={18} />
                 <span>Catatan Terenkripsi</span>
               </button>
             )}
-            {canReadArea('integrations') && (
+            {canReadArea('integrations') && canShowTab('integrations') && (
               <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('integrations'); setShowMobileMoreMenu(false) }}>
                 <RefreshCw size={18} />
                 <span>Integrasi Realtime</span>
               </button>
             )}
-            {canReadArea('settings') && (
+            {canReadArea('settings') && canShowTab('settings') && (
               <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('settings'); setShowMobileMoreMenu(false) }}>
                 <Settings size={18} />
                 <span>Pengaturan macOS</span>
+              </button>
+            )}
+            {workspaceRole === 'owner' && (
+              <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('pageControl'); setShowMobileMoreMenu(false) }}>
+                <SlidersHorizontal size={18} />
+                <span>Atur Halaman</span>
               </button>
             )}
 
@@ -9745,19 +11114,39 @@ function App() {
                 <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574] dark:text-purple-100">Chat Owner & Assistant</h3>
                 <p className="mt-1 text-xs text-purple-400 dark:text-purple-300">Diskusi kerja realtime untuk owner dan assistant.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setWorkspaceChatModalOpen(false)}
-                className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400 hover:bg-purple-50 flex items-center justify-center"
-              >
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                {workspaceRole === 'owner' && (
+                  <button
+                    type="button"
+                    onClick={handleClearWorkspaceChat}
+                    className="h-9 px-3 rounded-xl border border-red-100 text-red-500 hover:bg-red-50 text-xs font-bold"
+                  >
+                    Clear Chat
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceChatModalOpen(false)}
+                  className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400 hover:bg-purple-50 flex items-center justify-center"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
               {workspaceChatMessages.length === 0 ? (
                 <p className="text-xs text-purple-400">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
-              ) : workspaceChatMessages.map(item => {
+              ) : workspaceChatItemsWithDateSeparator.map(item => {
+                if (item.__type === 'date_separator') {
+                  return (
+                    <div key={item.id} className="flex items-center gap-2 py-1">
+                      <div className="h-px flex-1 bg-purple-100" />
+                      <span className="text-[10px] font-bold text-purple-400 whitespace-nowrap px-2">{item.label}</span>
+                      <div className="h-px flex-1 bg-purple-100" />
+                    </div>
+                  )
+                }
                 const isMine = item?.metadata?.senderUserId === actorUserId
                 const isReminderMessage = item?.metadata?.reminderType && item?.metadata?.senderRole === 'assistant'
                 const canConfirmReminder = workspaceRole === 'owner' && !isMine && isReminderMessage && !workspaceChatAcknowledgedIds.has(item.id)
