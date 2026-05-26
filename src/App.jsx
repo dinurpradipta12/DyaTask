@@ -665,6 +665,7 @@ function App() {
   const [workspaceContext, setWorkspaceContext] = useState(null)
   const [workspaceOwnerName, setWorkspaceOwnerName] = useState('')
   const [workspaceMembers, setWorkspaceMembers] = useState([])
+  const [workspaceProfileNames, setWorkspaceProfileNames] = useState({})
   const [workspaceInviteUsername, setWorkspaceInviteUsername] = useState('')
   const [workspaceInviteRole, setWorkspaceInviteRole] = useState('assistant')
   const [workspaceInviteToken, setWorkspaceInviteToken] = useState('')
@@ -2022,28 +2023,68 @@ function App() {
   const currentDeployKey = import.meta.env.VITE_DEPLOY_COMMIT || 'dev'
   const getDeployVersionKey = (metadata = {}) => metadata.buildId || metadata.commit || metadata.version || metadata.buildTime || ''
   const calendarTitle = calendarMonthDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
-  const headerUserName = String(
-    session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'User'
-  ).trim()
-  const formatDisplayName = (value) => String(value || 'User')
+  const cleanDyaTaskName = (value, fallback = 'User') => {
+    const raw = String(value || '').trim()
+    if (!raw) return fallback
+    const localPart = raw.includes('@') ? raw.split('@')[0] : raw
+    const cleaned = localPart
+      .replace(/(?:^|[-_.\s])dyatask(?:\+\w+)?$/i, '')
+      .replace(/\bdyatask\b/gi, '')
+      .replace(/[-_.]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return cleaned || fallback
+  }
+  const formatDisplayName = (value, fallback = 'User') => cleanDyaTaskName(value, fallback)
     .trim()
-    .replace(/[-_.]+/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ')
-  const assistantDisplayName = formatDisplayName(headerUserName)
-  const workspaceOwnerDisplayName = workspaceOwnerName ? formatDisplayName(workspaceOwnerName) : 'pemilik workspace'
+    .join(' ') || fallback
+  const profileNameFromMap = workspaceProfileNames[actorUserId]?.fullName || workspaceProfileNames[actorUserId]?.email || ''
+  const headerUserName = formatDisplayName(
+    profileNameFromMap || session?.user?.user_metadata?.full_name || session?.user?.email || authUsername,
+    'User'
+  )
+  const assistantDisplayName = headerUserName
   const isAssistantWorkspace = workspaceRole === 'assistant'
   const workspaceAssistantChatMembers = workspaceMembers.filter(member => member.role !== 'owner')
+  const resolveWorkspaceMemberName = (member, fallback = 'Assistant') => {
+    if (!member) return fallback
+    const profile = workspaceProfileNames[member.memberUserId] || {}
+    return formatDisplayName(profile.fullName || profile.email || member.memberEmail || fallback, fallback)
+  }
+  const workspaceOwnerDisplayName = formatDisplayName(
+    workspaceProfileNames[workspaceContext?.ownerUserId]?.fullName
+      || workspaceProfileNames[workspaceContext?.ownerUserId]?.email
+      || workspaceOwnerName,
+    'pemilik workspace'
+  )
   const activeWorkspaceChatMember = isAssistantWorkspace
     ? workspaceAssistantChatMembers.find(member => member.memberUserId === actorUserId) || workspaceAssistantChatMembers[0] || null
     : workspaceAssistantChatMembers.find(member => member.id === selectedWorkspaceChatMemberId) || workspaceAssistantChatMembers[0] || null
   const activeWorkspaceChatMemberId = activeWorkspaceChatMember?.id || ''
   const activeWorkspaceChatMemberName = activeWorkspaceChatMember
-    ? formatDisplayName(activeWorkspaceChatMember.memberEmail?.split('@')?.[0] || activeWorkspaceChatMember.memberEmail || 'Assistant')
+    ? resolveWorkspaceMemberName(activeWorkspaceChatMember)
     : 'Assistant'
   const workspaceChatButtonTitle = isAssistantWorkspace ? `Chat ${workspaceOwnerDisplayName}` : 'Chat Assistant Workspace'
+  const getWorkspaceMessageSenderName = (item) => {
+    const senderUserId = item?.metadata?.senderUserId || ''
+    const metadataName = item?.metadata?.senderName || ''
+    const senderRole = item?.metadata?.senderRole || ''
+    if (senderUserId === actorUserId) return headerUserName
+    if (senderUserId === workspaceContext?.ownerUserId) return workspaceOwnerDisplayName
+    const senderMember = workspaceMembers.find(member => member.memberUserId === senderUserId)
+    if (senderMember) return resolveWorkspaceMemberName(senderMember)
+    if (metadataName && metadataName.toLowerCase() !== 'user') {
+      return formatDisplayName(metadataName, 'User')
+    }
+    if (senderRole === 'owner') return workspaceRole === 'owner' ? headerUserName : workspaceOwnerDisplayName
+    if (senderRole === 'assistant') return workspaceRole === 'assistant' ? headerUserName : activeWorkspaceChatMemberName
+    const chatMember = workspaceMembers.find(member => member.id === item?.metadata?.chatMemberId)
+    if (chatMember) return resolveWorkspaceMemberName(chatMember)
+    return formatDisplayName(item?.metadata?.senderEmail || headerUserName || activeWorkspaceChatMemberName, 'Pengguna')
+  }
   const workspaceChatMessages = activityLogs
     .filter(item => {
       if (item?.metadata?.kind !== 'workspace_chat') return false
@@ -2957,6 +2998,56 @@ function App() {
       supabase.removeChannel(channel)
     }
   }, [actorUserId, workspaceContext?.ownerUserId, canManageTeam])
+
+  useEffect(() => {
+    const profileIds = [
+      actorUserId,
+      workspaceContext?.ownerUserId,
+      ...workspaceMembers.map(member => member.memberUserId)
+    ].filter(Boolean)
+
+    const uniqueProfileIds = Array.from(new Set(profileIds))
+    if (uniqueProfileIds.length === 0) {
+      setWorkspaceProfileNames({})
+      return
+    }
+
+    let cancelled = false
+
+    const loadWorkspaceProfileNames = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name')
+        .in('id', uniqueProfileIds)
+
+      if (cancelled) return
+
+      if (error) {
+        console.warn('Load nama profil workspace gagal:', error.message)
+        return
+      }
+
+      const nextProfileNames = (data || []).reduce((map, profile) => {
+        map[profile.id] = {
+          email: profile.email || '',
+          fullName: profile.full_name || ''
+        }
+        return map
+      }, {})
+
+      setWorkspaceProfileNames(nextProfileNames)
+    }
+
+    loadWorkspaceProfileNames()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    actorUserId,
+    workspaceContext?.ownerUserId,
+    workspaceMembers.map(member => member.memberUserId).filter(Boolean).join('|')
+  ])
 
   // Monitor Supabase Connection Status & Real-time Sync Events
   useEffect(() => {
@@ -12653,7 +12744,7 @@ function App() {
                     {workspaceAssistantChatMembers.length === 0 ? (
                       <p className="text-xs text-purple-400">Belum ada assistant aktif.</p>
                     ) : workspaceAssistantChatMembers.map(member => {
-                      const memberName = formatDisplayName(member.memberEmail?.split('@')?.[0] || member.memberEmail || 'Assistant')
+                      const memberName = resolveWorkspaceMemberName(member)
                       const memberMessageCount = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat' && item?.metadata?.chatMemberId === member.id).length
                       const isSelected = member.id === activeWorkspaceChatMemberId
                       return (
@@ -12703,7 +12794,7 @@ function App() {
                       <div key={item.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`flex items-end gap-2 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                           <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
-                            <p className="text-[10px] font-bold opacity-80">{item?.metadata?.senderName || 'User'}</p>
+                            <p className="text-[10px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
                             <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
                             {workspaceChatAcknowledgedIds.has(item.id) && (
                               <p className="mt-1 text-[10px] font-bold opacity-90 inline-flex items-center gap-1">
