@@ -812,7 +812,7 @@ function App() {
 
   const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
     .filter(tab => canShowTab(tab) && canReadArea(tab))
-  const sidebarCollapsed = !isMobileTabletView && !isSidebarHovered
+  const sidebarCollapsed = isMobileTabletView
 
   const handleSidebarMouseEnter = () => {
     if (isMobileTabletView) return
