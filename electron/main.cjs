@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, dialog, Notification } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, dialog, Notification, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -7,6 +7,12 @@ let mainWindow;
 let tray;
 let isQuitting = false;
 const APP_NAME = 'Dyatask Manager - Superapp for Freelancer';
+const UPDATE_FEED_URL = 'https://github.com/dinurpradipta12/DyaTask/releases/latest';
+
+function sendUpdateStatus(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('app-update-status', payload);
+}
 
 function getTrayIconPath() {
   if (app.isPackaged) {
@@ -79,6 +85,7 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info) => {
+    sendUpdateStatus({ status: 'available', version: info.version });
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'Update DyaTask tersedia',
@@ -93,6 +100,7 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateStatus({ status: 'downloaded', version: info.version });
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'Update siap diinstal',
@@ -108,6 +116,22 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (error) => {
     console.error('Auto update error:', error);
+    sendUpdateStatus({ status: 'error', message: error.message || 'Gagal memeriksa update.' });
+  });
+
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateStatus({ status: 'checking' });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    sendUpdateStatus({ status: 'not-available', version: info.version || app.getVersion() });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus({
+      status: 'downloading',
+      percent: Math.round(progress.percent || 0)
+    });
   });
 
   setTimeout(() => {
@@ -235,6 +259,45 @@ ipcMain.on('focus-main-window', () => {
   if (!mainWindow) createWindow();
   mainWindow.show();
   mainWindow.focus();
+});
+
+ipcMain.handle('get-app-version-info', async () => ({
+  isElectron: true,
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  version: app.getVersion(),
+  name: APP_NAME,
+  updateFeedUrl: UPDATE_FEED_URL
+}));
+
+ipcMain.handle('check-for-updates-manual', async () => {
+  if (!app.isPackaged) {
+    return {
+      ok: false,
+      dev: true,
+      message: 'Cek update Electron hanya aktif setelah app dibuild menjadi DMG.'
+    };
+  }
+
+  try {
+    sendUpdateStatus({ status: 'checking' });
+    const result = await autoUpdater.checkForUpdates();
+    return {
+      ok: true,
+      version: result?.updateInfo?.version || app.getVersion()
+    };
+  } catch (error) {
+    sendUpdateStatus({ status: 'error', message: error.message || 'Gagal memeriksa update.' });
+    return {
+      ok: false,
+      message: error.message || 'Gagal memeriksa update.'
+    };
+  }
+});
+
+ipcMain.handle('open-latest-dmg-release', async () => {
+  await shell.openExternal(UPDATE_FEED_URL);
+  return { ok: true, url: UPDATE_FEED_URL };
 });
 
 ipcMain.handle('export-invoice-pdf', async (_event, payload = {}) => {

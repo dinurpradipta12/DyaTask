@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(18px, 4vw, 56px);
+  padding: clamp(14px, 2.8vw, 36px);
   background:
     radial-gradient(circle at 10% 15%, rgba(255, 229, 76, 0.18), transparent 28%),
     radial-gradient(circle at 90% 85%, rgba(143, 117, 216, 0.24), transparent 28%),
@@ -15,11 +15,12 @@
 
 .auth-shell {
   width: min(1020px, 100%);
-  min-height: min(640px, calc(100vh - 48px));
+  height: min(680px, calc(100vh - 28px));
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(360px, 1.05fr) minmax(330px, 0.95fr);
   gap: clamp(24px, 3.4vw, 54px);
-  padding: clamp(22px, 3vw, 38px);
+  padding: clamp(18px, 2.4vw, 30px);
   border-radius: 42px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 34px 80px rgba(28, 25, 38, 0.12);
@@ -28,7 +29,8 @@
 
 .auth-visual-panel {
   position: relative;
-  min-height: 560px;
+  min-height: 0;
+  height: 100%;
   border-radius: 28px;
   overflow: hidden;
   background:
@@ -418,10 +420,24 @@
 .auth-form-panel {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   width: min(370px, 100%);
+  max-height: 100%;
   margin: 0 auto;
+  padding: clamp(8px, 1.2vw, 14px) 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(143, 117, 216, 0.24) transparent;
   color: #17171d;
+}
+
+.auth-form-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.auth-form-panel::-webkit-scrollbar-thumb {
+  background: rgba(143, 117, 216, 0.24);
+  border-radius: 999px;
 }
 
 .auth-logo-mark {
@@ -431,7 +447,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 34px;
+  margin-bottom: 20px;
 }
 
 .auth-logo-mark img {
@@ -442,7 +458,7 @@
 
 .auth-copy {
   text-align: center;
-  margin-bottom: 44px;
+  margin-bottom: 26px;
 }
 
 .auth-copy p {
@@ -464,7 +480,7 @@
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
 }
 
 .auth-field {
@@ -577,22 +593,56 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  border-radius: 18px;
+  padding: 10px 12px;
+  border-radius: 16px;
   background: #fff0f0;
   border: 1px solid #ffd1d1;
   color: #dc2626;
   font-size: 0.78rem;
+  line-height: 1.45;
   font-weight: 400;
 }
 
 .auth-switcher {
   margin-top: auto;
-  padding-top: 42px;
+  padding-top: 24px;
   text-align: center;
   color: #8e8994;
   font-size: 0.78rem;
   font-weight: 400;
+}
+
+.auth-form-panel-invite .auth-logo-mark {
+  margin-bottom: 12px;
+}
+
+.auth-form-panel-invite .auth-copy {
+  margin-bottom: 18px;
+}
+
+.auth-form-panel-invite .auth-copy p {
+  font-size: clamp(1.9rem, 2.6vw, 2.45rem);
+}
+
+.auth-form-panel-invite .auth-form {
+  gap: 13px;
+}
+
+.auth-form-panel-invite .auth-field {
+  gap: 5px;
+}
+
+.auth-form-panel-invite .auth-field input,
+.auth-form-panel-invite .auth-password-row input {
+  padding-bottom: 10px;
+}
+
+.auth-form-panel-invite .auth-options {
+  margin-top: 0;
+}
+
+.auth-form-panel-invite .auth-switcher {
+  padding-top: 16px;
 }
 
 .auth-switcher button {

@@ -341,6 +341,8 @@ AS $$
 DECLARE
   v_uid UUID := auth.uid();
   v_email TEXT := lower(COALESCE(auth.jwt()->>'email', ''));
+  v_invite public.workspace_members;
+  v_existing public.workspace_members;
   v_row public.workspace_members;
 BEGIN
   IF v_uid IS NULL THEN
@@ -352,6 +354,54 @@ BEGIN
   END IF;
 
   PERFORM public.ensure_owner_workspace_membership(v_uid);
+
+  SELECT wm.*
+  INTO v_invite
+  FROM public.workspace_members wm
+  WHERE wm.invite_token = p_invite_token
+  ORDER BY wm.created_at DESC
+  LIMIT 1;
+
+  IF v_invite.id IS NULL THEN
+    RAISE EXCEPTION 'Undangan tidak ditemukan atau sudah dipakai';
+  END IF;
+
+  -- If this user is already connected to the same owner workspace in any status,
+  -- reuse that row instead of updating the invite row and tripping the owner/member unique key.
+  SELECT wm.*
+  INTO v_existing
+  FROM public.workspace_members wm
+  WHERE wm.owner_user_id = v_invite.owner_user_id
+    AND wm.member_user_id = v_uid
+    AND wm.id <> v_invite.id
+  ORDER BY wm.created_at DESC
+  LIMIT 1;
+
+  IF v_existing.id IS NOT NULL THEN
+    UPDATE public.workspace_members wm
+    SET
+      status = 'active',
+      role = CASE WHEN wm.role = 'owner' THEN wm.role ELSE v_invite.role END,
+      permissions = v_invite.permissions,
+      accepted_at = COALESCE(wm.accepted_at, timezone('utc'::text, now())),
+      updated_at = timezone('utc'::text, now())
+    WHERE wm.id = v_existing.id
+    RETURNING * INTO v_row;
+
+    DELETE FROM public.workspace_members wm
+    WHERE wm.id = v_invite.id
+      AND wm.status = 'pending';
+
+    RETURN v_row;
+  END IF;
+
+  IF v_invite.status = 'active' AND v_invite.member_user_id = v_uid THEN
+    RETURN v_invite;
+  END IF;
+
+  IF v_invite.member_user_id IS NOT NULL AND v_invite.member_user_id <> v_uid THEN
+    RAISE EXCEPTION 'Undangan sudah dipakai akun lain';
+  END IF;
 
   UPDATE public.workspace_members wm
   SET
@@ -379,7 +429,8 @@ SET search_path = public
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
-  v_email TEXT := lower(COALESCE(auth.jwt()->>'email', ''));
+  v_invite public.workspace_members;
+  v_existing public.workspace_members;
   v_row public.workspace_members;
 BEGIN
   IF v_uid IS NULL THEN
@@ -392,35 +443,56 @@ BEGIN
 
   PERFORM public.ensure_owner_workspace_membership(v_uid);
 
+  SELECT wm.*
+  INTO v_invite
+  FROM public.workspace_members wm
+  WHERE wm.invite_token = p_invite_token
+    AND wm.status IN ('pending', 'active')
+  ORDER BY wm.created_at DESC
+  LIMIT 1;
+
+  IF v_invite.id IS NULL THEN
+    RAISE EXCEPTION 'Undangan tidak ditemukan atau sudah dipakai';
+  END IF;
+
+  -- If the current auth session already has a row for the same owner, reuse it.
+  SELECT wm.*
+  INTO v_existing
+  FROM public.workspace_members wm
+  WHERE wm.owner_user_id = v_invite.owner_user_id
+    AND wm.member_user_id = v_uid
+    AND wm.id <> v_invite.id
+  ORDER BY wm.created_at DESC
+  LIMIT 1;
+
+  IF v_existing.id IS NOT NULL THEN
+    UPDATE public.workspace_members wm
+    SET
+      status = 'active',
+      role = CASE WHEN wm.role = 'owner' THEN wm.role ELSE v_invite.role END,
+      permissions = v_invite.permissions,
+      accepted_at = COALESCE(wm.accepted_at, timezone('utc'::text, now())),
+      updated_at = timezone('utc'::text, now())
+    WHERE wm.id = v_existing.id
+    RETURNING * INTO v_row;
+
+    DELETE FROM public.workspace_members wm
+    WHERE wm.id = v_invite.id
+      AND wm.status = 'pending';
+
+    RETURN v_row;
+  END IF;
+
+  -- Token-only invites behave like bearer access. If the token is valid, bind
+  -- the invite row to the current session, including new anonymous sessions.
   UPDATE public.workspace_members wm
   SET
     member_user_id = v_uid,
     status = 'active',
-    accepted_at = timezone('utc'::text, now())
-  WHERE wm.invite_token = p_invite_token
-    AND wm.status = 'pending'
+    accepted_at = COALESCE(wm.accepted_at, timezone('utc'::text, now())),
+    updated_at = timezone('utc'::text, now())
+  WHERE wm.id = v_invite.id
   RETURNING * INTO v_row;
-
-  IF v_row.id IS NOT NULL THEN
-    RETURN v_row;
-  END IF;
-
-  -- Idempotent login path: token yang sama boleh dipakai lagi oleh akun assistant yang sama.
-  SELECT wm.*
-  INTO v_row
-  FROM public.workspace_members wm
-  WHERE wm.invite_token = p_invite_token
-    AND wm.status = 'active'
-    AND (
-      wm.member_user_id = v_uid
-      OR lower(wm.member_email) = v_email
-    )
-  ORDER BY wm.created_at DESC
-  LIMIT 1;
-
-  IF v_row.id IS NULL THEN
-    RAISE EXCEPTION 'Undangan tidak ditemukan atau sudah dipakai';
-  END IF;
 
   RETURN v_row;
 END;

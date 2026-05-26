@@ -5,7 +5,10 @@ import dyataskLogo from './logo-dyatask.png'
 import dyataskMiniLogo from './minilogo-dyatask.png'
 import dyataskLogo2 from './logo-dyatask2.png'
 import workspaceTeamMigrationSql from '../supabase/migrations/20260524170000_workspace_team_assistants.sql?raw'
-import { supabase, supabaseAdmin } from './supabaseClient'
+import workspaceGoogleCalendarConfigRpcSql from '../supabase/migrations/20260525173000_workspace_google_calendar_config_rpc.sql?raw'
+import allowAnonymousAuthProfilesSql from '../supabase/migrations/20260525190000_allow_anonymous_auth_profiles.sql?raw'
+import globalLoginVisualSql from '../supabase/migrations/20260525201000_global_login_visual.sql?raw'
+import { supabase } from './supabaseClient'
 import {
   LayoutDashboard,
   CheckSquare,
@@ -34,7 +37,12 @@ import {
   ChevronUp,
   Copy,
   Laptop,
+  Download,
+  Smartphone,
   Check,
+  PlayCircle,
+  BookOpen,
+  GraduationCap,
   Eye,
   EyeOff,
   BellRing,
@@ -52,85 +60,14 @@ import {
   SlidersHorizontal,
   Clipboard,
   MoreHorizontal,
+  Smile,
+  LogOut,
   X
 } from 'lucide-react'
 
-// Mock initial data
-const initialTasks = [
-  {
-    id: 1,
-    title: 'Tinjau Jadwal Kerja Aruneeka',
-    category: 'Work',
-    priority: 'critical',
-    colorLabel: '#8B5CF6',
-    status: 'todo',
-    dueTime: '23:00',
-    hasReminder: true
-  },
-  {
-    id: 2,
-    title: 'Konfigurasi Supabase SQL Schema & RLS',
-    category: 'Work',
-    priority: 'high',
-    colorLabel: '#EC4899',
-    status: 'in_progress',
-    dueTime: '20:00',
-    hasReminder: true
-  },
-  {
-    id: 3,
-    title: 'Sinkronisasi Google Calendar OAuth API',
-    category: 'Meeting',
-    priority: 'medium',
-    colorLabel: '#10B981',
-    status: 'done',
-    dueTime: '14:00',
-    hasReminder: false
-  },
-  {
-    id: 4,
-    title: 'Enkripsi Kunci Rahasia API & Backup Keamanan',
-    category: 'Security',
-    priority: 'critical',
-    colorLabel: '#F59E0B',
-    status: 'todo',
-    dueTime: '21:30',
-    hasReminder: true
-  }
-]
-
-const initialAppointments = [
-  {
-    id: 1,
-    clientName: 'Alisa Adams',
-    title: 'Review Desain UI/UX DyaTask',
-    time: '14:00 - 15:00',
-    date: '2026-05-21',
-    status: 'confirmed',
-    email: 'alisa@aruneeka.pro'
-  },
-  {
-    id: 2,
-    clientName: 'John Doe',
-    title: 'Konsultasi Integrasi Google Sheets',
-    time: '16:30 - 17:30',
-    date: '2026-05-22',
-    status: 'pending',
-    email: 'john.doe@gmail.com'
-  }
-]
-
-const initialNotes = [
-  {
-    id: 'note-1',
-    title: 'Rencana Jangka Panjang DyaTask',
-    cipherText: 'U2FsdGVkX1+vG0N... [ENCRYPTED PAYLOAD]',
-    iv: 'a3d2e5f6',
-    salt: 'f39a0e1b',
-    plaintextHint: 'Rencana rilis versi desktop Electron dan React Native mobile...',
-    isEncrypted: true
-  }
-]
+const initialTasks = []
+const initialAppointments = []
+const initialNotes = []
 
 const TEAM_PERMISSION_DEFAULTS = {
   dashboard: true,
@@ -213,12 +150,200 @@ const PAGE_TOGGLE_DEFAULTS = {
   settings: true
 }
 
+const INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY = 'dyatask_invoice_generator_defaults'
+const LOGIN_VISUAL_SETTINGS_KEY = 'login_visual'
+const TUTORIAL_COURSES_SETTINGS_KEY = 'tutorial_courses'
+const LOGIN_VISUAL_BUCKET = 'app-assets'
+const LOGIN_VISUAL_OBJECT_PATH = 'login/login-visual'
+const FALLBACK_INVOICE_GENERATOR_DEFAULTS = {
+  logo: '',
+  company: 'DyaTask Studio',
+  tagline: 'Freelance Service Invoice',
+  paymentInfo: 'Bank: BCA\nA/N: DyaTask\nNo. Rek: 1234567890',
+  terms: 'Pembayaran maksimal sebelum jatuh tempo.',
+  signer: '',
+  signature: ''
+}
+
+const WORKSPACE_CHAT_EMOJIS = ['👍', '✅', '🙏', '😊', '🔥', '⭐', '📌', '⏰', '💬', '🎯', '🚀', '✨']
+
+const TUTORIAL_COURSES = [
+  {
+    id: 'getting-started',
+    title: 'Mulai dari Dashboard',
+    module: 'Fundamental',
+    duration: '06:20',
+    level: 'Pemula',
+    accent: '#8f75d8',
+    description: 'Kenali command center, ringkasan kerja, notifikasi, dan alur navigasi utama.',
+    lessons: 4,
+    youtubeUrl: ''
+  },
+  {
+    id: 'tasks-projects',
+    title: 'Mengelola Tugas & Project',
+    module: 'Workflow',
+    duration: '11:45',
+    level: 'Pemula',
+    accent: '#22c55e',
+    description: 'Buat folder, task utama, subtask, reminder, dan progress kerja harian.',
+    lessons: 6,
+    youtubeUrl: ''
+  },
+  {
+    id: 'calendar-booking',
+    title: 'Reservasi, Jadwal, dan GCal',
+    module: 'Calendar',
+    duration: '09:10',
+    level: 'Menengah',
+    accent: '#06b6d4',
+    description: 'Sinkronkan event, kelola booking client, dan baca aktivitas Google Calendar.',
+    lessons: 5,
+    youtubeUrl: ''
+  },
+  {
+    id: 'invoice-finance',
+    title: 'Invoice & Finance Tracker',
+    module: 'Finance',
+    duration: '13:05',
+    level: 'Menengah',
+    accent: '#f59e0b',
+    description: 'Buat invoice, simpan default input, pantau status payment, dan follow up.',
+    lessons: 7,
+    youtubeUrl: ''
+  },
+  {
+    id: 'assistant-workspace',
+    title: 'Workspace Assistant',
+    module: 'Team',
+    duration: '08:35',
+    level: 'Owner',
+    accent: '#ec4899',
+    description: 'Invite assistant, atur akses halaman, chat terpisah, revoke, dan regenerate token.',
+    lessons: 5,
+    youtubeUrl: ''
+  },
+  {
+    id: 'content-crm',
+    title: 'Content Planner & CRM',
+    module: 'Growth',
+    duration: '10:15',
+    level: 'Menengah',
+    accent: '#6366f1',
+    description: 'Susun content plan, insight, client CRM, aktivitas, dan follow-up.',
+    lessons: 6,
+    youtubeUrl: ''
+  }
+]
+
+const getYoutubeVideoId = (value) => {
+  const rawUrl = String(value || '').trim()
+  if (!rawUrl) return ''
+  const directId = rawUrl.match(/^[a-zA-Z0-9_-]{11}$/)?.[0]
+  if (directId) return directId
+  try {
+    const url = new URL(rawUrl)
+    let videoId = ''
+    if (url.hostname.includes('youtu.be')) {
+      videoId = url.pathname.replace(/^\/+/, '').split('/')[0]
+    } else if (url.searchParams.get('v')) {
+      videoId = url.searchParams.get('v') || ''
+    } else if (url.pathname.includes('/embed/')) {
+      videoId = url.pathname.split('/embed/')[1]?.split('/')[0] || ''
+    } else if (url.pathname.includes('/shorts/')) {
+      videoId = url.pathname.split('/shorts/')[1]?.split('/')[0] || ''
+    }
+    return /^[a-zA-Z0-9_-]{11}$/.test(videoId) ? videoId : ''
+  } catch {
+    return ''
+  }
+}
+
+const getYoutubeEmbedUrl = (value) => {
+  const videoId = getYoutubeVideoId(value)
+  return videoId ? `https://www.youtube.com/embed/${videoId}` : ''
+}
+
+const getYoutubeThumbnailUrl = (value) => {
+  const videoId = getYoutubeVideoId(value)
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ''
+}
+
+const readStoredJson = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw)
+  } catch {
+    return fallback
+  }
+}
+
+const readStoredInvoiceGeneratorDefaults = (storageKey = INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY) => {
+  const parsed = readStoredJson(storageKey, {})
+  return { ...FALLBACK_INVOICE_GENERATOR_DEFAULTS, ...(parsed && typeof parsed === 'object' ? parsed : {}) }
+}
+
 function App() {
   const formatDateLocal = (date) => {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const day = String(date.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
+  }
+
+  const parseLocalDateValue = (value) => {
+    if (!value) return null
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+    const safeValue = String(value).trim()
+    if (!safeValue) return null
+    const dateOnlyMatch = safeValue.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch
+      return new Date(Number(year), Number(month) - 1, Number(day))
+    }
+    const parsed = new Date(safeValue)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  const formatLongDate = (value, fallback = '-') => {
+    const date = parseLocalDateValue(value)
+    if (!date) return fallback
+    return date.toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
+  }
+
+  const formatLongDateTime = (value, fallback = '-') => {
+    const parsed = value ? new Date(value) : null
+    if (!parsed || Number.isNaN(parsed.getTime())) return fallback
+    return `${formatLongDate(parsed)} ${parsed.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`
+  }
+
+  const formatTextDates = (value) => {
+    return String(value || '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, (match) => formatLongDate(match, match))
+  }
+
+  const formatTime12Hour = (value, fallback = '') => {
+    const safeValue = String(value || '').trim()
+    if (!safeValue) return fallback
+    const match = safeValue.match(/^(\d{1,2}):(\d{2})/)
+    if (!match) return safeValue
+    const hours = Number(match[1])
+    const minutes = match[2]
+    if (Number.isNaN(hours)) return safeValue
+    const period = hours >= 12 ? 'pm' : 'am'
+    const hour12 = hours % 12 || 12
+    return `${String(hour12).padStart(2, '0')}:${minutes} ${period}`
+  }
+
+  const formatCalendarPillTitle = (timeValue, title, fallbackTime = 'All day') => {
+    const displayTime = formatTime12Hour(timeValue, fallbackTime)
+    const displayTitle = String(title || '').trim() || '(Tanpa judul)'
+    return `${displayTime} - ${displayTitle}`
   }
 
   const todayDate = new Date()
@@ -238,7 +363,9 @@ function App() {
   const [appHeaderTagline, setAppHeaderTagline] = useState(() => localStorage.getItem('dyatask_header_tagline') || 'Modern Soft Minimalist Amethyst')
   const [appHeaderTitle, setAppHeaderTitle] = useState(() => localStorage.getItem('dyatask_header_title') || 'Dyatask Manager - Superapp for Freelancer')
   const [headerNow, setHeaderNow] = useState(new Date())
-  const [loginVisualImage, setLoginVisualImage] = useState(() => localStorage.getItem('dyatask_login_visual_image') || '')
+  const [loginVisualImage, setLoginVisualImage] = useState('')
+  const [loginVisualUploading, setLoginVisualUploading] = useState(false)
+  const [loginVisualSyncStatus, setLoginVisualSyncStatus] = useState('')
   const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem('dyatask_theme')
     const hasUserThemeChoice = localStorage.getItem('dyatask_theme_user_selected') === 'true'
@@ -290,11 +417,13 @@ function App() {
   const [contentPlannerTime, setContentPlannerTime] = useState('09:00')
   const [contentPlannerStatus, setContentPlannerStatus] = useState('draft')
   const [contentPlannerPostLink, setContentPlannerPostLink] = useState('')
-  const [contentPlannerInsightLink, setContentPlannerInsightLink] = useState('')
-  const [contentPlannerMoreOpenId, setContentPlannerMoreOpenId] = useState(null)
   const [contentPlannerLinkEditId, setContentPlannerLinkEditId] = useState(null)
   const [contentPlannerLinkDraft, setContentPlannerLinkDraft] = useState('')
-  const [contentPlannerMoreMenuPos, setContentPlannerMoreMenuPos] = useState({ top: 0, left: 0 })
+  const [contentPlannerDetailItem, setContentPlannerDetailItem] = useState(null)
+  const [contentPlannerInsightDraft, setContentPlannerInsightDraft] = useState('')
+  const [contentPlannerInsightFormOpen, setContentPlannerInsightFormOpen] = useState(false)
+  const [contentPlannerInsightMetrics, setContentPlannerInsightMetrics] = useState({})
+  const [showContentPlannerForm, setShowContentPlannerForm] = useState(true)
 
   // Booking state
   const [appointments, setAppointments] = useState(initialAppointments)
@@ -302,6 +431,7 @@ function App() {
   const [nationalHolidays, setNationalHolidays] = useState([])
   const seenGoogleCalendarEventIdsRef = useRef(new Set())
   const googleCalendarBaselineReadyRef = useRef(false)
+  const googleCalendarFetchIdRef = useRef(0)
   const reminderNotificationKeysRef = useRef(new Set())
   const orderDeadlineReminderKeysRef = useRef(new Set())
   const invoiceReminderKeysRef = useRef(new Set())
@@ -382,13 +512,7 @@ function App() {
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))
   const [isBookingFormExpanded, setIsBookingFormExpanded] = useState(true)
   const [copiedShareLink, setCopiedShareLink] = useState(false)
-  const [shareToken, setShareToken] = useState(() => {
-    const saved = localStorage.getItem('dyatask_booking_share_token')
-    if (saved) return saved
-    const generated = Math.random().toString(36).slice(2, 10)
-    localStorage.setItem('dyatask_booking_share_token', generated)
-    return generated
-  })
+  const [shareToken, setShareToken] = useState('')
   const [bookingAvailability, setBookingAvailability] = useState(() => {
     const defaultDaySchedules = {
       0: { enabled: false, startHour: '09:00', endHour: '17:00' },
@@ -401,7 +525,7 @@ function App() {
     }
 
     try {
-      const saved = JSON.parse(localStorage.getItem('dyatask_booking_availability') || '{}')
+      const saved = {}
       const hasDaySchedules = saved.daySchedules && typeof saved.daySchedules === 'object'
 
       const migratedDaySchedules = hasDaySchedules
@@ -439,21 +563,14 @@ function App() {
       return { daySchedules: defaultDaySchedules, slotMinutes: 30 }
     }
   })
-  const [reservationSessionPrice, setReservationSessionPrice] = useState(() => {
-    const saved = Number(localStorage.getItem('dyatask_reservation_session_price') || '250000')
-    return Number.isFinite(saved) && saved >= 0 ? saved : 250000
-  })
+  const [reservationSessionPrice, setReservationSessionPrice] = useState(250000)
   const [selectedAvailabilityDay, setSelectedAvailabilityDay] = useState(1)
   const [showAvailabilitySettings, setShowAvailabilitySettings] = useState(false)
   const [showBookingQuickForm, setShowBookingQuickForm] = useState(false)
   const [publicBookingSuccess, setPublicBookingSuccess] = useState(false)
   const [publicBookingSummary, setPublicBookingSummary] = useState(null)
-  const [publicBookingNotes, setPublicBookingNotes] = useState(() => {
-    const saved = localStorage.getItem('dyatask_public_booking_notes')
-    if (saved) return saved
-    return 'Ketentuan reservasi:\n- Harap hadir 10 menit sebelum jadwal.\n- Jadwal dapat dijadwalkan ulang maksimal 1x.\n- Link meeting akan dikirim via email/WhatsApp setelah konfirmasi.'
-  })
-  const [publicShareBaseUrl, setPublicShareBaseUrl] = useState(() => localStorage.getItem('dyatask_public_share_base_url') || '')
+  const [publicBookingNotes, setPublicBookingNotes] = useState('Ketentuan reservasi:\n- Harap hadir 10 menit sebelum jadwal.\n- Jadwal dapat dijadwalkan ulang maksimal 1x.\n- Link meeting akan dikirim via email/WhatsApp setelah konfirmasi.')
+  const [publicShareBaseUrl, setPublicShareBaseUrl] = useState('')
   const [spreadsheetOrders, setSpreadsheetOrders] = useState([])
   const [orderTimelineItems, setOrderTimelineItems] = useState([])
   const [selectedOrderId, setSelectedOrderId] = useState(null)
@@ -487,13 +604,14 @@ function App() {
   const [invoiceDueDate, setInvoiceDueDate] = useState(todayString)
   const [invoiceStatus, setInvoiceStatus] = useState('draft')
   const [invoiceNotes, setInvoiceNotes] = useState('')
+  const [invoiceGeneratorDefaults, setInvoiceGeneratorDefaults] = useState(() => ({ ...FALLBACK_INVOICE_GENERATOR_DEFAULTS }))
   const [invoiceGeneratorEditingId, setInvoiceGeneratorEditingId] = useState(null)
-  const [invoiceGeneratorLogo, setInvoiceGeneratorLogo] = useState('')
+  const [invoiceGeneratorLogo, setInvoiceGeneratorLogo] = useState(() => invoiceGeneratorDefaults.logo)
   const [invoiceGeneratorNumber, setInvoiceGeneratorNumber] = useState('')
   const [invoiceGeneratorDate, setInvoiceGeneratorDate] = useState(todayString)
   const [invoiceGeneratorDueDate, setInvoiceGeneratorDueDate] = useState(todayString)
-  const [invoiceGeneratorCompany, setInvoiceGeneratorCompany] = useState('DyaTask Studio')
-  const [invoiceGeneratorTagline, setInvoiceGeneratorTagline] = useState('Freelance Service Invoice')
+  const [invoiceGeneratorCompany, setInvoiceGeneratorCompany] = useState(() => invoiceGeneratorDefaults.company)
+  const [invoiceGeneratorTagline, setInvoiceGeneratorTagline] = useState(() => invoiceGeneratorDefaults.tagline)
   const [invoiceGeneratorClient, setInvoiceGeneratorClient] = useState('')
   const [invoiceGeneratorClientAddress, setInvoiceGeneratorClientAddress] = useState('')
   const [invoiceGeneratorShipTo, setInvoiceGeneratorShipTo] = useState('')
@@ -501,13 +619,14 @@ function App() {
   const [invoiceGeneratorServiceDesc, setInvoiceGeneratorServiceDesc] = useState('')
   const [invoiceGeneratorQty, setInvoiceGeneratorQty] = useState(1)
   const [invoiceGeneratorPrice, setInvoiceGeneratorPrice] = useState(0)
-  const [invoiceGeneratorPaymentInfo, setInvoiceGeneratorPaymentInfo] = useState('Bank: BCA\nA/N: DyaTask\nNo. Rek: 1234567890')
-  const [invoiceGeneratorTerms, setInvoiceGeneratorTerms] = useState('Pembayaran maksimal sebelum jatuh tempo.')
-  const [invoiceGeneratorSigner, setInvoiceGeneratorSigner] = useState('')
-  const [invoiceGeneratorSignature, setInvoiceGeneratorSignature] = useState('')
+  const [invoiceGeneratorPaymentInfo, setInvoiceGeneratorPaymentInfo] = useState(() => invoiceGeneratorDefaults.paymentInfo)
+  const [invoiceGeneratorTerms, setInvoiceGeneratorTerms] = useState(() => invoiceGeneratorDefaults.terms)
+  const [invoiceGeneratorSigner, setInvoiceGeneratorSigner] = useState(() => invoiceGeneratorDefaults.signer)
+  const [invoiceGeneratorSignature, setInvoiceGeneratorSignature] = useState(() => invoiceGeneratorDefaults.signature)
   const [invoiceGeneratorSourceOrderId, setInvoiceGeneratorSourceOrderId] = useState(null)
   const [invoiceGeneratorStatus, setInvoiceGeneratorStatus] = useState('draft')
   const [showInvoiceGeneratorForm, setShowInvoiceGeneratorForm] = useState(true)
+  const [invoicePreviewModalItem, setInvoicePreviewModalItem] = useState(null)
   const [crmClients, setCrmClients] = useState([])
   const [crmActivities, setCrmActivities] = useState([])
   const [showCrmForm, setShowCrmForm] = useState(false)
@@ -537,17 +656,9 @@ function App() {
   const [scrambledText, setScrambledText] = useState('')
 
   // Simulated push notification
-  const [notifications, setNotifications] = useState(() => {
-    try {
-      const raw = localStorage.getItem('dyatask_notification_history')
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  })
+  const [notifications, setNotifications] = useState([])
   const [showNotificationList, setShowNotificationList] = useState(false)
+  const [notificationBannerVisible, setNotificationBannerVisible] = useState(true)
   const [floatingQuickAdd, setFloatingQuickAdd] = useState(false)
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
   const [showMobileMoreMenu, setShowMobileMoreMenu] = useState(false)
@@ -563,14 +674,24 @@ function App() {
   const [pageAccessDraftPermissions, setPageAccessDraftPermissions] = useState({ ...TEAM_PERMISSION_DEFAULTS })
   const [migrationOneClickCopied, setMigrationOneClickCopied] = useState(false)
   const [pendingInviteToken, setPendingInviteToken] = useState(() => localStorage.getItem('dyatask_pending_workspace_invite_token') || '')
-  const [inviteLandingToken, setInviteLandingToken] = useState(() => localStorage.getItem('dyatask_pending_workspace_invite_token') || '')
+  const [inviteLandingToken, setInviteLandingToken] = useState('')
   const [inviteConfirmModalOpen, setInviteConfirmModalOpen] = useState(false)
   const [inviteConfirmInput, setInviteConfirmInput] = useState('')
   const [inviteDirectLoading, setInviteDirectLoading] = useState(false)
+  const [inviteAuthNotice, setInviteAuthNotice] = useState('')
+  const [workspaceInviteNotice, setWorkspaceInviteNotice] = useState(null)
+  const [tutorialCourses, setTutorialCourses] = useState(TUTORIAL_COURSES)
+  const [tutorialViewMode, setTutorialViewMode] = useState('gallery')
+  const [tutorialProgress, setTutorialProgress] = useState([])
+  const [activeTutorialCourse, setActiveTutorialCourse] = useState(null)
+  const [editingTutorialCourse, setEditingTutorialCourse] = useState(null)
+  const [savingTutorialCourse, setSavingTutorialCourse] = useState(false)
   const [workspaceChatModalOpen, setWorkspaceChatModalOpen] = useState(false)
   const [workspaceChatMessage, setWorkspaceChatMessage] = useState('')
   const [workspaceChatSending, setWorkspaceChatSending] = useState(false)
   const [workspaceChatLastReadAt, setWorkspaceChatLastReadAt] = useState(0)
+  const [selectedWorkspaceChatMemberId, setSelectedWorkspaceChatMemberId] = useState('')
+  const [workspaceEmojiPickerOpen, setWorkspaceEmojiPickerOpen] = useState(false)
   const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1180
@@ -579,6 +700,10 @@ function App() {
   const [mobileOrderDetailOpen, setMobileOrderDetailOpen] = useState(false)
   const [mobileCrmDetailOpen, setMobileCrmDetailOpen] = useState(false)
   const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
+  const [installOptionsOpen, setInstallOptionsOpen] = useState(false)
+  const [appVersionInfo, setAppVersionInfo] = useState(null)
+  const [manualUpdateStatus, setManualUpdateStatus] = useState('')
+  const [checkingManualUpdate, setCheckingManualUpdate] = useState(false)
   const [pwaInstallPrompt, setPwaInstallPrompt] = useState(null)
   const [isPwaStandalone, setIsPwaStandalone] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -592,6 +717,7 @@ function App() {
   const currentDeployVersionRef = useRef(import.meta.env.VITE_DEPLOY_COMMIT || 'dev')
   const announcedDeployVersionRef = useRef('')
   const dismissedDeployVersionRef = useRef(localStorage.getItem('dyatask_dismissed_deploy_version') || '')
+  const tutorialProgressLoadedRef = useRef(false)
   const seenAssistantNoteIdsRef = useRef(new Set())
   const invoicePreviewRef = useRef(null)
 
@@ -622,13 +748,38 @@ function App() {
   const inviteTokenFromUrl = searchParams.get('invite') || searchParams.get('invite_token') || ''
   const inviteUsernameFromUrl = searchParams.get('u') || searchParams.get('username') || ''
   const actorUserId = session?.user?.id || null
+  const actorEmail = String(session?.user?.email || '').trim().toLowerCase()
+  const actorUsername = actorEmail.split('@')[0] || ''
+  const appDeveloperAccounts = String(import.meta.env.VITE_APP_DEVELOPER_EMAILS || 'arunika.dyatask@gmail.com,dinur.dyatask@gmail.com,dinurm.pradipta.dyatask@gmail.com')
+    .split(',')
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean)
+  const appDeveloperUsernames = String(import.meta.env.VITE_APP_DEVELOPER_USERNAMES || 'arunika.dyatask,dinur,dinurm.pradipta')
+    .split(',')
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean)
+  const isAppDeveloper = appDeveloperAccounts.includes(actorEmail)
+    || appDeveloperUsernames.includes(actorUsername)
+    || actorEmail.startsWith('arunika.dyatask@')
   const scopedUserId = workspaceContext?.ownerUserId || actorUserId
   const workspaceRole = workspaceContext?.role || 'owner'
+  const workspaceStatus = workspaceContext?.status || 'active'
+  const isWorkspaceAccessRevoked = workspaceRole !== 'owner' && workspaceStatus === 'revoked'
   const workspacePermissions = normalizeTeamPermissions(workspaceContext?.permissions || {})
   const canManageTeam = workspaceRole === 'owner'
-  const hasWritePermission = (areaKey) => workspaceRole === 'owner' || (workspaceRole === 'assistant' && !!workspacePermissions?.[areaKey])
-  const canReadArea = (areaKey) => workspaceRole === 'owner' || !!workspacePermissions?.[areaKey] || areaKey === 'reports'
+  const hasWritePermission = (areaKey) => !isWorkspaceAccessRevoked && (workspaceRole === 'owner' || (workspaceRole === 'assistant' && !!workspacePermissions?.[areaKey]))
+  const canReadArea = (areaKey) => !isWorkspaceAccessRevoked && (workspaceRole === 'owner' || !!workspacePermissions?.[areaKey])
   const pageControlStorageKey = scopedUserId ? `dyatask_enabled_pages_${scopedUserId}` : 'dyatask_enabled_pages_guest'
+  const scopedStorageKey = (baseKey) => scopedUserId ? `${baseKey}_${scopedUserId}` : `${baseKey}_guest`
+  const contentPlannerFormStorageKey = scopedStorageKey('dyatask_show_content_planner_form')
+  const notificationHistoryStorageKey = scopedStorageKey('dyatask_notification_history')
+  const bookingAvailabilityStorageKey = scopedStorageKey('dyatask_booking_availability')
+  const bookingShareTokenStorageKey = scopedStorageKey('dyatask_booking_share_token')
+  const reservationSessionPriceStorageKey = scopedStorageKey('dyatask_reservation_session_price')
+  const publicBookingNotesStorageKey = scopedStorageKey('dyatask_public_booking_notes')
+  const publicShareBaseUrlStorageKey = scopedStorageKey('dyatask_public_share_base_url')
+  const tutorialProgressStorageKey = scopedStorageKey('dyatask_tutorial_progress')
+  const invoiceGeneratorDefaultsStorageKey = scopedStorageKey(INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY)
   const isPageEnabled = (pageKey) => enabledPages?.[pageKey] !== false
 
   const canShowTab = (tabKey) => {
@@ -648,7 +799,8 @@ function App() {
       reports: 'reports',
       notes: 'notes',
       integrations: 'integrations',
-      settings: 'settings'
+      settings: 'settings',
+      tutorial: null
     }
     const pageKey = tabToPage[tabKey]
     return !pageKey || isPageEnabled(pageKey)
@@ -659,7 +811,7 @@ function App() {
   }
 
   const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
-    .filter(tab => canShowTab(tab))
+    .filter(tab => canShowTab(tab) && canReadArea(tab))
   const sidebarCollapsed = !isMobileTabletView && !isSidebarHovered
 
   const handleSidebarMouseEnter = () => {
@@ -713,6 +865,14 @@ function App() {
   }, [activeTab, editingOrderId])
 
   useEffect(() => {
+    setShowContentPlannerForm(localStorage.getItem(contentPlannerFormStorageKey) !== 'false')
+  }, [contentPlannerFormStorageKey])
+
+  useEffect(() => {
+    localStorage.setItem(contentPlannerFormStorageKey, showContentPlannerForm ? 'true' : 'false')
+  }, [showContentPlannerForm, contentPlannerFormStorageKey])
+
+  useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(pageControlStorageKey) || '{}')
       setEnabledPages({ ...PAGE_TOGGLE_DEFAULTS, ...(saved || {}) })
@@ -748,13 +908,15 @@ function App() {
       pillar: item.pillar || '',
       title: item.title || '',
       postLink: item.postLink || '',
-      insightLink: item.insightLink || '',
+      insightNote: item.insightNote || item.insightLink || '',
+      insightMetrics: item.insightMetrics && typeof item.insightMetrics === 'object' ? item.insightMetrics : {},
       taskId: item.taskId || null
     })))
   }, [integrationConfigsLoaded, integrationConfigs, todayString])
 
   useEffect(() => {
     if (!scopedUserId || !integrationConfigsLoaded) return
+    if (!hasWritePermission('integrations')) return
     const mergedPages = { ...PAGE_TOGGLE_DEFAULTS, ...(enabledPages || {}) }
     const currentCloudPages = integrationConfigs?.[PAGE_CONTROL_CONFIG_KEY] || null
     if (JSON.stringify(currentCloudPages) === JSON.stringify(mergedPages)) return
@@ -770,10 +932,11 @@ function App() {
       .then(({ error }) => {
         if (error) console.warn('Gagal sinkron Atur Halaman ke Supabase:', error.message)
       })
-  }, [enabledPages, scopedUserId, integrationConfigsLoaded, integrationConfigs])
+  }, [enabledPages, scopedUserId, integrationConfigsLoaded, integrationConfigs, workspaceRole, workspacePermissions])
 
   useEffect(() => {
-    if (!scopedUserId) return
+    if (!scopedUserId || !integrationConfigsLoaded) return
+    if (!hasWritePermission('integrations')) return
     const currentCloudItems = integrationConfigs?.[CONTENT_PLANNER_CONFIG_KEY] || []
     if (JSON.stringify(currentCloudItems) === JSON.stringify(contentPlannerItems)) return
 
@@ -795,7 +958,7 @@ function App() {
     return () => {
       if (contentPlannerAutosaveTimerRef.current) clearTimeout(contentPlannerAutosaveTimerRef.current)
     }
-  }, [contentPlannerItems, scopedUserId, integrationConfigs])
+  }, [contentPlannerItems, scopedUserId, integrationConfigsLoaded, integrationConfigs, workspaceRole, workspacePermissions])
 
   useEffect(() => {
     if (!invoiceGeneratorNumber) {
@@ -804,32 +967,21 @@ function App() {
   }, [invoices])
 
   useEffect(() => {
-    const areaByTab = {
-      dashboard: 'reports',
-      tasks: 'tasks',
-      calendar: 'reservations',
-      notes: 'notes',
-      integrations: 'integrations',
-      settings: 'settings',
-      orders: 'orders',
-      designOrders: 'orders',
-      generalOrders: 'orders',
-      mentoringSchedule: 'reservations',
-      contentPlanner: 'tasks',
-      invoiceFollowUp: 'finance',
-      invoiceGenerator: 'finance',
-      finance: 'finance',
-      crm: 'crm',
-      reports: 'reports'
+    const nextDefaults = readStoredInvoiceGeneratorDefaults(invoiceGeneratorDefaultsStorageKey)
+    setInvoiceGeneratorDefaults(nextDefaults)
+    if (!invoiceGeneratorEditingId) {
+      applyInvoiceGeneratorDefaults(nextDefaults)
     }
-    const requiredArea = areaByTab[activeTab]
-    if (workspaceRole !== 'owner' && requiredArea && !canReadArea(requiredArea)) {
-      setActiveTab('dashboard')
-    }
-  }, [activeTab, workspaceRole, workspacePermissions])
+  }, [invoiceGeneratorDefaultsStorageKey])
 
   useEffect(() => {
-    if (activeTab === 'pageControl') return
+    if (workspaceRole !== 'owner' && !['pageControl', 'tutorial'].includes(activeTab) && !canReadArea(activeTab)) {
+      setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
+    }
+  }, [activeTab, workspaceRole, workspacePermissions, visiblePrimaryTabs])
+
+  useEffect(() => {
+    if (activeTab === 'pageControl' || activeTab === 'tutorial') return
     if (!canShowTab(activeTab)) {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
     }
@@ -878,20 +1030,125 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (loginVisualImage) {
-      localStorage.setItem('dyatask_login_visual_image', loginVisualImage)
-    } else {
+    let cancelled = false
+
+    const loadGlobalLoginVisual = async () => {
+      const { data, error } = await supabase
+        .from('app_global_settings')
+        .select('value')
+        .eq('key', LOGIN_VISUAL_SETTINGS_KEY)
+        .maybeSingle()
+
+      if (cancelled) return
+      if (error) {
+        console.warn('Gagal memuat gambar login global:', error.message)
+        setLoginVisualSyncStatus('Jalankan One-Click Apply SQL agar gambar login bisa tersinkron global.')
+        return
+      }
+
+      const value = data?.value && typeof data.value === 'object' ? data.value : {}
+      const publicUrl = String(value.publicUrl || '').trim()
+      const version = value.version || value.updatedAt || ''
+      setLoginVisualImage(publicUrl ? `${publicUrl}${publicUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}` : '')
+      setLoginVisualSyncStatus(publicUrl ? 'Gambar login tersinkron dari database.' : '')
       localStorage.removeItem('dyatask_login_visual_image')
     }
-  }, [loginVisualImage])
+
+    loadGlobalLoginVisual()
+
+    const channel = supabase
+      .channel('app_global_settings_login_visual')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'app_global_settings',
+        filter: `key=eq.${LOGIN_VISUAL_SETTINGS_KEY}`
+      }, loadGlobalLoginVisual)
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem('dyatask_reservation_session_price', String(Math.max(0, Number(reservationSessionPrice || 0))))
-  }, [reservationSessionPrice])
+    let cancelled = false
 
-  const handleLoginVisualUpload = (event) => {
+    const loadTutorialCourses = async () => {
+      const { data, error } = await supabase
+        .from('app_global_settings')
+        .select('value')
+        .eq('key', TUTORIAL_COURSES_SETTINGS_KEY)
+        .maybeSingle()
+
+      if (cancelled) return
+      if (error) {
+        console.warn('Gagal memuat tutorial global:', error.message)
+        return
+      }
+
+      const courses = Array.isArray(data?.value?.courses) ? data.value.courses : []
+      if (!courses.length) return
+      setTutorialCourses(TUTORIAL_COURSES.map(defaultCourse => {
+        const savedCourse = courses.find(item => item.id === defaultCourse.id) || {}
+        return { ...defaultCourse, ...savedCourse }
+      }))
+    }
+
+    loadTutorialCourses()
+
+    const channel = supabase
+      .channel('app_global_settings_tutorial_courses')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'app_global_settings',
+        filter: `key=eq.${TUTORIAL_COURSES_SETTINGS_KEY}`
+      }, loadTutorialCourses)
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(reservationSessionPriceStorageKey, String(Math.max(0, Number(reservationSessionPrice || 0))))
+  }, [reservationSessionPrice, reservationSessionPriceStorageKey])
+
+  useEffect(() => {
+    tutorialProgressLoadedRef.current = false
+    try {
+      const saved = JSON.parse(localStorage.getItem(tutorialProgressStorageKey) || '[]')
+      setTutorialProgress(Array.isArray(saved) ? saved : [])
+    } catch {
+      setTutorialProgress([])
+    }
+    setTimeout(() => {
+      tutorialProgressLoadedRef.current = true
+    }, 0)
+  }, [tutorialProgressStorageKey])
+
+  useEffect(() => {
+    if (!tutorialProgressLoadedRef.current) return
+    localStorage.setItem(tutorialProgressStorageKey, JSON.stringify(tutorialProgress))
+  }, [tutorialProgress, tutorialProgressStorageKey])
+
+  const handleLoginVisualUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
+
+    if (!isAppDeveloper) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Ditolak',
+        message: 'Hanya developer app yang bisa mengganti gambar login global.'
+      })
+      event.target.value = ''
+      return
+    }
 
     if (!file.type.startsWith('image/')) {
       alert('File harus berupa gambar.')
@@ -905,12 +1162,211 @@ function App() {
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      setLoginVisualImage(String(reader.result || ''))
+    setLoginVisualUploading(true)
+    setLoginVisualSyncStatus('Mengupload gambar login...')
+    try {
+      await supabase.storage
+        .from(LOGIN_VISUAL_BUCKET)
+        .remove([LOGIN_VISUAL_OBJECT_PATH])
+
+      const { error: uploadError } = await supabase.storage
+        .from(LOGIN_VISUAL_BUCKET)
+        .upload(LOGIN_VISUAL_OBJECT_PATH, file, {
+          upsert: true,
+          contentType: file.type,
+          cacheControl: '0'
+        })
+
+      if (uploadError) {
+        throw new Error(
+          uploadError.message === 'Bucket not found'
+            ? 'Bucket Supabase Storage "app-assets" belum dibuat. Jalankan One-Click Apply SQL dulu.'
+            : uploadError.message
+        )
+      }
+
+      const { data: publicData } = supabase.storage
+        .from(LOGIN_VISUAL_BUCKET)
+        .getPublicUrl(LOGIN_VISUAL_OBJECT_PATH)
+
+      const publicUrl = publicData?.publicUrl || ''
+      const version = Date.now()
+      const nextImageUrl = `${publicUrl}?v=${version}`
+
+      const { error: settingsError } = await supabase
+        .from('app_global_settings')
+        .upsert({
+          key: LOGIN_VISUAL_SETTINGS_KEY,
+          value: {
+            bucket: LOGIN_VISUAL_BUCKET,
+            objectPath: LOGIN_VISUAL_OBJECT_PATH,
+            publicUrl,
+            contentType: file.type,
+            size: file.size,
+            version,
+            updatedAt: new Date().toISOString()
+          },
+          updated_by: actorUserId || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' })
+
+      if (settingsError) throw settingsError
+
+      setLoginVisualImage(nextImageUrl)
+      setLoginVisualSyncStatus('Gambar login tersimpan di database dan tersinkron ke semua user.')
       event.target.value = ''
+    } catch (error) {
+      console.warn('Upload gambar login gagal:', error.message)
+      setLoginVisualSyncStatus(`Gagal upload gambar login: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Upload Gambar Login',
+        message: error.message
+      })
+    } finally {
+      setLoginVisualUploading(false)
     }
-    reader.readAsDataURL(file)
+  }
+
+  const handleResetLoginVisual = async () => {
+    if (!isAppDeveloper) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Ditolak',
+        message: 'Hanya developer app yang bisa reset gambar login global.'
+      })
+      return
+    }
+
+    setLoginVisualUploading(true)
+    setLoginVisualSyncStatus('Menghapus gambar login global...')
+    try {
+      await supabase.storage
+        .from(LOGIN_VISUAL_BUCKET)
+        .remove([LOGIN_VISUAL_OBJECT_PATH])
+
+      const { error } = await supabase
+        .from('app_global_settings')
+        .delete()
+        .eq('key', LOGIN_VISUAL_SETTINGS_KEY)
+
+      if (error) throw error
+
+      setLoginVisualImage('')
+      setLoginVisualSyncStatus('Gambar login dikembalikan ke default untuk semua user.')
+    } catch (error) {
+      console.warn('Reset gambar login gagal:', error.message)
+      setLoginVisualSyncStatus(`Gagal reset gambar login: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Reset Gambar Login',
+        message: error.message
+      })
+    } finally {
+      setLoginVisualUploading(false)
+    }
+  }
+
+  const openTutorialCourseEditor = (course) => {
+    if (!isAppDeveloper) return
+    setEditingTutorialCourse({ ...course })
+  }
+
+  const openTutorialCourse = (course) => {
+    if (!course?.id) return
+    const now = new Date().toISOString()
+    setTutorialProgress(prev => {
+      const existing = prev.find(item => item.courseId === course.id)
+      if (existing?.status === 'completed') {
+        return prev.map(item => item.courseId === course.id ? { ...item, lastWatchedAt: now } : item)
+      }
+      if (existing) {
+        return prev.map(item => item.courseId === course.id ? {
+          ...item,
+          status: 'in_progress',
+          startedAt: item.startedAt || now,
+          lastWatchedAt: now,
+          completedAt: ''
+        } : item)
+      }
+      return [{
+        courseId: course.id,
+        status: 'in_progress',
+        startedAt: now,
+        lastWatchedAt: now,
+        completedAt: ''
+      }, ...prev]
+    })
+    setActiveTutorialCourse(course)
+  }
+
+  const completeTutorialCourse = (courseId) => {
+    const now = new Date().toISOString()
+    setTutorialProgress(prev => {
+      const existing = prev.find(item => item.courseId === courseId)
+      if (existing) {
+        return prev.map(item => item.courseId === courseId ? {
+          ...item,
+          status: 'completed',
+          lastWatchedAt: item.lastWatchedAt || now,
+          completedAt: now
+        } : item)
+      }
+      return [{
+        courseId,
+        status: 'completed',
+        startedAt: now,
+        lastWatchedAt: now,
+        completedAt: now
+      }, ...prev]
+    })
+  }
+
+  const saveTutorialCourse = async (event) => {
+    event.preventDefault()
+    if (!isAppDeveloper || !editingTutorialCourse?.id) return
+
+    const normalizedCourse = {
+      ...editingTutorialCourse,
+      duration: String(editingTutorialCourse.duration || '').trim() || '00:00',
+      lessons: Math.max(1, Number(editingTutorialCourse.lessons || 1)),
+      youtubeUrl: String(editingTutorialCourse.youtubeUrl || '').trim()
+    }
+    const nextCourses = tutorialCourses.map(course => (
+      course.id === normalizedCourse.id ? normalizedCourse : course
+    ))
+
+    setSavingTutorialCourse(true)
+    try {
+      const { error } = await supabase
+        .from('app_global_settings')
+        .upsert({
+          key: TUTORIAL_COURSES_SETTINGS_KEY,
+          value: {
+            courses: nextCourses,
+            updatedAt: new Date().toISOString()
+          },
+          updated_by: actorUserId || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+      setTutorialCourses(nextCourses)
+      setEditingTutorialCourse(null)
+      showWorkspaceInviteNotice({
+        tone: 'success',
+        title: 'Tutorial Disimpan',
+        message: `${normalizedCourse.title} sudah tersinkron untuk semua user.`
+      })
+    } catch (error) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menyimpan Tutorial',
+        message: error.message
+      })
+    } finally {
+      setSavingTutorialCourse(false)
+    }
   }
 
   const openIntegrationModal = (key) => {
@@ -968,6 +1424,76 @@ function App() {
     ipcRenderer.send('focus-main-window')
   }
 
+  const openExternalUrl = (url) => {
+    const safeUrl = String(url || '').trim()
+    if (!safeUrl) return
+    window.open(safeUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  const loadElectronVersionInfo = async () => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (!ipcRenderer?.invoke) return null
+    try {
+      const info = await ipcRenderer.invoke('get-app-version-info')
+      setAppVersionInfo(info)
+      return info
+    } catch {
+      return null
+    }
+  }
+
+  const handleDownloadDmg = async () => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (ipcRenderer?.invoke) {
+      try {
+        await ipcRenderer.invoke('open-latest-dmg-release')
+        return
+      } catch {
+        // Fall back to browser link below.
+      }
+    }
+    openExternalUrl(latestDmgReleaseUrl)
+  }
+
+  const handleCheckManualUpdate = async () => {
+    setCheckingManualUpdate(true)
+    setManualUpdateStatus('Memeriksa update terbaru...')
+    const ipcRenderer = getElectronIpcRenderer()
+
+    if (ipcRenderer?.invoke) {
+      try {
+        const result = await ipcRenderer.invoke('check-for-updates-manual')
+        if (result?.ok) {
+          setManualUpdateStatus(`Cek update berjalan. Versi feed terbaru: ${result.version || 'menunggu respon'}.`)
+        } else {
+          setManualUpdateStatus(result?.message || 'Cek update DMG belum tersedia di mode ini.')
+        }
+      } catch (error) {
+        setManualUpdateStatus(error.message || 'Gagal memeriksa update DMG.')
+      } finally {
+        setCheckingManualUpdate(false)
+      }
+      return
+    }
+
+    try {
+      const response = await fetch(`deploy-version.json?t=${Date.now()}`, { cache: 'no-store' })
+      if (!response.ok) throw new Error('Metadata versi belum tersedia.')
+      const data = await response.json()
+      const latestKey = getDeployVersionKey(data)
+      if (latestKey && latestKey !== currentDeployKey) {
+        setDeployUpdateInfo(data)
+        setManualUpdateStatus(`Versi web terbaru ditemukan: ${String(latestKey).slice(0, 7)}.`)
+      } else {
+        setManualUpdateStatus('PWA/web sudah memakai versi terbaru yang tersedia.')
+      }
+    } catch (error) {
+      setManualUpdateStatus(error.message || 'Gagal memeriksa versi web.')
+    } finally {
+      setCheckingManualUpdate(false)
+    }
+  }
+
   const buildTimeSlots = (dateStr) => {
     const dayIndex = new Date(`${dateStr}T00:00:00`).getDay()
     const dayConfig = bookingAvailability.daySchedules?.[dayIndex]
@@ -1016,6 +1542,24 @@ function App() {
 
   const normalizedPublicShareBaseUrl = publicShareBaseUrl.trim().replace(/\/+$/, '')
   const currentAppBaseUrl = `${window.location.origin}${window.location.pathname}`.replace(/\/+$/, '')
+  const latestDmgReleaseUrl = 'https://github.com/dinurpradipta12/DyaTask/releases/latest'
+  const isElectronApp = !!getElectronIpcRenderer()
+  const isMacOsDevice = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`)
+  const electronAppVersion = appVersionInfo?.version && appVersionInfo.version !== '0.0.0' ? appVersionInfo.version : ''
+  const currentAppVersion = electronAppVersion || import.meta.env.VITE_APP_VERSION || '0.1.0'
+  const updateStatusLabel = deployUpdateInfo ? 'App perlu di update' : 'App up to date'
+  const tutorialProgressById = tutorialProgress.reduce((map, item) => {
+    if (item?.courseId) map[item.courseId] = item
+    return map
+  }, {})
+  const unfinishedTutorialHistory = tutorialProgress
+    .filter(item => item?.courseId && item.status !== 'completed')
+    .map(item => {
+      const course = tutorialCourses.find(courseItem => courseItem.id === item.courseId)
+      return course ? { ...item, course } : null
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(b.lastWatchedAt || b.startedAt || '').localeCompare(String(a.lastWatchedAt || a.startedAt || '')))
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
   const activeOrderPageMode = activeTab === 'designOrders' ? 'design' : activeTab === 'generalOrders' ? 'general' : 'spreadsheet'
   const isDesignOrderPage = activeTab === 'designOrders'
@@ -1213,7 +1757,7 @@ function App() {
         id: `reservation-${item.id}`,
         type: 'reservation',
         title: `Reservasi 1:1 ${appointmentLabel}`,
-        note: `${item.date || '-'}${item.time ? ` • ${item.time}` : ''}`,
+        note: `${formatLongDate(item.date)}${item.time ? ` • ${item.time}` : ''}`,
         createdAt: formatActivityDate(item.date, item.time),
         status: item.status || 'confirmed'
       })
@@ -1296,7 +1840,7 @@ function App() {
           id: `client-followup-${clientItem.id}`,
           type: 'follow_up',
           title: 'Follow-up terjadwal',
-          note: `Target follow-up ${clientItem.nextFollowUpDate}`,
+          note: `Target follow-up ${formatLongDate(clientItem.nextFollowUpDate)}`,
           createdAt: clientItem.updatedAt || clientItem.createdAt || '',
           status: 'open',
           dueDate: clientItem.nextFollowUpDate
@@ -1419,7 +1963,7 @@ function App() {
         id: `appointment-${appointment.id}`,
         type: 'Reservasi',
         title: `Reservasi masuk: ${appointment.clientName || 'Client'}`,
-        detail: `${appointment.title || '1:1 Consultation'} • ${appointment.date || '-'} ${appointment.time || ''}`,
+        detail: `${appointment.title || '1:1 Consultation'} • ${formatLongDate(appointment.date)} ${appointment.time || ''}`,
         createdAt: appointment.createdAt || `${appointment.date || todayString}T${String(appointment.time || '23:59').slice(0, 5)}:00`,
         tone: 'green'
       }))
@@ -1457,7 +2001,7 @@ function App() {
           id: `task-done-${task.id}`,
           type: 'Task',
           title: `Task selesai: ${task.title}`,
-          detail: `${task.category || 'Task'} • ${task.calendarDate || todayString}`,
+        detail: `${task.category || 'Task'} • ${formatLongDate(task.calendarDate || todayString)}`,
           createdAt: `${task.calendarDate || todayString}T${task.dueTime || '23:59'}:00`,
           tone: 'green'
         }))
@@ -1491,13 +2035,31 @@ function App() {
   const assistantDisplayName = formatDisplayName(headerUserName)
   const workspaceOwnerDisplayName = workspaceOwnerName ? formatDisplayName(workspaceOwnerName) : 'pemilik workspace'
   const isAssistantWorkspace = workspaceRole === 'assistant'
+  const workspaceAssistantChatMembers = workspaceMembers.filter(member => member.role !== 'owner')
+  const activeWorkspaceChatMember = isAssistantWorkspace
+    ? workspaceAssistantChatMembers.find(member => member.memberUserId === actorUserId) || workspaceAssistantChatMembers[0] || null
+    : workspaceAssistantChatMembers.find(member => member.id === selectedWorkspaceChatMemberId) || workspaceAssistantChatMembers[0] || null
+  const activeWorkspaceChatMemberId = activeWorkspaceChatMember?.id || ''
+  const activeWorkspaceChatMemberName = activeWorkspaceChatMember
+    ? formatDisplayName(activeWorkspaceChatMember.memberEmail?.split('@')?.[0] || activeWorkspaceChatMember.memberEmail || 'Assistant')
+    : 'Assistant'
   const workspaceChatButtonTitle = isAssistantWorkspace ? `Chat ${workspaceOwnerDisplayName}` : 'Chat Assistant Workspace'
   const workspaceChatMessages = activityLogs
-    .filter(item => item?.metadata?.kind === 'workspace_chat')
+    .filter(item => {
+      if (item?.metadata?.kind !== 'workspace_chat') return false
+      if (!activeWorkspaceChatMemberId) return true
+      const messageChatMemberId = item?.metadata?.chatMemberId || ''
+      return messageChatMemberId === activeWorkspaceChatMemberId || (!messageChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+    })
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     .slice(-300)
   const workspaceChatAcknowledgements = activityLogs
-    .filter(item => item?.metadata?.kind === 'workspace_chat_ack' && item?.metadata?.ackForMessageId)
+    .filter(item => {
+      if (item?.metadata?.kind !== 'workspace_chat_ack' || !item?.metadata?.ackForMessageId) return false
+      if (!activeWorkspaceChatMemberId) return true
+      const ackChatMemberId = item?.metadata?.chatMemberId || ''
+      return ackChatMemberId === activeWorkspaceChatMemberId || (!ackChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+    })
   const workspaceChatAcknowledgedIds = new Set(workspaceChatAcknowledgements.map(item => item.metadata.ackForMessageId))
   const workspaceChatItemsWithDateSeparator = workspaceChatMessages.reduce((acc, item) => {
     const messageDate = new Date(item.createdAt)
@@ -1508,7 +2070,7 @@ function App() {
         id: `date-separator-${dateKey}`,
         __type: 'date_separator',
         __dateKey: dateKey,
-        label: messageDate.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+        label: formatLongDate(messageDate)
       })
     }
     acc.push({ ...item, __type: 'message', __dateKey: dateKey })
@@ -1521,12 +2083,7 @@ function App() {
   )).length
   const headerHour = headerNow.getHours()
   const dayGreeting = headerHour < 12 ? 'Good Morning!' : headerHour < 18 ? 'Good Afternoon!' : 'Good Evening!'
-  const headerDateLabel = headerNow.toLocaleDateString('id-ID', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  })
+  const headerDateLabel = formatLongDate(headerNow)
   const headerTimeLabel = headerNow.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
@@ -1819,6 +2376,8 @@ function App() {
   }
 
   const fetchGoogleCalendarEventsForMonth = async ({ notifyNew = false } = {}) => {
+    const fetchId = googleCalendarFetchIdRef.current + 1
+    googleCalendarFetchIdRef.current = fetchId
     const cfg = integrationConfigs.google_calendar || {}
     const clientId = (cfg.client_id || '').trim()
     const clientSecret = (cfg.client_secret || '').trim()
@@ -1826,6 +2385,7 @@ function App() {
     const calendarId = (cfg.calendar_id || 'primary').trim() || 'primary'
 
     if (!clientId || !clientSecret || !refreshToken) {
+      if (fetchId !== googleCalendarFetchIdRef.current) return
       setGoogleCalendarEvents([])
       seenGoogleCalendarEventIdsRef.current = new Set()
       googleCalendarBaselineReadyRef.current = false
@@ -1883,6 +2443,8 @@ function App() {
         })
         .filter(event => event.date)
 
+      if (fetchId !== googleCalendarFetchIdRef.current) return
+
       const incomingIds = new Set(externalEvents.map(event => event.id))
       const newExternalEvents = externalEvents.filter(event => !seenGoogleCalendarEventIdsRef.current.has(event.id))
 
@@ -1896,7 +2458,7 @@ function App() {
             const isTaskEvent = /^task\s*:/i.test(event.title) || /task|tugas/i.test(event.title)
             triggerMockNotification(
               isTaskEvent ? 'Task Google Calendar Baru' : 'Event Google Calendar Baru',
-              `${event.title} • ${event.date} ${event.time || 'All day'}`,
+              `${event.title} • ${formatLongDate(event.date)} ${event.time || 'All day'}`,
               'google-cal',
               {
                 source: 'google_calendar',
@@ -1921,6 +2483,7 @@ function App() {
 
       setGoogleCalendarEvents(externalEvents)
     } catch (err) {
+      if (fetchId !== googleCalendarFetchIdRef.current) return
       setGoogleCalendarEvents([])
       setSyncLogs(prev => [`[${new Date().toLocaleTimeString('id-ID')}] ⚠️ Google Calendar external events gagal dimuat: ${err.message}`, ...prev.slice(0, 9)])
     }
@@ -2202,6 +2765,14 @@ function App() {
   }, [pendingInviteToken])
 
   useEffect(() => {
+    const tokenFromUrl = String(inviteTokenFromUrl || '').trim()
+    if (tokenFromUrl) return
+    if (!session?.user?.id) return
+    if (!pendingInviteToken) return
+    setInviteLandingToken('')
+  }, [session?.user?.id, inviteTokenFromUrl, pendingInviteToken])
+
+  useEffect(() => {
     if (!actorUserId) {
       setWorkspaceContext(null)
       setWorkspaceMembers([])
@@ -2212,6 +2783,7 @@ function App() {
     const fallbackContext = {
       ownerUserId: actorUserId,
       role: 'owner',
+      status: 'active',
       permissions: { ...TEAM_PERMISSION_DEFAULTS, notes: true, integrations: true, settings: true }
     }
 
@@ -2235,30 +2807,7 @@ function App() {
         return
       }
 
-      if (!supabaseAdmin) {
-        setWorkspaceOwnerName('')
-        return
-      }
-
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('full_name, email')
-        .eq('id', ownerUserId)
-        .maybeSingle()
-
-      if (cancelled) return
-      const profileName = String(profile?.full_name || profile?.email?.split('@')?.[0] || '').trim()
-      if (!isGenericOwnerLabel(profileName)) {
-        setWorkspaceOwnerName(profileName)
-        return
-      }
-
-      const { data: ownerUser } = await supabaseAdmin.auth.admin.getUserById(ownerUserId)
-      if (cancelled) return
-      const authOwnerName = String(
-        ownerUser?.user?.user_metadata?.full_name || ownerUser?.user?.email?.split('@')?.[0] || ''
-      ).trim()
-      setWorkspaceOwnerName(isGenericOwnerLabel(authOwnerName) ? '' : authOwnerName)
+      setWorkspaceOwnerName('')
     }
 
     const loadWorkspaceContext = async () => {
@@ -2269,8 +2818,7 @@ function App() {
 
       const { data: membershipRows, error: membershipError } = await supabase
         .from('workspace_members')
-        .select('owner_user_id, member_user_id, member_email, role, permissions, created_at')
-        .eq('status', 'active')
+        .select('owner_user_id, member_user_id, member_email, role, status, permissions, created_at')
 
       if (cancelled) return
 
@@ -2288,13 +2836,15 @@ function App() {
             if (row.role === 'owner' && row.owner_user_id === actorUserId) return 1
             return 2
           }
-          return rank(a) - rank(b) || new Date(a.created_at || 0) - new Date(b.created_at || 0)
+          const statusRank = (row) => ({ active: 0, pending: 1, revoked: 2 }[row.status] ?? 3)
+          return rank(a) - rank(b) || statusRank(a) - statusRank(b) || new Date(a.created_at || 0) - new Date(b.created_at || 0)
         })[0]
 
         if (preferredRow?.owner_user_id) {
           setWorkspaceContext({
             ownerUserId: preferredRow.owner_user_id,
             role: preferredRow.role || 'owner',
+            status: preferredRow.status || 'active',
             permissions: normalizeTeamPermissions(preferredRow.permissions || {})
           })
           await resolveWorkspaceOwnerName(preferredRow.owner_user_id)
@@ -2322,6 +2872,7 @@ function App() {
       setWorkspaceContext({
         ownerUserId: row.owner_user_id,
         role: row.role || 'owner',
+        status: 'active',
         permissions: normalizeTeamPermissions(row.permissions || {})
       })
       await resolveWorkspaceOwnerName(row.owner_user_id)
@@ -2375,6 +2926,21 @@ function App() {
         createdAt: item.created_at
       }))
       setWorkspaceMembers(rows)
+
+      if (!canManageTeam) {
+        const ownMemberRow = rows.find(row => row.memberUserId === actorUserId && row.status === 'active') || rows[0]
+        if (ownMemberRow?.ownerUserId) {
+          setWorkspaceContext(prev => {
+            const nextContext = {
+              ownerUserId: ownMemberRow.ownerUserId,
+              role: ownMemberRow.role || 'assistant',
+              status: ownMemberRow.status || 'active',
+              permissions: normalizeTeamPermissions(ownMemberRow.permissions || {})
+            }
+            return JSON.stringify(prev) === JSON.stringify(nextContext) ? prev : nextContext
+          })
+        }
+      }
     }
 
     loadWorkspaceMembers()
@@ -2475,20 +3041,50 @@ function App() {
   }, [dbConnectionStatus])
 
   useEffect(() => {
-    localStorage.setItem('dyatask_booking_availability', JSON.stringify(bookingAvailability))
-  }, [bookingAvailability])
+    const savedAvailability = readStoredJson(bookingAvailabilityStorageKey, null)
+    if (savedAvailability && typeof savedAvailability === 'object') {
+      setBookingAvailability(prev => ({ ...prev, ...savedAvailability }))
+    }
+
+    const savedShareToken = localStorage.getItem(bookingShareTokenStorageKey)
+    if (savedShareToken) {
+      setShareToken(savedShareToken)
+    } else {
+      const generated = Math.random().toString(36).slice(2, 10)
+      setShareToken(generated)
+      localStorage.setItem(bookingShareTokenStorageKey, generated)
+    }
+
+    const savedReservationPrice = Number(localStorage.getItem(reservationSessionPriceStorageKey) || '250000')
+    setReservationSessionPrice(Number.isFinite(savedReservationPrice) && savedReservationPrice >= 0 ? savedReservationPrice : 250000)
+
+    const savedBookingNotes = localStorage.getItem(publicBookingNotesStorageKey)
+    setPublicBookingNotes(savedBookingNotes || 'Ketentuan reservasi:\n- Harap hadir 10 menit sebelum jadwal.\n- Jadwal dapat dijadwalkan ulang maksimal 1x.\n- Link meeting akan dikirim via email/WhatsApp setelah konfirmasi.')
+    setPublicShareBaseUrl(localStorage.getItem(publicShareBaseUrlStorageKey) || '')
+  }, [
+    bookingAvailabilityStorageKey,
+    bookingShareTokenStorageKey,
+    reservationSessionPriceStorageKey,
+    publicBookingNotesStorageKey,
+    publicShareBaseUrlStorageKey
+  ])
 
   useEffect(() => {
-    localStorage.setItem('dyatask_booking_share_token', shareToken)
-  }, [shareToken])
+    localStorage.setItem(bookingAvailabilityStorageKey, JSON.stringify(bookingAvailability))
+  }, [bookingAvailability, bookingAvailabilityStorageKey])
 
   useEffect(() => {
-    localStorage.setItem('dyatask_public_booking_notes', publicBookingNotes)
-  }, [publicBookingNotes])
+    if (!shareToken) return
+    localStorage.setItem(bookingShareTokenStorageKey, shareToken)
+  }, [shareToken, bookingShareTokenStorageKey])
 
   useEffect(() => {
-    localStorage.setItem('dyatask_public_share_base_url', publicShareBaseUrl)
-  }, [publicShareBaseUrl])
+    localStorage.setItem(publicBookingNotesStorageKey, publicBookingNotes)
+  }, [publicBookingNotes, publicBookingNotesStorageKey])
+
+  useEffect(() => {
+    localStorage.setItem(publicShareBaseUrlStorageKey, publicShareBaseUrl)
+  }, [publicShareBaseUrl, publicShareBaseUrlStorageKey])
 
   useEffect(() => {
     if (!session) return
@@ -2501,7 +3097,7 @@ function App() {
 
         triggerMockNotification(
           'Reservasi Baru Masuk',
-          `${payload.clientName} menjadwalkan "${payload.title}" pada ${payload.date} ${payload.time} WIB.`,
+          `${payload.clientName} menjadwalkan "${payload.title}" pada ${formatLongDate(payload.date)} ${payload.time} WIB.`,
           'booking'
         )
       } catch {
@@ -2515,26 +3111,58 @@ function App() {
 
   useEffect(() => {
     if (!scopedUserId) {
+      setIntegrationConfigs({})
       setIntegrationConfigsLoaded(false)
       return
     }
 
+    let cancelled = false
+    setIntegrationConfigsLoaded(false)
+
     const loadIntegrationConfigs = async () => {
+      const loadWorkspaceGoogleCalendarConfig = async (baseConfigs = {}) => {
+        if (workspaceRole !== 'assistant') return baseConfigs || {}
+
+        let nextGoogleCalendarConfig = baseConfigs?.google_calendar || null
+        const { data: googleCalendarConfig, error: googleCalendarError } = await supabase.rpc('get_workspace_google_calendar_config', {
+          p_owner_user_id: scopedUserId
+        })
+
+        if (cancelled) return null
+        if (!googleCalendarError && googleCalendarConfig && Object.keys(googleCalendarConfig || {}).length > 0) {
+          nextGoogleCalendarConfig = googleCalendarConfig
+        }
+
+        if (!nextGoogleCalendarConfig || Object.keys(nextGoogleCalendarConfig || {}).length === 0) {
+          return baseConfigs || {}
+        }
+
+        return {
+          ...(baseConfigs || {}),
+          google_calendar: nextGoogleCalendarConfig
+        }
+      }
+
       const { data, error } = await supabase
         .from('user_integration_configs')
         .select('configs')
         .eq('user_id', scopedUserId)
         .maybeSingle()
 
+      if (cancelled) return
+
       if (error) {
         console.error('Error loading integration configs:', error)
+        const nextConfigs = await loadWorkspaceGoogleCalendarConfig({})
+        if (cancelled || !nextConfigs) return
+        setIntegrationConfigs(nextConfigs)
         setIntegrationConfigsLoaded(true)
         return
       }
 
       // Backward compatibility: migrate old localStorage config once if DB is empty.
       if (!data?.configs) {
-        let legacy = {}
+        let legacy
         try {
           legacy = JSON.parse(localStorage.getItem('dyatask_integration_configs') || '{}')
         } catch {
@@ -2552,18 +3180,26 @@ function App() {
           if (migrateError) {
             console.error('Error migrating local integration configs:', migrateError)
           } else {
+            if (cancelled) return
             setIntegrationConfigs(legacy)
             localStorage.removeItem('dyatask_integration_configs')
           }
         } else {
-          setIntegrationConfigs({})
+          if (cancelled) return
+          const nextConfigs = await loadWorkspaceGoogleCalendarConfig({})
+          if (cancelled || !nextConfigs) return
+          setIntegrationConfigs(nextConfigs)
         }
 
+        if (cancelled) return
         setIntegrationConfigsLoaded(true)
         return
       }
 
-      setIntegrationConfigs(data.configs || {})
+      if (cancelled) return
+      const nextConfigs = await loadWorkspaceGoogleCalendarConfig(data.configs || {})
+      if (cancelled || !nextConfigs) return
+      setIntegrationConfigs(nextConfigs)
       setIntegrationConfigsLoaded(true)
     }
 
@@ -2577,9 +3213,10 @@ function App() {
       .subscribe()
 
     return () => {
+      cancelled = true
       supabase.removeChannel(configChannel)
     }
-  }, [scopedUserId])
+  }, [scopedUserId, workspaceRole])
 
   useEffect(() => {
     if (!scopedUserId) return
@@ -2950,7 +3587,7 @@ function App() {
 
         triggerMockNotification(
           'Reservasi Baru Masuk',
-          `${inserted.client_name} menjadwalkan "${inserted.title}" pada ${inserted.date} ${inserted.time} WIB.`,
+          `${inserted.client_name} menjadwalkan "${inserted.title}" pada ${formatLongDate(inserted.date)} ${inserted.time} WIB.`,
           'booking',
           {
             email: inserted.email,
@@ -2963,7 +3600,7 @@ function App() {
 
         const timestamp = new Date().toLocaleTimeString('id-ID')
         setSyncLogs(prev => [
-          `[${timestamp}] 🔔 Reservasi publik baru: ${inserted.client_name} • ${inserted.date} ${inserted.time}`,
+          `[${timestamp}] 🔔 Reservasi publik baru: ${inserted.client_name} • ${formatLongDate(inserted.date)} ${inserted.time}`,
           ...prev
         ])
       })
@@ -3014,8 +3651,9 @@ function App() {
   }, [calendarYear])
 
   useEffect(() => {
+    if (!integrationConfigsLoaded) return
     fetchGoogleCalendarEventsForMonth({ notifyNew: false })
-  }, [calendarYear, calendarMonth, integrationConfigs])
+  }, [calendarYear, calendarMonth, integrationConfigs, integrationConfigsLoaded])
 
   useEffect(() => {
     if (!scopedUserId) return
@@ -3180,6 +3818,8 @@ function App() {
   }, [isPublicTrackingMode, publicTrackingToken])
 
   useEffect(() => {
+    if (!integrationConfigsLoaded) return undefined
+
     const cfg = integrationConfigs.google_calendar || {}
     const hasGoogleCalendarConfig = Boolean(
       (cfg.client_id || '').trim() &&
@@ -3193,11 +3833,27 @@ function App() {
     }, 60000)
 
     return () => clearInterval(interval)
-  }, [calendarYear, calendarMonth, integrationConfigs])
+  }, [calendarYear, calendarMonth, integrationConfigs, integrationConfigsLoaded])
 
   useEffect(() => {
-    localStorage.setItem('dyatask_notification_history', JSON.stringify(notifications.slice(0, 300)))
-  }, [notifications])
+    const parsed = readStoredJson(notificationHistoryStorageKey, [])
+    setNotifications(Array.isArray(parsed) ? parsed : [])
+    setShowNotificationList(false)
+    setNotificationBannerVisible(false)
+  }, [notificationHistoryStorageKey])
+
+  useEffect(() => {
+    localStorage.setItem(notificationHistoryStorageKey, JSON.stringify(notifications.slice(0, 300)))
+  }, [notifications, notificationHistoryStorageKey])
+
+  useEffect(() => {
+    if (activeNotifications.length === 0 || !notificationBannerVisible) return
+    const timer = setTimeout(() => {
+      setNotificationBannerVisible(false)
+      setShowNotificationList(false)
+    }, 30000)
+    return () => clearTimeout(timer)
+  }, [activeNotifications.length, notificationBannerVisible])
 
   const createActivityLog = async ({ type, title, detail, tone = 'purple', sourceTable = null, sourceId = null, metadata = {} }) => {
     const createdAt = new Date().toISOString()
@@ -3239,6 +3895,12 @@ function App() {
     const message = String(messageText || '').trim()
     if (!message) return
 
+    const chatMemberId = metadata.chatMemberId || activeWorkspaceChatMemberId
+    if (workspaceRole === 'owner' && workspaceAssistantChatMembers.length > 0 && !chatMemberId) {
+      alert('Pilih assistant dulu sebelum mengirim chat.')
+      return
+    }
+
     setWorkspaceChatSending(true)
     await createActivityLog({
       type: 'Workspace Chat',
@@ -3254,6 +3916,8 @@ function App() {
         senderName: isAssistantWorkspace ? assistantDisplayName : headerUserName,
         senderEmail: session?.user?.email || '',
         workspaceOwnerId: workspaceContext?.ownerUserId || '',
+        chatMemberId,
+        chatMemberLabel: activeWorkspaceChatMemberName,
         ...metadata
       }
     })
@@ -3266,13 +3930,25 @@ function App() {
     await sendWorkspaceChat(workspaceChatMessage)
   }
 
+  const handleWorkspaceChatInputKeyDown = async (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent?.isComposing) return
+    e.preventDefault()
+    if (workspaceChatSending || !workspaceChatMessage.trim()) return
+    await sendWorkspaceChat(workspaceChatMessage)
+  }
+
+  const appendWorkspaceChatEmoji = (emoji) => {
+    setWorkspaceChatMessage(prev => `${prev}${emoji}`)
+    setWorkspaceEmojiPickerOpen(false)
+  }
+
   const sendQuickWorkspaceReminder = async (kind) => {
     if (!isAssistantWorkspace) return
     if (kind === 'task') {
       const lines = tasks
         .filter(task => task.status !== 'done' && (task.calendarDate || todayString) === todayString)
         .slice(0, 6)
-        .map(task => `- ${task.title} • ${todayString} ${task.dueTime || ''}`.trim())
+        .map(task => `- ${task.title} • ${formatLongDate(todayString)} ${task.dueTime || ''}`.trim())
       const body = lines.length ? `Pengingat hari ini, task aktif:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada task aktif tercatat.'
       await sendWorkspaceChat(body, { reminderType: 'task_today' })
       return
@@ -3281,7 +3957,7 @@ function App() {
       const lines = appointments
         .filter(appt => appt.date === todayString)
         .slice(0, 6)
-        .map(appt => `- ${appt.title} • ${appt.date} ${appt.time || ''}`.trim())
+        .map(appt => `- ${appt.title} • ${formatLongDate(appt.date)} ${appt.time || ''}`.trim())
       const body = lines.length ? `Pengingat hari ini, event:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada event reservasi.'
       await sendWorkspaceChat(body, { reminderType: 'event_today' })
       return
@@ -3290,7 +3966,7 @@ function App() {
       const lines = googleCalendarEvents
         .filter(event => event.date === todayString)
         .slice(0, 6)
-        .map(event => `- ${event.title} • ${event.date} ${event.time || 'All day'}`)
+        .map(event => `- ${event.title} • ${formatLongDate(event.date)} ${event.time || 'All day'}`)
       const body = lines.length ? `Pengingat hari ini, Google Calendar:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada event Google Calendar.'
       await sendWorkspaceChat(body, { reminderType: 'gcall_today' })
       return
@@ -3302,7 +3978,7 @@ function App() {
           return !['completed', 'done'].includes(status) && String(order.dueDate || '') === todayString
         })
         .slice(0, 6)
-        .map(order => `- ${order.orderName} • due ${order.dueDate}`)
+        .map(order => `- ${order.orderName} • due ${formatLongDate(order.dueDate)}`)
       const body = lines.length ? `Pengingat hari ini, deadline order:\n${lines.join('\n')}` : 'Pengingat hari ini: belum ada deadline order.'
       await sendWorkspaceChat(body, { reminderType: 'deadline_today' })
     }
@@ -3321,18 +3997,26 @@ function App() {
       alert('Hanya owner yang bisa clear chat.')
       return
     }
-    const ok = window.confirm('Hapus semua history chat owner-assistant?')
+    const ok = window.confirm(activeWorkspaceChatMemberId ? `Hapus history chat dengan ${activeWorkspaceChatMemberName}?` : 'Hapus semua history chat owner-assistant?')
     if (!ok) return
-    const { error } = await supabase
+    let deleteQuery = supabase
       .from('activity_logs')
       .delete()
       .eq('user_id', scopedUserId)
       .eq('event_type', 'Workspace Chat')
+    if (activeWorkspaceChatMemberId) {
+      deleteQuery = deleteQuery.eq('metadata->>chatMemberId', activeWorkspaceChatMemberId)
+    }
+    const { error } = await deleteQuery
     if (error) {
       alert(`Gagal clear chat: ${error.message}`)
       return
     }
-    setActivityLogs(prev => prev.filter(item => item?.type !== 'Workspace Chat'))
+    setActivityLogs(prev => prev.filter(item => {
+      if (item?.type !== 'Workspace Chat') return true
+      if (!activeWorkspaceChatMemberId) return false
+      return item?.metadata?.chatMemberId !== activeWorkspaceChatMemberId
+    }))
   }
 
   useEffect(() => {
@@ -3340,7 +4024,14 @@ function App() {
     setWorkspaceChatLastReadAt(Date.now())
   }, [workspaceChatModalOpen, workspaceChatMessages.length])
 
+  useEffect(() => {
+    if (isAssistantWorkspace) return
+    if (selectedWorkspaceChatMemberId && workspaceAssistantChatMembers.some(member => member.id === selectedWorkspaceChatMemberId)) return
+    setSelectedWorkspaceChatMemberId(workspaceAssistantChatMembers[0]?.id || '')
+  }, [isAssistantWorkspace, selectedWorkspaceChatMemberId, workspaceAssistantChatMembers])
+
   const triggerMockNotification = (title, body, source, meta = {}) => {
+    setNotificationBannerVisible(true)
     setNotifications(prev => [{
       id: Date.now(),
       title,
@@ -3403,6 +4094,35 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (!ipcRenderer) return undefined
+
+    loadElectronVersionInfo()
+
+    const handleUpdateStatus = (_event, payload = {}) => {
+      if (payload.status === 'checking') setManualUpdateStatus('Memeriksa update DMG terbaru...')
+      if (payload.status === 'available') {
+        setDeployUpdateInfo(prev => prev || { version: payload.version || 'baru', buildId: `dmg-${payload.version || Date.now()}`, buildTime: new Date().toISOString() })
+        setManualUpdateStatus(`Update DMG versi ${payload.version || 'baru'} tersedia. Download akan dimulai setelah dikonfirmasi.`)
+      }
+      if (payload.status === 'downloading') setManualUpdateStatus(`Mengunduh update DMG ${payload.percent || 0}%...`)
+      if (payload.status === 'downloaded') setManualUpdateStatus(`Update DMG versi ${payload.version || 'baru'} sudah siap diinstal.`)
+      if (payload.status === 'not-available') {
+        setDeployUpdateInfo(null)
+        setManualUpdateStatus(`App up to date (${payload.version || currentAppVersion}).`)
+      }
+      if (payload.status === 'error') setManualUpdateStatus(payload.message || 'Gagal memeriksa update DMG.')
+    }
+
+    ipcRenderer.on?.('app-update-status', handleUpdateStatus)
+    return () => {
+      ipcRenderer.removeListener?.('app-update-status', handleUpdateStatus)
+    }
+    // Electron bridge is read once per app session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     if (!scopedUserId || !invoices.length) return
 
     const today = new Date()
@@ -3432,7 +4152,7 @@ function App() {
         invoiceReminderKeysRef.current.add(key)
         triggerMockNotification(
           'Invoice Deadline Besok',
-          `Invoice "${invoice.title}" untuk ${invoice.clientName} jatuh tempo besok (${dueDateKey}).`,
+          `Invoice "${invoice.title}" untuk ${invoice.clientName} jatuh tempo besok (${formatLongDate(dueDateKey)}).`,
           'invoice',
           { kind: 'invoice_due_tomorrow', invoiceId: invoice.id, dueDate: dueDateKey }
         )
@@ -3452,7 +4172,7 @@ function App() {
         invoiceReminderKeysRef.current.add(key)
         triggerMockNotification(
           'Invoice Melewati Deadline',
-          `Invoice "${invoice.title}" untuk ${invoice.clientName} sudah lewat deadline (${dueDateKey}).`,
+          `Invoice "${invoice.title}" untuk ${invoice.clientName} sudah lewat deadline (${formatLongDate(dueDateKey)}).`,
           'invoice',
           { kind: 'invoice_overdue', invoiceId: invoice.id, dueDate: dueDateKey }
         )
@@ -3589,7 +4309,7 @@ function App() {
 
         triggerMockNotification(
           `${item.typeLabel} dimulai ${minutesUntilStart} menit lagi`,
-          `${item.title} • ${item.date} ${item.time}`,
+          `${item.title} • ${formatLongDate(item.date)} ${item.time}`,
           'reminder',
           {
             reminderKey,
@@ -3623,12 +4343,24 @@ function App() {
     }
   }
 
+  const handleOpenInstallOptions = () => {
+    setInstallOptionsOpen(true)
+  }
+
   const handleInstallPwa = async () => {
-    if (!pwaInstallPrompt) return
+    if (!pwaInstallPrompt) {
+      showWorkspaceInviteNotice({
+        tone: 'info',
+        title: 'Install App',
+        message: 'Jika prompt install belum muncul dari browser, gunakan menu browser lalu pilih Install App atau Add to Home Screen.'
+      })
+      return
+    }
     const promptEvent = pwaInstallPrompt
     setPwaInstallPrompt(null)
     await promptEvent.prompt()
     await promptEvent.userChoice
+    setInstallOptionsOpen(false)
   }
 
   const handleCreateProjectFolder = async (e) => {
@@ -3761,7 +4493,7 @@ function App() {
       pillar: contentPlannerPillar.trim(),
       title: trimmedTitle,
       postLink: contentPlannerPostLink.trim(),
-      insightLink: contentPlannerInsightLink.trim()
+      insightNote: ''
     }
 
     if (contentPlannerEditingId) {
@@ -3778,7 +4510,7 @@ function App() {
     const nextTaskId = await syncContentPlannerTask(baseItem, null)
     const createdItem = { id: createdId, ...baseItem, taskId: nextTaskId || null }
     setContentPlannerItems(prev => [createdItem, ...prev])
-    triggerMockNotification('Konten Dijadwalkan', `${createdItem.platform.toUpperCase()} • ${createdItem.title} • ${createdItem.uploadDate} ${createdItem.uploadTime}`, 'reminder')
+    triggerMockNotification('Konten Dijadwalkan', `${createdItem.platform.toUpperCase()} • ${createdItem.title} • ${formatLongDate(createdItem.uploadDate)} ${createdItem.uploadTime}`, 'reminder')
     resetContentPlannerForm()
   }
 
@@ -3791,8 +4523,6 @@ function App() {
     setContentPlannerTime(item.uploadTime || '09:00')
     setContentPlannerStatus(item.status || 'draft')
     setContentPlannerPostLink(item.postLink || '')
-    setContentPlannerInsightLink(item.insightLink || '')
-    setContentPlannerMoreOpenId(null)
   }
 
   const handleDeleteContentPlanner = async (itemId) => {
@@ -3806,7 +4536,10 @@ function App() {
       setTasks(prev => prev.filter(task => task.id !== target.taskId))
     }
     setContentPlannerItems(prev => prev.filter(item => item.id !== itemId))
-    setContentPlannerMoreOpenId(null)
+    if (contentPlannerDetailItem?.id === itemId) {
+      setContentPlannerDetailItem(null)
+      setContentPlannerInsightDraft('')
+    }
   }
 
   const handleStartContentPlannerLinkInput = (item) => {
@@ -3821,23 +4554,59 @@ function App() {
     setContentPlannerLinkDraft('')
   }
 
-  const handleToggleContentPlannerMore = (event, itemId) => {
+  const handleOpenContentPlannerDetail = (event, item) => {
     event.stopPropagation()
     event.preventDefault()
-    if (contentPlannerMoreOpenId === itemId) {
-      setContentPlannerMoreOpenId(null)
-      return
-    }
-    const rect = event.currentTarget.getBoundingClientRect()
-    const menuWidth = 112
-    const menuHeight = 84
-    const nextLeft = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, rect.right - menuWidth))
-    const nextTop = Math.min(window.innerHeight - menuHeight - 8, Math.max(8, rect.top - 8))
-    setContentPlannerMoreMenuPos({
-      top: nextTop,
-      left: nextLeft
+    requestAnimationFrame(() => {
+      setContentPlannerDetailItem(item)
+      setContentPlannerInsightDraft(item.insightNote || '')
+      setContentPlannerInsightMetrics(item.insightMetrics && typeof item.insightMetrics === 'object' ? item.insightMetrics : {})
+      setContentPlannerInsightFormOpen(false)
     })
-    setContentPlannerMoreOpenId(itemId)
+  }
+
+  const handleSaveContentPlannerInsight = () => {
+    if (!contentPlannerDetailItem?.id) return
+    const safeInsight = String(contentPlannerInsightDraft || '').trim()
+    const safeMetrics = { ...(contentPlannerInsightMetrics || {}) }
+    setContentPlannerItems(prev => prev.map(item => (
+      item.id === contentPlannerDetailItem.id
+        ? { ...item, insightNote: safeInsight, insightMetrics: safeMetrics }
+        : item
+    )))
+    setContentPlannerDetailItem(prev => prev ? { ...prev, insightNote: safeInsight, insightMetrics: safeMetrics } : prev)
+    setContentPlannerInsightFormOpen(false)
+  }
+
+  const getContentInsightFields = (platform) => {
+    if (platform === 'instagram') return ['views', 'reach', 'like', 'comment', 'save', 'share', 'repost', 'profileVisit', 'follows']
+    if (platform === 'tiktok') return ['views', 'like', 'comment', 'save', 'share', 'completionRate', 'follows']
+    return ['views', 'like', 'replies', 'repost', 'quotes', 'follows']
+  }
+
+  const getContentInsightInteractionTotal = (platform, metrics = {}) => {
+    const val = (key) => Number(metrics?.[key] || 0)
+    if (platform === 'instagram') return val('like') + val('comment') + val('save') + val('share') + val('repost') + val('profileVisit') + val('follows')
+    if (platform === 'tiktok') return val('like') + val('comment') + val('save') + val('share') + val('follows')
+    return val('like') + val('replies') + val('repost') + val('quotes') + val('follows')
+  }
+
+  const getContentInsightER = (platform, metrics = {}) => {
+    const views = Number(metrics?.views || 0)
+    const interactions = getContentInsightInteractionTotal(platform, metrics)
+    if (views <= 0) return 0
+    return (interactions / views) * 100
+  }
+
+  const getContentInsightAiRecommendation = (platform, metrics = {}) => {
+    const er = getContentInsightER(platform, metrics)
+    const views = Number(metrics?.views || 0)
+    const interactions = getContentInsightInteractionTotal(platform, metrics)
+    if (views <= 0) return 'Data views belum ada. Lengkapi insight untuk evaluasi konten.'
+    if (er >= 8) return 'Performa sangat bagus. Duplikasi format konten ini sebagai template seri berikutnya.'
+    if (er >= 4) return 'Performa cukup efektif. Optimasi hook 3 detik pertama dan CTA untuk komentar/simpan.'
+    if (interactions < 10) return 'Interaksi masih rendah. Coba ubah angle judul dan perkuat visual pembuka.'
+    return 'ER rendah terhadap views. Uji ulang topik/pilar dan jadwal posting di jam audience aktif.'
   }
 
   // Add Task
@@ -4367,9 +5136,53 @@ function App() {
     }
   }
 
+  const serializeInvoiceGeneratorMeta = (meta) => `[IGMETA]${JSON.stringify(meta || {})}`
+
+  const mapFinanceInvoiceRow = (item) => ({
+    id: item.id,
+    clientName: item.client_name || item.clientName,
+    title: item.title,
+    orderType: item.order_type || item.orderType,
+    amount: Number(item.amount || 0),
+    issueDate: item.issue_date || item.issueDate,
+    dueDate: item.due_date || item.dueDate,
+    status: item.status || 'draft',
+    notes: item.notes || '',
+    createdAt: item.created_at || item.createdAt || new Date().toISOString()
+  })
+
+  const getCurrentInvoiceGeneratorDefaults = () => ({
+    logo: invoiceGeneratorLogo,
+    company: invoiceGeneratorCompany || FALLBACK_INVOICE_GENERATOR_DEFAULTS.company,
+    tagline: invoiceGeneratorTagline || FALLBACK_INVOICE_GENERATOR_DEFAULTS.tagline,
+    paymentInfo: invoiceGeneratorPaymentInfo || FALLBACK_INVOICE_GENERATOR_DEFAULTS.paymentInfo,
+    terms: invoiceGeneratorTerms || FALLBACK_INVOICE_GENERATOR_DEFAULTS.terms,
+    signer: invoiceGeneratorSigner,
+    signature: invoiceGeneratorSignature
+  })
+
+  const applyInvoiceGeneratorDefaults = (defaults = invoiceGeneratorDefaults) => {
+    const mergedDefaults = { ...FALLBACK_INVOICE_GENERATOR_DEFAULTS, ...(defaults || {}) }
+    setInvoiceGeneratorLogo(mergedDefaults.logo || '')
+    setInvoiceGeneratorCompany(mergedDefaults.company)
+    setInvoiceGeneratorTagline(mergedDefaults.tagline)
+    setInvoiceGeneratorPaymentInfo(mergedDefaults.paymentInfo)
+    setInvoiceGeneratorTerms(mergedDefaults.terms)
+    setInvoiceGeneratorSigner(mergedDefaults.signer || '')
+    setInvoiceGeneratorSignature(mergedDefaults.signature || '')
+  }
+
+  const handleSaveInvoiceGeneratorDefaults = () => {
+    const nextDefaults = getCurrentInvoiceGeneratorDefaults()
+    localStorage.setItem(invoiceGeneratorDefaultsStorageKey, JSON.stringify(nextDefaults))
+    setInvoiceGeneratorDefaults(nextDefaults)
+    alert('Default invoice berhasil disimpan.')
+  }
+
   const openInvoiceGeneratorFromOrder = (order) => {
     const autoNumber = buildAutoInvoiceNumber()
     setInvoiceGeneratorEditingId(null)
+    applyInvoiceGeneratorDefaults()
     setInvoiceGeneratorNumber(autoNumber)
     setInvoiceGeneratorDate(todayString)
     setInvoiceGeneratorDueDate(order?.dueDate || todayString)
@@ -4380,8 +5193,6 @@ function App() {
     setInvoiceGeneratorServiceDesc(order?.orderName || '')
     setInvoiceGeneratorQty(1)
     setInvoiceGeneratorPrice(Number(order?.budget || 0))
-    setInvoiceGeneratorSigner(headerUserName || '')
-    setInvoiceGeneratorSignature(headerUserName || '')
     setInvoiceGeneratorSourceOrderId(order?.id || null)
     setInvoiceGeneratorStatus('draft')
     setActiveTab('invoiceGenerator')
@@ -4395,8 +5206,8 @@ function App() {
     setInvoiceGeneratorNumber(meta.invoiceNumber || buildAutoInvoiceNumber())
     setInvoiceGeneratorDate(meta.invoiceDate || invoice.issueDate || todayString)
     setInvoiceGeneratorDueDate(meta.dueDate || invoice.dueDate || todayString)
-    setInvoiceGeneratorCompany(meta.company || 'DyaTask Studio')
-    setInvoiceGeneratorTagline(meta.tagline || 'Freelance Service Invoice')
+    setInvoiceGeneratorCompany(meta.company || invoiceGeneratorDefaults.company)
+    setInvoiceGeneratorTagline(meta.tagline || invoiceGeneratorDefaults.tagline)
     setInvoiceGeneratorClient(meta.client || invoice.clientName || '')
     setInvoiceGeneratorClientAddress(meta.clientAddress || '')
     setInvoiceGeneratorShipTo(meta.shipTo || '')
@@ -4404,13 +5215,40 @@ function App() {
     setInvoiceGeneratorServiceDesc(meta.serviceDescription || invoice.title || '')
     setInvoiceGeneratorQty(Number(meta.qty || 1))
     setInvoiceGeneratorPrice(Number(meta.price || invoice.amount || 0))
-    setInvoiceGeneratorPaymentInfo(meta.paymentInfo || '')
-    setInvoiceGeneratorTerms(meta.terms || '')
-    setInvoiceGeneratorSigner(meta.signer || '')
-    setInvoiceGeneratorSignature(meta.signature || '')
+    setInvoiceGeneratorPaymentInfo(meta.paymentInfo || invoiceGeneratorDefaults.paymentInfo)
+    setInvoiceGeneratorTerms(meta.terms || invoiceGeneratorDefaults.terms)
+    setInvoiceGeneratorSigner(meta.signer || invoiceGeneratorDefaults.signer || '')
+    setInvoiceGeneratorSignature(meta.signature || invoiceGeneratorDefaults.signature || '')
     setInvoiceGeneratorSourceOrderId(meta.sourceOrderId || null)
     setInvoiceGeneratorStatus(meta.status || invoice.status || 'draft')
     setActiveTab('invoiceGenerator')
+    setShowInvoiceGeneratorForm(true)
+  }
+
+  const openInvoiceGeneratorFromFollowUp = (invoice) => {
+    if (!invoice) return
+    const meta = parseInvoiceGeneratorMeta(invoice.notes)
+    if (meta) {
+      loadInvoiceGeneratorFromInvoice(invoice)
+      return
+    }
+
+    setInvoiceGeneratorEditingId(invoice.id)
+    applyInvoiceGeneratorDefaults()
+    setInvoiceGeneratorNumber(buildAutoInvoiceNumber())
+    setInvoiceGeneratorDate(invoice.issueDate || todayString)
+    setInvoiceGeneratorDueDate(invoice.dueDate || todayString)
+    setInvoiceGeneratorClient(invoice.clientName || '')
+    setInvoiceGeneratorClientAddress('')
+    setInvoiceGeneratorShipTo('')
+    setInvoiceGeneratorService(invoice.orderType || 'Custom Service')
+    setInvoiceGeneratorServiceDesc(invoice.title || '')
+    setInvoiceGeneratorQty(1)
+    setInvoiceGeneratorPrice(Number(invoice.amount || 0))
+    setInvoiceGeneratorSourceOrderId(null)
+    setInvoiceGeneratorStatus(invoice.status || 'draft')
+    setActiveTab('invoiceGenerator')
+    setShowInvoiceGeneratorForm(true)
   }
 
   const handleSubmitInvoice = async (e) => {
@@ -4517,7 +5355,7 @@ function App() {
     const qty = Math.max(1, Number(invoiceGeneratorQty || 1))
     const price = Math.max(0, Number(invoiceGeneratorPrice || 0))
     const total = qty * price
-    const notesPayload = `[IGMETA]${JSON.stringify({
+    const notesPayload = serializeInvoiceGeneratorMeta({
       logo: invoiceGeneratorLogo,
       invoiceNumber: invoiceGeneratorNumber || buildAutoInvoiceNumber(),
       invoiceDate: invoiceGeneratorDate,
@@ -4537,7 +5375,7 @@ function App() {
       signature: invoiceGeneratorSignature,
       sourceOrderId: invoiceGeneratorSourceOrderId,
       status: invoiceGeneratorStatus
-    })}`
+    })
 
     const payload = {
       user_id: scopedUserId,
@@ -4552,16 +5390,31 @@ function App() {
     }
 
     if (invoiceGeneratorEditingId) {
-      const { error } = await supabase.from('finance_invoices').update(payload).eq('id', invoiceGeneratorEditingId)
+      const { data, error } = await supabase
+        .from('finance_invoices')
+        .update(payload)
+        .eq('id', invoiceGeneratorEditingId)
+        .select()
+        .single()
       if (error) {
         alert(`Gagal update invoice generator: ${error.message}`)
         return
       }
+      if (data) {
+        setInvoices(prev => prev.map(item => item.id === invoiceGeneratorEditingId ? mapFinanceInvoiceRow(data) : item))
+      }
     } else {
-      const { error } = await supabase.from('finance_invoices').insert([payload])
+      const { data, error } = await supabase
+        .from('finance_invoices')
+        .insert([payload])
+        .select()
+        .single()
       if (error) {
         alert(`Gagal membuat invoice generator: ${error.message}`)
         return
+      }
+      if (data) {
+        setInvoices(prev => [mapFinanceInvoiceRow(data), ...prev])
       }
     }
 
@@ -4685,10 +5538,14 @@ function App() {
       return
     }
 
+    const meta = parseInvoiceGeneratorMeta(invoice.notes)
+    const nextNotes = meta ? serializeInvoiceGeneratorMeta({ ...meta, status: nextStatus }) : invoice.notes
+    const localPatch = meta ? { status: nextStatus, notes: nextNotes } : { status: nextStatus }
+
     if (invoiceStorageMode === 'cloud') {
       const { error } = await supabase
         .from('finance_invoices')
-        .update({ status: nextStatus })
+        .update(meta ? { status: nextStatus, notes: nextNotes } : { status: nextStatus })
         .eq('id', invoice.id)
 
       if (error) {
@@ -4696,12 +5553,12 @@ function App() {
         return
       }
 
-      setInvoices(prev => prev.map(item => item.id === invoice.id ? { ...item, status: nextStatus } : item))
+      setInvoices(prev => prev.map(item => item.id === invoice.id ? { ...item, ...localPatch } : item))
       return
     }
 
     setInvoices(prev => {
-      const next = prev.map(item => item.id === invoice.id ? { ...item, status: nextStatus } : item)
+      const next = prev.map(item => item.id === invoice.id ? { ...item, ...localPatch } : item)
       persistInvoicesLocal(next)
       return next
     })
@@ -5107,7 +5964,7 @@ function App() {
     createActivityLog({
       type: existingManual ? 'CRM' : 'CRM',
       title: `${existingManual ? 'Client diperbarui' : 'Client ditambahkan'}: ${payload.name}`,
-      detail: `${payload.status}${payload.nextFollowUpDate ? ` • follow-up ${payload.nextFollowUpDate}` : ''}`,
+      detail: `${payload.status}${payload.nextFollowUpDate ? ` • follow-up ${formatLongDate(payload.nextFollowUpDate)}` : ''}`,
       tone: 'blue',
       sourceTable: 'crm_clients',
       sourceId: payload.id
@@ -5195,7 +6052,7 @@ function App() {
     createActivityLog({
       type: 'Follow-up',
       title: `Follow-up dibuat: ${nextActivity.title}`,
-      detail: `${selectedCrmClient.name || 'Client'}${nextActivity.dueDate ? ` • ${nextActivity.dueDate}` : ''}`,
+      detail: `${selectedCrmClient.name || 'Client'}${nextActivity.dueDate ? ` • ${formatLongDate(nextActivity.dueDate)}` : ''}`,
       tone: 'purple',
       sourceTable: 'crm_activities',
       sourceId: nextActivity.id
@@ -5331,61 +6188,87 @@ function App() {
     return `DyaTaskInvite#${safeUsername}#${safeToken}`
   }
 
-  const findAdminUserByEmail = async (email) => {
-    if (!supabaseAdmin || !email) return null
-
-    for (let page = 1; page <= 10; page += 1) {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 })
-      if (error) throw error
-
-      const match = data?.users?.find(user => String(user.email || '').toLowerCase() === email.toLowerCase())
-      if (match) return match
-      if (!data?.users?.length || data.users.length < 1000) return null
+  const generateWorkspaceInviteToken = () => {
+    if (window.crypto?.getRandomValues) {
+      const values = new Uint8Array(12)
+      window.crypto.getRandomValues(values)
+      return Array.from(values, value => value.toString(16).padStart(2, '0')).join('').slice(0, 18)
     }
+    return Math.random().toString(36).slice(2, 11) + Math.random().toString(36).slice(2, 11)
+  }
 
-    return null
+  const showWorkspaceInviteNotice = ({ tone = 'info', title = 'Workspace Invite', message = '', detail = '' } = {}) => {
+    setWorkspaceInviteNotice({
+      id: Date.now(),
+      tone,
+      title,
+      message,
+      detail
+    })
+  }
+
+  const createWorkspaceInviteSessionViaFunction = async (inviteToken) => {
+    const username = normalizeWorkspaceInviteUsername(inviteUsernameFromUrl)
+      || `assistant-${String(inviteToken || '').trim().slice(0, 8).toLowerCase()}`
+    const { data, error } = await supabase.functions.invoke('workspace-invite-session', {
+      body: {
+        inviteToken,
+        username
+      }
+    })
+    if (error) throw new Error(error.message || 'Gagal membuat session invite.')
+    if (data?.error) throw new Error(data.error)
+    if (!data?.email || !data?.password) throw new Error('Response session invite tidak lengkap.')
+    return {
+      email: data.email,
+      password: data.password
+    }
+  }
+
+  const isWorkspaceInviteFunctionUnavailable = (error) => {
+    const message = String(error?.message || error || '').toLowerCase()
+    return message.includes('failed to send a request to the edge function')
+      || message.includes('requested function was not found')
+      || message.includes('function was not found')
+      || message.includes('workspace-invite-session')
+  }
+
+  const createWorkspaceInviteSessionAnonymously = async () => {
+    const { data, error } = await supabase.auth.signInAnonymously()
+    if (error) {
+      const message = String(error.message || '')
+      if (message.toLowerCase().includes('database error creating anonymous user')) {
+        throw new Error('Anonymous sign-in sudah aktif, tapi trigger profiles masih menolak user tanpa email. Jalankan One-Click Apply SQL di Settings, lalu coba invite token lagi.')
+      }
+      throw new Error(`Anonymous sign-in gagal: ${message || 'Unknown error'}`)
+    }
+    if (!data?.session) {
+      throw new Error('Session anonymous tidak berhasil dibuat.')
+    }
+    return data.session
   }
 
   const ensureWorkspaceInviteSession = async (inviteToken) => {
-    const username = normalizeWorkspaceInviteUsername(inviteUsernameFromUrl) || `assistant-${String(inviteToken || '').trim().slice(0, 8).toLowerCase()}`
+    const username = normalizeWorkspaceInviteUsername(inviteUsernameFromUrl)
+      || `assistant-${String(inviteToken || '').trim().slice(0, 8).toLowerCase()}`
     const email = normalizeWorkspaceInviteEmail(username)
     const password = buildWorkspaceInviteSessionPassword(username, inviteToken)
 
     const directSignIn = await supabase.auth.signInWithPassword({ email, password })
     if (!directSignIn.error) return directSignIn.data?.session || null
 
-    if (!supabaseAdmin) {
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: username } }
+    try {
+      const functionSession = await createWorkspaceInviteSessionViaFunction(inviteToken)
+      const functionSignIn = await supabase.auth.signInWithPassword({
+        email: functionSession.email,
+        password: functionSession.password
       })
-      if (!signUpError && signUpData?.session) return signUpData.session
-
-      throw new Error(signUpError?.message || 'Akun assistant belum tersedia dan Supabase meminta konfirmasi email. Aktifkan service role key di environment atau login dengan akun yang sudah dibuat.')
+      if (functionSignIn.error) throw functionSignIn.error
+      return functionSignIn.data?.session || null
+    } catch (error) {
+      if (!isWorkspaceInviteFunctionUnavailable(error)) throw error
+      return createWorkspaceInviteSessionAnonymously()
     }
-
-    const existingUser = await findAdminUserByEmail(email)
-    if (existingUser?.id) {
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
-        email_confirm: true,
-        password,
-        user_metadata: { full_name: username }
-      })
-      if (updateError) throw updateError
-    } else {
-      const { error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: username }
-      })
-      if (createError) throw createError
-    }
-
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-    return data?.session || null
   }
 
   const getSupabaseProjectRef = () => {
@@ -5399,8 +6282,17 @@ function App() {
   }
 
   const handleOneClickApplyWorkspaceSql = async () => {
+    if (!isAppDeveloper) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Developer',
+        message: 'One-Click Apply SQL hanya tersedia untuk developer app.'
+      })
+      return
+    }
+
     try {
-      await copyTextToClipboard(workspaceTeamMigrationSql)
+      await copyTextToClipboard(`${workspaceTeamMigrationSql}\n\n${workspaceGoogleCalendarConfigRpcSql}\n\n${allowAnonymousAuthProfilesSql}\n\n${globalLoginVisualSql}`)
       setMigrationOneClickCopied(true)
       setTimeout(() => setMigrationOneClickCopied(false), 2200)
     } catch (error) {
@@ -5440,7 +6332,7 @@ function App() {
       `Token invite: ${String(token || '').trim() || '-'}`,
       `Link invite: ${inviteLink || '-'}`,
       '',
-      'Buka link lalu login ringan, kemudian masukkan token invite jika diminta.'
+      'Buka link, masukkan token invite, lalu workspace akan terbuka otomatis.'
     ].join('\n')
   }
 
@@ -5452,35 +6344,63 @@ function App() {
   const handleCopyWorkspaceInviteLink = async () => {
     const inviteLink = buildWorkspaceInviteLink()
     if (!inviteLink) {
-      alert('Token invite belum tersedia.')
+      showWorkspaceInviteNotice({
+        tone: 'warning',
+        title: 'Token Belum Tersedia',
+        message: 'Buat undangan assistant dulu sebelum menyalin link.'
+      })
       return
     }
     try {
       await copyTextToClipboard(inviteLink)
       setMigrationOneClickCopied(false)
-      alert('Link invite berhasil disalin.')
+      showWorkspaceInviteNotice({
+        tone: 'success',
+        title: 'Link Invite Disalin',
+        message: 'Link invite assistant sudah siap dikirim.'
+      })
     } catch (error) {
-      alert(`Gagal menyalin link invite: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menyalin Link',
+        message: error.message
+      })
     }
   }
 
   const handleCopyWorkspaceInviteToWA = async () => {
     if (!String(workspaceInviteToken || '').trim()) {
-      alert('Token invite belum tersedia.')
+      showWorkspaceInviteNotice({
+        tone: 'warning',
+        title: 'Token Belum Tersedia',
+        message: 'Buat undangan assistant dulu sebelum menyalin pesan WhatsApp.'
+      })
       return
     }
     const waText = getWorkspaceInviteWaText()
     try {
       await copyTextToClipboard(waText)
-      alert('Pesan WA invite berhasil disalin.')
+      showWorkspaceInviteNotice({
+        tone: 'success',
+        title: 'Pesan WA Disalin',
+        message: 'Pesan invite sudah siap ditempel ke WhatsApp.'
+      })
     } catch (error) {
-      alert(`Gagal menyalin pesan WA: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menyalin Pesan',
+        message: error.message
+      })
     }
   }
 
   const handleOpenWorkspaceInviteWhatsApp = () => {
     if (!String(workspaceInviteToken || '').trim()) {
-      alert('Token invite belum tersedia.')
+      showWorkspaceInviteNotice({
+        tone: 'warning',
+        title: 'Token Belum Tersedia',
+        message: 'Buat undangan assistant dulu sebelum membuka WhatsApp.'
+      })
       return
     }
     window.open(buildWorkspaceInviteWhatsAppLink(), '_blank', 'noopener,noreferrer')
@@ -5507,6 +6427,12 @@ function App() {
     )
   }
 
+  const isDuplicateWorkspaceMembershipError = (error) => {
+    const message = String(error?.message || '').toLowerCase()
+    return message.includes('workspace_members_owner_user_id_member_user_id_key')
+      || (message.includes('duplicate key value') && message.includes('workspace_members'))
+  }
+
   const acceptWorkspaceInviteToken = async (inviteToken, userId) => {
     if (!userId) {
       throw new Error('Session user tidak ditemukan.')
@@ -5516,53 +6442,29 @@ function App() {
       p_invite_token: inviteToken
     })
     if (!error) return
+    if (isDuplicateWorkspaceMembershipError(error)) return
     if (!isMissingWorkspaceInviteRpcError(error)) throw error
 
-    if (!supabaseAdmin) {
-      throw new Error('RPC accept invite belum ada di Supabase. Jalankan One-Click Apply SQL dulu, lalu coba lagi.')
-    }
-
-    const { data: inviteRow, error: findError } = await supabaseAdmin
-      .from('workspace_members')
-      .select('id, member_user_id, status, member_email')
-      .eq('invite_token', inviteToken)
-      .maybeSingle()
-    if (findError) throw findError
-    if (!inviteRow?.id) {
-      throw new Error('Undangan tidak ditemukan atau sudah dipakai.')
-    }
-
-    if (inviteRow.status === 'active') {
-      if (inviteRow.member_user_id && inviteRow.member_user_id !== userId) {
-        throw new Error('Token invite sudah dipakai akun lain.')
-      }
-      return
-    }
-
-    if (inviteRow.status !== 'pending') {
-      throw new Error('Undangan tidak aktif.')
-    }
-
-    const { error: updateError } = await supabaseAdmin
-      .from('workspace_members')
-      .update({
-        member_user_id: userId,
-        status: 'active',
-        accepted_at: new Date().toISOString()
-      })
-      .eq('id', inviteRow.id)
-    if (updateError) throw updateError
+    throw new Error('RPC accept invite belum ada di Supabase. Jalankan One-Click Apply SQL dulu, lalu coba lagi.')
   }
 
   const handleDirectInviteWorkspaceAccess = async () => {
     const expectedToken = String(inviteLandingToken || '').trim()
     const confirmedToken = String(inviteConfirmInput || '').trim()
     if (!expectedToken) {
-      alert('Token invite tidak ditemukan.')
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Token Tidak Ditemukan',
+        message: 'Buka ulang link invite dari owner.'
+      })
       return
     }
     if (!confirmedToken || confirmedToken !== expectedToken) {
-      alert('Token invite tidak cocok.')
+      showWorkspaceInviteNotice({
+        tone: 'warning',
+        title: 'Token Tidak Cocok',
+        message: 'Pastikan token yang dimasukkan sama persis dengan token invite.'
+      })
       return
     }
 
@@ -5581,6 +6483,7 @@ function App() {
 
       localStorage.removeItem('dyatask_pending_workspace_invite_token')
       setPendingInviteToken('')
+      setInviteAuthNotice('')
       setInviteLandingToken('')
       setInviteConfirmInput('')
       setInviteConfirmModalOpen(false)
@@ -5592,11 +6495,55 @@ function App() {
       url.searchParams.delete('username')
       window.location.replace(url.toString())
     } catch (error) {
-      alert(`Gagal membuka workspace asisten: ${error.message}`)
+      const message = String(error?.message || '')
+      if (message.toLowerCase().includes('failed to fetch')) {
+        showWorkspaceInviteNotice({
+          tone: 'error',
+          title: 'Koneksi Supabase Gagal',
+          message: 'Coba lagi beberapa detik, atau refresh halaman.'
+        })
+      } else {
+        showWorkspaceInviteNotice({
+          tone: 'error',
+          title: 'Gagal Membuka Workspace',
+          message
+        })
+      }
     } finally {
       setInviteDirectLoading(false)
     }
   }
+
+  useEffect(() => {
+    const token = String(pendingInviteToken || '').trim()
+    if (!session?.user?.id || !token || inviteTokenFromUrl) return
+
+    let cancelled = false
+    const acceptPendingInvite = async () => {
+      setInviteDirectLoading(true)
+      try {
+        await acceptWorkspaceInviteToken(token, session.user.id)
+        if (cancelled) return
+        localStorage.removeItem('dyatask_pending_workspace_invite_token')
+        setPendingInviteToken('')
+        setInviteLandingToken('')
+        setInviteConfirmInput('')
+        setInviteConfirmModalOpen(false)
+        setInviteAuthNotice('')
+        window.location.reload()
+      } catch (error) {
+        if (cancelled) return
+        setInviteAuthNotice(`Invite belum bisa diterima otomatis: ${error.message}`)
+      } finally {
+        if (!cancelled) setInviteDirectLoading(false)
+      }
+    }
+
+    acceptPendingInvite()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.user?.id, pendingInviteToken, inviteTokenFromUrl])
 
   const toggleWorkspaceInvitePermission = (permissionKey) => {
     if (!Object.prototype.hasOwnProperty.call(TEAM_PERMISSION_DEFAULTS, permissionKey)) return
@@ -5609,13 +6556,21 @@ function App() {
   const handleInviteWorkspaceMember = async (e) => {
     e.preventDefault()
     if (!canManageTeam) {
-      alert('Hanya owner yang bisa mengundang asisten.')
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Ditolak',
+        message: 'Hanya owner yang bisa mengundang assistant.'
+      })
       return
     }
 
     const inviteUsername = normalizeWorkspaceInviteUsername(workspaceInviteUsername)
     if (!inviteUsername) {
-      alert('Username asisten wajib diisi.')
+      showWorkspaceInviteNotice({
+        tone: 'warning',
+        title: 'Username Wajib Diisi',
+        message: 'Isi username assistant sebelum membuat invite.'
+      })
       return
     }
 
@@ -5630,7 +6585,11 @@ function App() {
     setTeamLoading(false)
 
     if (error) {
-      alert(`Gagal mengundang asisten: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Mengundang Assistant',
+        message: error.message
+      })
       return
     }
 
@@ -5647,6 +6606,13 @@ function App() {
       tone: 'blue',
       sourceTable: 'workspace_members',
       sourceId: data?.id || ''
+    })
+
+    showWorkspaceInviteNotice({
+      tone: 'success',
+      title: 'Invite Assistant Dibuat',
+      message: `Token untuk ${inviteUsername} sudah siap dikirim.`,
+      detail: token
     })
   }
 
@@ -5666,18 +6632,30 @@ function App() {
     setTeamLoading(false)
 
     if (error) {
-      alert(`Gagal menerima undangan: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menerima Undangan',
+        message: error.message
+      })
       return
     }
 
     setWorkspaceInviteToken('')
-    alert('Undangan berhasil diterima. Data workspace akan otomatis tersinkron.')
+    showWorkspaceInviteNotice({
+      tone: 'success',
+      title: 'Undangan Diterima',
+      message: 'Data workspace akan otomatis tersinkron.'
+    })
     window.location.reload()
   }
 
   const handleUpdateWorkspaceMember = async (memberId, updates = {}) => {
     if (!canManageTeam) {
-      alert('Hanya owner yang bisa mengubah anggota workspace.')
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Ditolak',
+        message: 'Hanya owner yang bisa mengubah anggota workspace.'
+      })
       return
     }
     if (!memberId) return
@@ -5697,7 +6675,11 @@ function App() {
       .eq('id', memberId)
 
     if (error) {
-      alert(`Gagal update anggota: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Update Anggota',
+        message: error.message
+      })
       return
     }
 
@@ -5714,7 +6696,11 @@ function App() {
 
   const handleDeleteWorkspaceMember = async (member) => {
     if (!canManageTeam) {
-      alert('Hanya owner yang bisa menghapus assistant.')
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Ditolak',
+        message: 'Hanya owner yang bisa menghapus assistant.'
+      })
       return
     }
     if (!member?.id || member.role === 'owner') return
@@ -5731,7 +6717,11 @@ function App() {
     setTeamLoading(false)
 
     if (error) {
-      alert(`Gagal menghapus assistant: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menghapus Assistant',
+        message: error.message
+      })
       return
     }
 
@@ -5758,17 +6748,94 @@ function App() {
   const handleCopyWorkspaceMemberInviteLink = async (member) => {
     const token = String(member?.inviteToken || '').trim()
     if (!token) {
-      alert('Member ini belum memiliki token invite aktif.')
+      showWorkspaceInviteNotice({
+        tone: 'warning',
+        title: 'Token Tidak Aktif',
+        message: 'Member ini belum memiliki token invite aktif.'
+      })
       return
     }
 
     const inviteLink = buildWorkspaceInviteLink(token, getWorkspaceMemberInviteUsername(member))
     try {
       await copyTextToClipboard(inviteLink)
-      alert('Link invite assistant berhasil disalin.')
+      showWorkspaceInviteNotice({
+        tone: 'success',
+        title: 'Link Assistant Disalin',
+        message: `Link invite untuk ${getWorkspaceMemberInviteUsername(member)} sudah siap dikirim.`
+      })
     } catch (error) {
-      alert(`Gagal menyalin link assistant: ${error.message}`)
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menyalin Link',
+        message: error.message
+      })
     }
+  }
+
+  const handleRegenerateWorkspaceMemberInviteToken = async (member) => {
+    if (!canManageTeam) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Akses Ditolak',
+        message: 'Hanya owner yang bisa regenerate token assistant.'
+      })
+      return
+    }
+    if (!member?.id || member.role === 'owner') return
+
+    const nextToken = generateWorkspaceInviteToken()
+    setTeamLoading(true)
+    const { error } = await supabase
+      .from('workspace_members')
+      .update({
+        invite_token: nextToken,
+        member_user_id: null,
+        status: 'pending',
+        accepted_at: null
+      })
+      .eq('id', member.id)
+      .eq('owner_user_id', workspaceContext?.ownerUserId)
+    setTeamLoading(false)
+
+    if (error) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Regenerate Token',
+        message: error.message
+      })
+      return
+    }
+
+    setWorkspaceMembers(prev => prev.map(item => (
+      item.id === member.id
+        ? {
+            ...item,
+            inviteToken: nextToken,
+            memberUserId: null,
+            status: 'pending',
+            acceptedAt: null
+          }
+        : item
+    )))
+    setWorkspaceInviteToken(nextToken)
+    setWorkspaceInviteUsername(getWorkspaceMemberInviteUsername(member))
+
+    await createActivityLog({
+      type: 'Team',
+      title: 'Token invite diganti',
+      detail: `${getWorkspaceMemberInviteUsername(member)} menerima token baru`,
+      tone: 'purple',
+      sourceTable: 'workspace_members',
+      sourceId: member.id
+    })
+
+    showWorkspaceInviteNotice({
+      tone: 'success',
+      title: 'Token Baru Dibuat',
+      message: `Token lama untuk ${getWorkspaceMemberInviteUsername(member)} sudah diganti.`,
+      detail: nextToken
+    })
   }
 
   const openWorkspaceMemberPageAccess = (member) => {
@@ -5807,19 +6874,21 @@ function App() {
         </span>
       </div>
 
-      <div className="rounded-xl border border-purple-100 bg-[#f8f5ff] dark:bg-indigo-950 p-3 flex flex-col md:flex-row md:items-center gap-2 justify-between">
-        <div>
-          <p className="text-xs font-bold text-[#4f4574]">One-Click Apply SQL (Team Assistant)</p>
-          <p className="text-[10px] text-purple-400">Sekali klik: SQL migration otomatis dicopy lalu SQL Editor Supabase dibuka.</p>
+      {isAppDeveloper && (
+        <div className="rounded-xl border border-purple-100 bg-[#f8f5ff] dark:bg-indigo-950 p-3 flex flex-col md:flex-row md:items-center gap-2 justify-between">
+          <div>
+            <p className="text-xs font-bold text-[#4f4574]">One-Click Apply SQL (Team Assistant)</p>
+            <p className="text-[10px] text-purple-400">Sekali klik: SQL team assistant dan akses Google Calendar assistant otomatis dicopy lalu SQL Editor Supabase dibuka.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleOneClickApplyWorkspaceSql}
+            className="px-3 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold"
+          >
+            {migrationOneClickCopied ? 'SQL Copied ✓' : 'One-Click Apply SQL'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleOneClickApplyWorkspaceSql}
-          className="px-3 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold"
-        >
-          {migrationOneClickCopied ? 'SQL Copied ✓' : 'One-Click Apply SQL'}
-        </button>
-      </div>
+      )}
 
       <form onSubmit={handleAcceptWorkspaceInvite} className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-2">
         <input
@@ -5859,7 +6928,7 @@ function App() {
           </div>
 
           <p className="text-[10px] text-purple-400">
-            Invite dikirim berbasis username. Link invite akan membawa user ke login ringan, lalu token diproses otomatis sesudah berhasil masuk.
+            Invite dikirim berbasis username. User cukup buka link dan masukkan token untuk akses workspace.
           </p>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -5959,6 +7028,16 @@ function App() {
               )}
               {canManageTeam && (
                 <>
+                  <button
+                    type="button"
+                    onClick={() => handleRegenerateWorkspaceMemberInviteToken(member)}
+                    disabled={teamLoading}
+                    className="h-8 px-2.5 rounded-lg border border-purple-100 bg-[#f6f1ff] text-[10px] font-bold text-purple-600 inline-flex items-center gap-1 disabled:opacity-50"
+                    title="Regenerate token invite"
+                  >
+                    <RefreshCw size={10} />
+                    Token
+                  </button>
                   <button
                     type="button"
                     onClick={() => openWorkspaceMemberPageAccess(member)}
@@ -6186,7 +7265,7 @@ function App() {
         '',
         'Reservasi Anda sudah kami konfirmasi.',
         latest.meta.title ? `Topik: ${latest.meta.title}` : '',
-        latest.meta.date && latest.meta.time ? `Jadwal: ${latest.meta.date} ${latest.meta.time} WIB` : '',
+        latest.meta.date && latest.meta.time ? `Jadwal: ${formatLongDate(latest.meta.date)} ${latest.meta.time} WIB` : '',
         '',
         'Terima kasih.'
       ].filter(Boolean).join('\n')
@@ -6260,106 +7339,25 @@ function App() {
 
     const formattedEmail = `${authUsername.trim().toLowerCase()}.dyatask@gmail.com`
 
-    // Special superuser handler: automatic signup using ADMIN client (bypasses email confirm)
-    if (authUsername.trim().toLowerCase() === 'arunika' && authPassword.trim() === 'ar4925') {
-      // Try to sign in first (in case the superuser already exists and is confirmed)
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email: formattedEmail,
-        password: authPassword
-      })
-
-      if (!signInError) {
-        // Login succeeded directly
-        setSession(signInData.session)
-        setLoadingAuth(false)
-        return
-      }
-
-      // Login failed — need to create or auto-confirm the user
-      if (supabaseAdmin) {
-        // Step 1: Try to create user via admin API (auto-confirmed)
-        const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: formattedEmail,
-          password: authPassword,
-          email_confirm: true,
-          user_metadata: { full_name: 'Superuser / Developer' }
-        })
-
-        if (createError) {
-          // User probably already exists — find them and auto-confirm
-          const { data: userList } = await supabaseAdmin.auth.admin.listUsers()
-          const existingUser = userList?.users?.find(u => u.email === formattedEmail)
-
-          if (existingUser) {
-            // Auto-confirm + update password
-            await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
-              email_confirm: true,
-              password: authPassword,
-              user_metadata: { full_name: 'Superuser / Developer' }
-            })
-          } else {
-            setAuthError('Gagal membuat superuser: ' + createError.message)
-            setLoadingAuth(false)
-            return
-          }
-        }
-
-        // Step 2: Now sign in — should work
-        const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
-          email: formattedEmail,
-          password: authPassword
-        })
-
-        if (retryError) {
-          setAuthError('Login gagal setelah konfirmasi: ' + retryError.message)
-        } else {
-          setSession(retryData.session)
-        }
-      } else {
-        setAuthError('Service role key tidak tersedia. Tidak bisa membuat superuser secara otomatis.')
-      }
-
-      setLoadingAuth(false)
-      return
-    }
-
-    // Normal user logic
     if (authTab === 'signup') {
-      if (supabaseAdmin) {
-        // Register using ADMIN API to automatically confirm email
-        const { data, error } = await supabaseAdmin.auth.admin.createUser({
-          email: formattedEmail,
-          password: authPassword,
-          email_confirm: true,
-          user_metadata: {
+      const { data, error } = await supabase.auth.signUp({
+        email: formattedEmail,
+        password: authPassword,
+        options: {
+          data: {
             full_name: authFullName || authUsername.trim()
           }
-        })
-
-        if (error) {
-          setAuthError(error.message)
-        } else {
-          alert(`Registrasi berhasil untuk username "${authUsername}"! Email Anda telah terkonfirmasi otomatis. Silakan masuk.`)
-          setAuthTab('signin')
         }
+      })
+
+      if (error) {
+        setAuthError(error.message)
+      } else if (data?.session) {
+        setSession(data.session)
+        setAuthError(null)
       } else {
-        // Fallback to normal signup
-        const { data, error } = await supabase.auth.signUp({
-          email: formattedEmail,
-          password: authPassword,
-          options: {
-            data: {
-              full_name: authFullName || authUsername.trim()
-            }
-          }
-        })
-
-        if (error) {
-          setAuthError(error.message)
-        } else {
-          alert(`Registrasi berhasil untuk username "${authUsername}"! Silakan cek email Anda untuk konfirmasi atau langsung masuk.`)
-          setAuthTab('signin')
-        }
+        setAuthTab('signin')
+        setAuthError('Registrasi berhasil, tetapi Supabase masih meminta konfirmasi email. Untuk alur user baru bisa langsung login, matikan Confirm email di Supabase Authentication > Providers > Email.')
       }
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -6368,33 +7366,6 @@ function App() {
       })
 
       if (error) {
-        // If email not confirmed and we have admin, let's auto confirm it and try again!
-        if ((error.message.includes('not confirmed') || error.message.includes('confirm')) && supabaseAdmin) {
-          // Auto confirm email for this user
-          // Find user by email using admin client
-          const { data: userList, error: listError } = await supabaseAdmin.auth.admin.listUsers()
-          const dbUser = userList?.users?.find(u => u.email === formattedEmail)
-          
-          if (dbUser) {
-            const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(dbUser.id, {
-              email_confirm: true
-            })
-
-            if (!updateError) {
-              // Retry login
-              const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
-                email: formattedEmail,
-                password: authPassword
-              })
-
-              if (!retryError) {
-                setSession(retryData.session)
-                setLoadingAuth(false)
-                return
-              }
-            }
-          }
-        }
         setAuthError(error.message)
       } else {
         setSession(data.session)
@@ -6477,34 +7448,22 @@ function App() {
         .update(profileSyncPayload)
         .eq('id', actorUserId)
 
-      if (profileSyncError && supabaseAdmin) {
-        const { error: adminProfileSyncError } = await supabaseAdmin
-          .from('profiles')
-          .upsert({
-            id: actorUserId,
-            ...profileSyncPayload
-          }, { onConflict: 'id' })
-        profileSyncError = adminProfileSyncError
-      }
-
       if (profileSyncError) {
         console.warn('Sinkronisasi public.profiles gagal:', profileSyncError.message)
       }
 
-      if (supabaseAdmin) {
-        const { error: adminAuthSyncError } = await supabaseAdmin.auth.admin.updateUserById(actorUserId, {
-          user_metadata: {
-            ...(session?.user?.user_metadata || {}),
-            full_name: profileFormData.full_name,
-            avatar_url: avatarUrl,
-            tanggal_lahir: profileFormData.tanggal_lahir,
-            email: profileFormData.email,
-            nomer_hp: profileFormData.nomer_hp
-          }
-        })
-        if (adminAuthSyncError) {
-          console.warn('Sinkronisasi auth admin gagal:', adminAuthSyncError.message)
+      const { error: authMetadataSyncError } = await supabase.auth.updateUser({
+        data: {
+          ...(session?.user?.user_metadata || {}),
+          full_name: profileFormData.full_name,
+          avatar_url: avatarUrl,
+          tanggal_lahir: profileFormData.tanggal_lahir,
+          email: profileFormData.email,
+          nomer_hp: profileFormData.nomer_hp
         }
+      })
+      if (authMetadataSyncError) {
+        console.warn('Sinkronisasi auth metadata gagal:', authMetadataSyncError.message)
       }
 
       // Force refresh session data from server
@@ -6620,7 +7579,7 @@ function App() {
                   </div>
                   <div className="rounded-xl bg-white border border-purple-100 p-3">
                     <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Deadline</p>
-                    <p className="mt-1 font-semibold text-[#4f4574]">{publicOrder.due_date || '-'}</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{formatLongDate(publicOrder.due_date)}</p>
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
@@ -6630,7 +7589,7 @@ function App() {
                   </div>
                   <div className="rounded-xl bg-white border border-purple-100 p-3">
                     <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Update Terakhir</p>
-                    <p className="mt-1 font-semibold text-[#4f4574]">{lastUpdateAt ? new Date(lastUpdateAt).toLocaleString('id-ID') : '-'}</p>
+                    <p className="mt-1 font-semibold text-[#4f4574]">{lastUpdateAt ? formatLongDateTime(lastUpdateAt) : '-'}</p>
                   </div>
                   <div className="rounded-xl bg-white border border-purple-100 p-3">
                     <p className="text-[10px] uppercase tracking-[0.12em] text-[#8f75d8] font-bold">Sisa Deadline</p>
@@ -6648,9 +7607,9 @@ function App() {
                     <div key={item.id || index} className="relative rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
                       <div className="absolute left-4 top-6 h-2 w-2 rounded-full bg-[#8f75d8]" />
                       <div className="ml-5">
-                        <p className="text-xs text-[#8f75d8] font-semibold">{new Date(item.created_at).toLocaleString('id-ID')}</p>
+                        <p className="text-xs text-[#8f75d8] font-semibold">{formatLongDateTime(item.created_at)}</p>
                         <h4 className="text-sm font-bold text-[#4f4574] mt-1">{item.title}</h4>
-                        {item.note && <p className="text-xs text-[#6f6295] mt-1">{item.note}</p>}
+                        {item.note && <p className="text-xs text-[#6f6295] mt-1">{formatTextDates(item.note)}</p>}
                         <div className="mt-2 h-2 rounded-full bg-purple-100 overflow-hidden">
                           <div className="h-full bg-[#8f75d8]" style={{ width: `${Math.max(0, Math.min(100, Number(item.progress_percent || 0)))}%` }} />
                         </div>
@@ -6678,7 +7637,7 @@ function App() {
         `Email: ${publicBookingSummary.email || '-'}`,
         `WhatsApp: ${publicBookingSummary.whatsapp || '-'}`,
         `Topik: ${publicBookingSummary.title}`,
-        `Jadwal: ${publicBookingSummary.date} ${publicBookingSummary.time} WIB`,
+        `Jadwal: ${formatLongDate(publicBookingSummary.date)} ${publicBookingSummary.time} WIB`,
         '',
         'Notifikasi ini dikirim otomatis dari aplikasi booking DyaTask.'
       ].join('\n')
@@ -6697,7 +7656,7 @@ function App() {
               <p><span className="text-purple-400">Nama:</span> {publicBookingSummary.clientName}</p>
               <p><span className="text-purple-400">Topik:</span> {publicBookingSummary.title}</p>
               <p><span className="text-purple-400">WhatsApp:</span> {publicBookingSummary.whatsapp || '-'}</p>
-              <p><span className="text-purple-400">Jadwal:</span> {publicBookingSummary.date} • {publicBookingSummary.time} WIB</p>
+              <p><span className="text-purple-400">Jadwal:</span> {formatLongDate(publicBookingSummary.date)} • {publicBookingSummary.time} WIB</p>
             </div>
             <a
               href={waLink}
@@ -6715,12 +7674,8 @@ function App() {
       )
     }
 
-    const publicMonthLabel = calendarMonthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })
-    const publicSelectedDateLabel = new Date(`${bookingDate}T00:00:00`).toLocaleDateString('en-US', {
-      weekday: 'long',
-      day: '2-digit',
-      month: 'short'
-    })
+    const publicMonthLabel = calendarMonthDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
+    const publicSelectedDateLabel = formatLongDate(bookingDate)
 
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_12%_18%,rgba(143,117,216,0.28),transparent_30%),radial-gradient(circle_at_88%_12%,rgba(198,181,255,0.34),transparent_24%),radial-gradient(circle_at_82%_82%,rgba(255,229,76,0.2),transparent_26%),linear-gradient(135deg,#fbfaff_0%,#f0ebff_48%,#fff8e2_100%)] text-[#463d66] flex items-center justify-center p-6 relative overflow-hidden">
@@ -7018,17 +7973,23 @@ function App() {
             </div>
           </section>
 
-          <section className="auth-form-panel">
+          <section className={`auth-form-panel ${inviteAuthNotice ? 'auth-form-panel-invite' : ''}`}>
             <div className="auth-logo-mark">
               <img src={dyataskMiniLogo} alt="DyaTask" />
             </div>
 
-            <div className="auth-copy">
-              <p>{authTab === 'signin' ? 'Welcome Back!' : 'Create Account'}</p>
-              <span>{authTab === 'signin' ? 'Enter your details below' : 'Start managing your freelance work today'}</span>
-            </div>
+              <div className="auth-copy">
+                <p>{authTab === 'signin' ? 'Welcome Back!' : 'Create Account'}</p>
+                <span>{authTab === 'signin' ? 'Enter your details below' : 'Start managing your freelance work today'}</span>
+              </div>
 
-            <form onSubmit={handleAuthSubmit} className="auth-form">
+              <form onSubmit={handleAuthSubmit} className="auth-form">
+              {inviteAuthNotice && (
+                <div className="auth-error">
+                  <UserPlus size={15} />
+                  <span>{inviteAuthNotice}</span>
+                </div>
+              )}
               {authError && (
                 <div className="auth-error">
                   <AlertCircle size={15} />
@@ -7331,45 +8292,67 @@ function App() {
                   </div>
                 </button>
               )}
-              <button
-                onClick={() => setIsProfileModalOpen(true)}
-                className="flex items-center gap-3 p-3 rounded-xl bg-[#FFF08A] hover:bg-[#FFF08A]/90 transition-all active:scale-95 cursor-pointer group shadow-sm"
-              >
-                <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center group-hover:bg-yellow-50 transition-all overflow-hidden ring-2 ring-yellow-200">
-                  {session?.user?.user_metadata?.avatar_url ? (
-                    <img
-                      src={session.user.user_metadata.avatar_url}
-                      alt={session?.user?.user_metadata?.full_name || 'Foto profil'}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none'
-                        e.currentTarget.nextElementSibling?.classList.remove('hidden')
-                      }}
-                    />
-                  ) : null}
-                  <User size={18} className={`text-yellow-800 ${session?.user?.user_metadata?.avatar_url ? 'hidden' : ''}`} />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <h4 className="text-sm font-semibold truncate flex items-center gap-1.5 text-yellow-950">
-                    {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Pengguna'}
-                    {session?.user?.email?.startsWith('arunika.dyatask@') && (
-                      <span className="bg-yellow-950 text-yellow-100 border border-yellow-900 text-[8px] px-1 py-0.5 rounded font-extrabold uppercase tracking-wider scale-90 origin-left">
-                        DEV
-                      </span>
-                    )}
-                  </h4>
-                  <p className="text-xs text-yellow-900/75 truncate">{session?.user?.email}</p>
-                </div>
-              </button>
+              <div className="flex items-stretch gap-2">
+                <button
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="min-w-0 flex-1 flex items-center gap-3 p-3 rounded-xl bg-[#FFF08A] hover:bg-[#FFF08A]/90 transition-all active:scale-95 cursor-pointer group shadow-sm"
+                >
+                  <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center group-hover:bg-yellow-50 transition-all overflow-hidden ring-2 ring-yellow-200 shrink-0">
+                    {session?.user?.user_metadata?.avatar_url ? (
+                      <img
+                        src={session.user.user_metadata.avatar_url}
+                        alt={session?.user?.user_metadata?.full_name || 'Foto profil'}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden')
+                        }}
+                      />
+                    ) : null}
+                    <User size={18} className={`text-yellow-800 ${session?.user?.user_metadata?.avatar_url ? 'hidden' : ''}`} />
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <h4 className="text-sm font-semibold truncate flex items-center gap-1.5 text-yellow-950">
+                      {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Pengguna'}
+                      {session?.user?.email?.startsWith('arunika.dyatask@') && (
+                        <span className="bg-yellow-950 text-yellow-100 border border-yellow-900 text-[8px] px-1 py-0.5 rounded font-extrabold uppercase tracking-wider scale-90 origin-left">
+                          DEV
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-xs text-yellow-900/75 truncate">{session?.user?.email}</p>
+                  </div>
+                </button>
+                {!isAssistantWorkspace && (
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="w-10 shrink-0 rounded-xl border border-red-200 bg-red-50/90 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/20 dark:hover:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400 transition-all active:scale-95 shadow-sm"
+                    title="Keluar"
+                    aria-label="Keluar"
+                  >
+                    <LogOut size={16} />
+                  </button>
+                )}
+              </div>
 	              <div className="flex gap-2">
 	                {workspaceRole === 'owner' ? (
-	                  <button
-	                    onClick={() => setActiveTab('pageControl')}
-	                    className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
-	                  >
-	                    <SlidersHorizontal size={14} className="text-white" />
-	                    <span>Atur Halaman</span>
-	                  </button>
+	                  <>
+	                    <button
+	                      onClick={() => setActiveTab('pageControl')}
+	                      className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
+	                    >
+	                      <SlidersHorizontal size={14} className="text-white" />
+	                      <span>Atur Halaman</span>
+	                    </button>
+	                    <button
+	                      onClick={() => setActiveTab('tutorial')}
+	                      className="flex-1 h-8 rounded-lg border border-white/35 dark:border-indigo-900 flex items-center justify-center hover:bg-white/20 dark:hover:bg-indigo-900/50 text-xs font-semibold gap-1 transition-all text-white"
+	                    >
+	                      <GraduationCap size={14} className="text-white" />
+	                      <span>Tutorial</span>
+	                    </button>
+	                  </>
 	                ) : (
 	                  <button
 	                    onClick={toggleTheme}
@@ -7377,14 +8360,6 @@ function App() {
 	                  >
 	                    {theme === 'dark' ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} className="text-white" />}
 	                    <span>{theme === 'dark' ? 'Terang' : 'Gelap'}</span>
-	                  </button>
-	                )}
-	                {!isAssistantWorkspace && (
-	                  <button 
-	                    onClick={handleSignOut}
-	                    className="flex-1 h-8 rounded-lg border border-red-200 bg-red-50/80 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/20 dark:hover:bg-red-900/30 flex items-center justify-center text-xs font-semibold text-red-600 dark:text-red-400 gap-1 transition-all"
-	                  >
-	                    Keluar
 	                  </button>
 	                )}
 	              </div>
@@ -7471,10 +8446,15 @@ function App() {
 	                {realtimeStatusText} • {securityStatusText}
 	              </div>
 
-              {pwaInstallPrompt && !isPwaStandalone && (
+              {!isPwaStandalone && (
                 <button
-                  onClick={handleInstallPwa}
-                  className="px-3 py-1.5 rounded-lg bg-[#8f75d8]/12 hover:bg-[#8f75d8]/18 border border-[#8f75d8]/20 text-[#6f55bd] font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                  onClick={handleOpenInstallOptions}
+                  className={`px-3 py-1.5 rounded-lg border font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all ${
+                    pwaInstallPrompt
+                      ? 'bg-[#8f75d8]/12 hover:bg-[#8f75d8]/18 border-[#8f75d8]/20 text-[#6f55bd]'
+                      : 'bg-white/70 hover:bg-white border-purple-100 text-[#6f55bd]'
+                  }`}
+                  title={pwaInstallPrompt ? 'Install aplikasi' : 'Instruksi install aplikasi'}
                 >
                   <Laptop size={13} />
                   Install App
@@ -7596,7 +8576,7 @@ function App() {
                           <p className="text-[10px] uppercase tracking-[0.18em] font-extrabold text-purple-400 dark:text-purple-300">Today</p>
                           <h4 className="text-xl font-extrabold">Command Center</h4>
                         </div>
-                        <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#8f75d8]/10 text-[#8f75d8] font-bold">{todayString}</span>
+                        <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#8f75d8]/10 text-[#8f75d8] font-bold">{formatLongDate(todayString)}</span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
@@ -7615,7 +8595,7 @@ function App() {
                         <div className="rounded-2xl bg-amber-50/80 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 p-4">
                           <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Next Event</p>
 	                          <p className="text-sm font-black mt-2 truncate">{nextCalendarItem?.title || 'No event'}</p>
-	                          <p className="text-[10px] text-amber-600/80 dark:text-amber-300 mt-1 truncate">{nextCalendarItem ? `${nextCalendarItem.date} • ${nextCalendarItem.time || 'All day'} • ${nextCalendarItem.source === 'google_event' ? 'Google Calendar' : nextCalendarItem.source === 'holiday' ? 'Libur' : 'DyaTask'}` : 'Calendar clear'}</p>
+	                          <p className="text-[10px] text-amber-600/80 dark:text-amber-300 mt-1 truncate">{nextCalendarItem ? `${formatLongDate(nextCalendarItem.date)} • ${nextCalendarItem.time || 'All day'} • ${nextCalendarItem.source === 'google_event' ? 'Google Calendar' : nextCalendarItem.source === 'holiday' ? 'Libur' : 'DyaTask'}` : 'Calendar clear'}</p>
                         </div>
                       </div>
                     </div>
@@ -7690,7 +8670,7 @@ function App() {
                             <span className="w-7 h-7 rounded-xl bg-[#8f75d8] text-white text-xs font-black flex items-center justify-center">{index + 1}</span>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-bold truncate">{task.title}</p>
-                              <p className="text-[10px] text-purple-400 dark:text-purple-300 truncate">{task.category} • {task.calendarDate || todayString} • {task.dueTime} WIB</p>
+                              <p className="text-[10px] text-purple-400 dark:text-purple-300 truncate">{task.category} • {formatLongDate(task.calendarDate || todayString)} • {task.dueTime} WIB</p>
                             </div>
                             <span className="text-[9px] px-2 py-1 rounded-full bg-white dark:bg-indigo-900/60 text-[#8f75d8] font-black uppercase">{task.priority}</span>
                           </div>
@@ -7770,7 +8750,7 @@ function App() {
                                     {item.createdAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 </div>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 line-clamp-2">{item.detail}</p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 line-clamp-2">{formatTextDates(item.detail)}</p>
                               </div>
                             </div>
                           </div>
@@ -7957,7 +8937,7 @@ function App() {
                                             <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-purple-400 dark:text-purple-300">
                                               <span className="flex items-center gap-1"><Clock size={10} />{task.dueTime} WIB</span>
                                               <span>•</span>
-                                              <span>{task.calendarDate || todayString}</span>
+                                              <span>{formatLongDate(task.calendarDate || todayString)}</span>
                                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300 font-bold uppercase">{task.priority}</span>
                                             </div>
                                           </div>
@@ -7995,7 +8975,7 @@ function App() {
                                                 </button>
                                                 <div className="flex-1 min-w-0">
                                                   <p className={`text-xs font-semibold truncate ${subtask.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{subtask.title}</p>
-                                                  <p className="text-[10px] text-purple-400 dark:text-purple-300">{subtask.calendarDate || todayString} • {subtask.dueTime} WIB</p>
+                                                  <p className="text-[10px] text-purple-400 dark:text-purple-300">{formatLongDate(subtask.calendarDate || todayString)} • {subtask.dueTime} WIB</p>
                                                 </div>
                                                 <button onClick={() => openCalendarEditModal({ ...subtask, itemType: 'task' })} className="text-purple-400 hover:text-purple-600"><Pencil size={12} /></button>
                                                 <button onClick={() => deleteTask(subtask.id)} className="text-purple-400 hover:text-red-500"><Trash2 size={12} /></button>
@@ -8180,7 +9160,7 @@ function App() {
                                             <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-purple-400 dark:text-purple-300">
                                               <span className="flex items-center gap-1"><Clock size={10} />{task.dueTime} WIB</span>
                                               <span>•</span>
-                                              <span>{task.calendarDate || todayString}</span>
+                                              <span>{formatLongDate(task.calendarDate || todayString)}</span>
                                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300 font-bold uppercase">{task.priority}</span>
                                             </div>
                                           </div>
@@ -8218,7 +9198,7 @@ function App() {
                                                 </button>
                                                 <div className="flex-1 min-w-0">
                                                   <p className={`text-xs font-semibold truncate ${subtask.status === 'done' ? 'line-through text-purple-300 dark:text-purple-400' : ''}`}>{subtask.title}</p>
-                                                  <p className="text-[10px] text-purple-400 dark:text-purple-300">{subtask.calendarDate || todayString} • {subtask.dueTime} WIB</p>
+                                                  <p className="text-[10px] text-purple-400 dark:text-purple-300">{formatLongDate(subtask.calendarDate || todayString)} • {subtask.dueTime} WIB</p>
                                                 </div>
                                                 <button onClick={() => openCalendarEditModal({ ...subtask, itemType: 'task' })} className="text-purple-400 hover:text-purple-600"><Pencil size={12} /></button>
                                                 <button onClick={() => deleteTask(subtask.id)} className="text-purple-400 hover:text-red-500"><Trash2 size={12} /></button>
@@ -8546,7 +9526,7 @@ function App() {
                         <div>
                           <h3 className="text-xl font-bold text-[#4f4574]">{selectedSpreadsheetOrder.orderName}</h3>
                           <p className="text-sm text-[#8f75d8] mt-1">{selectedSpreadsheetOrder.customerName} • {selectedSpreadsheetOrder.orderType}</p>
-                          <p className="text-xs text-slate-500 mt-1">Deadline: {selectedSpreadsheetOrder.dueDate || '-'} • Status kerja: {selectedSpreadsheetOrder.status}</p>
+                          <p className="text-xs text-slate-500 mt-1">Deadline: {formatLongDate(selectedSpreadsheetOrder.dueDate)} • Status kerja: {selectedSpreadsheetOrder.status}</p>
                           <p className="text-xs text-slate-500 mt-1">Status bayar: <span className="font-semibold capitalize">{selectedSpreadsheetOrder.paymentStatus || 'belum_bayar'}</span></p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -8603,7 +9583,7 @@ function App() {
                             <div className="flex items-start gap-3">
                               <span className="mt-1 w-3 h-3 rounded-full bg-[#8f75d8] shrink-0" />
                               <div className="flex-1 min-w-0">
-                                <p className="text-[11px] text-[#8f75d8] font-semibold">{new Date(item.createdAt).toLocaleString('id-ID')}</p>
+                                <p className="text-[11px] text-[#8f75d8] font-semibold">{formatLongDateTime(item.createdAt)}</p>
                                 {editingTimelineId === item.id ? (
                                   <div className="mt-1 space-y-2">
                                     <input
@@ -8637,7 +9617,7 @@ function App() {
                                 ) : (
                                   <>
                                     <h4 className="text-sm font-bold text-[#4f4574] mt-1">{item.title}</h4>
-                                    {item.note && <p className="text-xs text-slate-600 mt-1 whitespace-pre-line">{item.note}</p>}
+                                    {item.note && <p className="text-xs text-slate-600 mt-1 whitespace-pre-line">{formatTextDates(item.note)}</p>}
                                     <div className="mt-2 h-2 rounded-full bg-purple-100 overflow-hidden">
                                       <div className="h-full bg-[#8f75d8]" style={{ width: `${Math.max(0, Math.min(100, Number(item.progressPercent || 0)))}%` }} />
                                     </div>
@@ -8821,7 +9801,7 @@ function App() {
                           <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                             {selectedCrmClient.email && <span className="inline-flex items-center gap-1"><Mail size={12} />{selectedCrmClient.email}</span>}
                             {selectedCrmClient.phone && <span>{selectedCrmClient.phone}</span>}
-                            {selectedCrmClient.nextFollowUpDate && <span>Follow-up: {selectedCrmClient.nextFollowUpDate}</span>}
+                            {selectedCrmClient.nextFollowUpDate && <span>Follow-up: {formatLongDate(selectedCrmClient.nextFollowUpDate)}</span>}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -8886,7 +9866,7 @@ function App() {
                                     <p className="text-[11px] text-[#8f75d8] mt-0.5">
                                       {item.rowType === 'order'
                                         ? `${item.type} • ${formatCurrencyIDR(item.budget)}`
-                                        : `${item.date || '-'}${item.time ? ` • ${item.time}` : ''}`}
+                                        : `${formatLongDate(item.date)}${item.time ? ` • ${item.time}` : ''}`}
                                     </p>
                                   </div>
                                   <span className="shrink-0 px-2 py-0.5 rounded-full bg-purple-100 text-[#8f75d8] text-[10px] font-bold">{item.rowType}</span>
@@ -8910,8 +9890,8 @@ function App() {
                                     <span className={`mt-1 w-2 h-2 rounded-full ${activity.type === 'order' ? 'bg-blue-500' : activity.type === 'reservation' ? 'bg-emerald-500' : 'bg-[#8f75d8]'}`} />
                                     <div className="min-w-0 flex-1">
                                       <p className="text-xs font-bold text-[#4f4574] truncate">{activity.title}</p>
-                                      <p className="text-[11px] text-slate-500 mt-0.5">{activity.note || activity.dueDate || '-'}</p>
-                                      <p className="text-[10px] text-[#8f75d8] mt-1">{activity.createdAt ? new Date(activity.createdAt).toLocaleString('id-ID') : activity.dueDate || '-'}</p>
+                                      <p className="text-[11px] text-slate-500 mt-0.5">{activity.note ? formatTextDates(activity.note) : formatLongDate(activity.dueDate)}</p>
+                                      <p className="text-[10px] text-[#8f75d8] mt-1">{activity.createdAt ? formatLongDateTime(activity.createdAt) : formatLongDate(activity.dueDate)}</p>
                                     </div>
                                     {isManualFollowUp && (
                                       <button
@@ -8966,49 +9946,62 @@ function App() {
                     .map(item => (
                       <div key={`${item.source}-${item.id}`} className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
                         <p className="text-sm font-bold text-[#4f4574] truncate">{item.title}</p>
-                        <p className="text-xs text-purple-400 mt-0.5">{item.date} • {item.time || 'All day'} • {item.source === 'google_event' ? 'Google Calendar' : item.source === 'appointment' ? 'Mentoring' : 'Task'}</p>
+                        <p className="text-xs text-purple-400 mt-0.5">{formatLongDate(item.date)} • {item.time || 'All day'} • {item.source === 'google_event' ? 'Google Calendar' : item.source === 'appointment' ? 'Mentoring' : 'Task'}</p>
                       </div>
                     ))}
                 </div>
               </div>
+
             </div>
           )}
 
           {activeTab === 'contentPlanner' && (
             <div className="mobile-page space-y-5 min-w-0 overflow-x-hidden">
-              <div className="glass-panel p-5 min-w-0">
-                <h3 className="text-xl font-extrabold text-[#4f4574]">Content Planner</h3>
-                <p className="text-sm text-purple-400 mt-1">Folder terpisah per platform: Instagram, TikTok, Threads. Jadwal upload otomatis tersambung ke kalender + notifikasi.</p>
+              <div className="glass-panel p-5 min-w-0 flex flex-col md:flex-row md:items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-extrabold text-[#4f4574]">Content Planner</h3>
+                  <p className="text-sm text-purple-400 mt-1">Folder terpisah per platform: Instagram, TikTok, Threads. Jadwal upload otomatis tersambung ke kalender + notifikasi.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowContentPlannerForm(prev => !prev)}
+                  className="shrink-0 px-3 py-2 rounded-xl border border-purple-100 bg-white text-[#8f75d8] text-xs font-bold inline-flex items-center gap-1.5 hover:bg-purple-50"
+                >
+                  {showContentPlannerForm ? <EyeOff size={13} /> : <Eye size={13} />}
+                  {showContentPlannerForm ? 'Hide Form' : 'Show Form'}
+                </button>
               </div>
 
-              <div className="glass-panel p-5 min-w-0">
-                <form onSubmit={handleSubmitContentPlanner} className="space-y-2.5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    <input value={contentPlannerTitle} onChange={(e) => setContentPlannerTitle(e.target.value)} placeholder="Judul konten" className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
-                    <input value={contentPlannerPillar} onChange={(e) => setContentPlannerPillar(e.target.value)} placeholder="Content pillar / value" className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                    <select value={contentPlannerPlatform} onChange={(e) => setContentPlannerPlatform(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm">
-                      {contentPlannerPlatforms.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
-                    </select>
-                    <select value={contentPlannerStatus} onChange={(e) => setContentPlannerStatus(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm">
-                      <option value="draft">Draft</option>
-                      <option value="scheduled">Scheduled</option>
-                      <option value="posted">Posted</option>
-                    </select>
-                    <input type="date" value={contentPlannerDate} onChange={(e) => setContentPlannerDate(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
-                    <input type="time" value={contentPlannerTime} onChange={(e) => setContentPlannerTime(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    {contentPlannerEditingId && (
-                      <button type="button" onClick={resetContentPlannerForm} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-[#8f75d8] text-xs font-bold">Batal Edit</button>
-                    )}
-                    <button type="submit" className="px-3.5 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
-                      {contentPlannerEditingId ? 'Update Konten' : 'Tambah Konten'}
-                    </button>
-                  </div>
-                </form>
-              </div>
+              {showContentPlannerForm && (
+                <div className="glass-panel p-5 min-w-0">
+                  <form onSubmit={handleSubmitContentPlanner} className="space-y-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      <input value={contentPlannerTitle} onChange={(e) => setContentPlannerTitle(e.target.value)} placeholder="Judul konten" className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                      <input value={contentPlannerPillar} onChange={(e) => setContentPlannerPillar(e.target.value)} placeholder="Content pillar / value" className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                      <select value={contentPlannerPlatform} onChange={(e) => setContentPlannerPlatform(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm">
+                        {contentPlannerPlatforms.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                      </select>
+                      <select value={contentPlannerStatus} onChange={(e) => setContentPlannerStatus(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm">
+                        <option value="draft">Draft</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="posted">Posted</option>
+                      </select>
+                      <input type="date" value={contentPlannerDate} onChange={(e) => setContentPlannerDate(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                      <input type="time" value={contentPlannerTime} onChange={(e) => setContentPlannerTime(e.target.value)} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-sm" />
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      {contentPlannerEditingId && (
+                        <button type="button" onClick={resetContentPlannerForm} className="px-3 py-2 rounded-xl border border-purple-100 bg-white text-[#8f75d8] text-xs font-bold">Batal Edit</button>
+                      )}
+                      <button type="submit" className="px-3.5 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
+                        {contentPlannerEditingId ? 'Update Konten' : 'Tambah Konten'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               <div className="glass-panel p-5">
                 <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -9034,23 +10027,23 @@ function App() {
                         <th className="text-left px-3 py-2">Pillar/Value</th>
                         <th className="text-left px-3 py-2">Judul Konten</th>
                         <th className="text-left px-3 py-2">Link Posting</th>
-                        <th className="text-left px-3 py-2">More</th>
+                        <th className="text-left px-3 py-2">Aksi</th>
                       </tr>
                     </thead>
                     <tbody>
                       {contentPlannerItemsByPlatform.length === 0 ? (
                         <tr><td colSpan={6} className="px-3 py-6 text-center text-purple-400">Belum ada konten untuk folder ini.</td></tr>
                       ) : contentPlannerItemsByPlatform.map(item => (
-                        <tr key={item.id} className="border-t border-purple-50">
-                          <td className="px-3 py-2.5">
+                        <tr key={item.id} className="border-t border-purple-50 hover:bg-purple-50/40">
+                          <td className="px-3 py-2.5 cursor-pointer" onClick={(e) => handleOpenContentPlannerDetail(e, item)}>
                             <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${
                               item.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : item.status === 'scheduled' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'
                             }`}>{item.status}</span>
                           </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap">{item.uploadDate} {item.uploadTime || '09:00'}</td>
-                          <td className="px-3 py-2.5">{item.pillar || '-'}</td>
-                          <td className="px-3 py-2.5 font-semibold text-[#4f4574]">{item.title}</td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-3 py-2.5 whitespace-nowrap cursor-pointer" onClick={(e) => handleOpenContentPlannerDetail(e, item)}>{formatLongDate(item.uploadDate)} {item.uploadTime || '09:00'}</td>
+                          <td className="px-3 py-2.5 cursor-pointer" onClick={(e) => handleOpenContentPlannerDetail(e, item)}>{item.pillar || '-'}</td>
+                          <td className="px-3 py-2.5 font-semibold text-[#4f4574] cursor-pointer" onClick={(e) => handleOpenContentPlannerDetail(e, item)}>{item.title}</td>
+                          <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                             {contentPlannerLinkEditId === item.id ? (
                               <div className="flex items-center gap-1.5">
                                 <input
@@ -9061,7 +10054,10 @@ function App() {
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleApplyContentPlannerLink(item.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleApplyContentPlannerLink(item.id)
+                                  }}
                                   className="h-8 px-2.5 rounded-md bg-emerald-600 text-white text-[11px] font-bold"
                                 >
                                   OK
@@ -9071,7 +10067,10 @@ function App() {
                               <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handleStartContentPlannerLinkInput(item)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleStartContentPlannerLinkInput(item)
+                                  }}
                                   className="h-8 px-2.5 rounded-md border border-purple-100 bg-white text-[#8f75d8] text-[11px] font-bold"
                                 >
                                   Input Link
@@ -9090,9 +10089,28 @@ function App() {
                             )}
                           </td>
                           <td className="px-3 py-2.5">
-                            <button type="button" onClick={(e) => handleToggleContentPlannerMore(e, item.id)} className="h-7 w-7 rounded-md border border-purple-100 inline-flex items-center justify-center text-[#8f75d8]">
-                              <MoreHorizontal size={14} />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleEditContentPlanner(item)
+                                }}
+                                className="h-8 px-2.5 rounded-md border border-purple-100 bg-white text-[#8f75d8] text-[11px] font-bold"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteContentPlanner(item.id)
+                                }}
+                                className="h-8 px-2.5 rounded-md border border-red-100 bg-red-50 text-red-500 text-[11px] font-bold"
+                              >
+                                Hapus
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -9101,39 +10119,123 @@ function App() {
                   </div>
                 </div>
 
-                {contentPlannerMoreOpenId && (
-                  <>
-                    <div
-                      onClick={() => setContentPlannerMoreOpenId(null)}
-                      className="fixed inset-0 z-30"
-                    />
-                    <div
-                      className="fixed z-40 w-28 rounded-lg border border-purple-100 bg-white shadow-sm"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ top: `${contentPlannerMoreMenuPos.top}px`, left: `${contentPlannerMoreMenuPos.left}px` }}
-                    >
+              </div>
+
+              {contentPlannerDetailItem && (
+                <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setContentPlannerDetailItem(null)}>
+                  <div className="w-full max-w-xl rounded-[1.4rem] bg-white p-5 shadow-2xl border border-purple-100/80" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Detail Konten</p>
+                        <h4 className="text-lg font-extrabold text-[#4f4574] mt-1">{contentPlannerDetailItem.title}</h4>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          const target = contentPlannerItemsByPlatform.find(entry => entry.id === contentPlannerMoreOpenId)
-                          if (target) handleEditContentPlanner(target)
-                          setContentPlannerMoreOpenId(null)
-                        }}
-                        className="w-full text-left px-2.5 py-2 text-xs hover:bg-purple-50"
+                        onClick={() => setContentPlannerDetailItem(null)}
+                        className="h-8 w-8 rounded-lg border border-purple-100 text-purple-400 hover:bg-purple-50 inline-flex items-center justify-center"
                       >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteContentPlanner(contentPlannerMoreOpenId)}
-                        className="w-full text-left px-2.5 py-2 text-xs text-red-500 hover:bg-red-50"
-                      >
-                        Hapus
+                        <X size={14} />
                       </button>
                     </div>
-                  </>
-                )}
-              </div>
+
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2.5 text-sm">
+                      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] px-3 py-2">
+                        <p className="text-[11px] text-purple-400">Platform</p>
+                        <p className="font-semibold text-[#4f4574]">{contentPlannerDetailItem.platform}</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] px-3 py-2">
+                        <p className="text-[11px] text-purple-400">Status</p>
+                        <p className="font-semibold text-[#4f4574]">{contentPlannerDetailItem.status}</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] px-3 py-2 md:col-span-2">
+                        <p className="text-[11px] text-purple-400">Jadwal Upload</p>
+                        <p className="font-semibold text-[#4f4574]">{formatLongDate(contentPlannerDetailItem.uploadDate)} {contentPlannerDetailItem.uploadTime || '09:00'}</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] px-3 py-2 md:col-span-2">
+                        <p className="text-[11px] text-purple-400">Pillar / Value</p>
+                        <p className="font-semibold text-[#4f4574]">{contentPlannerDetailItem.pillar || '-'}</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] px-3 py-2">
+                        <p className="text-[11px] text-purple-400">Total Interaksi</p>
+                        <p className="font-semibold text-[#4f4574]">
+                          {getContentInsightInteractionTotal(contentPlannerDetailItem.platform, contentPlannerInsightMetrics)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-purple-100 bg-[#fbfaff] px-3 py-2">
+                        <p className="text-[11px] text-purple-400">Engagement Rate</p>
+                        <p className="font-semibold text-[#4f4574]">
+                          {getContentInsightER(contentPlannerDetailItem.platform, contentPlannerInsightMetrics).toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                      <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-[0.1em]">AI Recommendation</p>
+                      <p className="text-sm text-emerald-800 mt-1">
+                        {getContentInsightAiRecommendation(contentPlannerDetailItem.platform, contentPlannerInsightMetrics)}
+                      </p>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[11px] font-bold uppercase tracking-[0.14em] text-purple-400">Input Insight</label>
+                        <button
+                          type="button"
+                          onClick={() => setContentPlannerInsightFormOpen(prev => !prev)}
+                          className="px-2.5 py-1 rounded-md border border-purple-100 bg-white text-[#8f75d8] text-[11px] font-bold"
+                        >
+                          {contentPlannerInsightFormOpen ? 'Tutup Form' : 'Input Insight'}
+                        </button>
+                      </div>
+
+                      {contentPlannerInsightFormOpen && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+                          {getContentInsightFields(contentPlannerDetailItem.platform).map((fieldKey) => (
+                            <label key={fieldKey} className="text-[11px] text-purple-500">
+                              <span className="capitalize">{fieldKey.replace(/([A-Z])/g, ' $1')}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={contentPlannerInsightMetrics?.[fieldKey] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setContentPlannerInsightMetrics(prev => ({ ...prev, [fieldKey]: val === '' ? '' : Number(val) }))
+                                }}
+                                className="mt-1 w-full h-8 px-2 rounded-md border border-purple-100 bg-white text-[11px] text-[#4f4574]"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
+
+                      <textarea
+                        value={contentPlannerInsightDraft}
+                        onChange={(e) => setContentPlannerInsightDraft(e.target.value)}
+                        rows={4}
+                        placeholder="Tulis insight performa konten..."
+                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-sm text-[#4f4574] resize-none"
+                      />
+                    </div>
+
+                    <div className="mt-4 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setContentPlannerDetailItem(null)}
+                        className="px-3 py-2 rounded-lg border border-purple-100 text-xs font-bold text-purple-500"
+                      >
+                        Tutup
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveContentPlannerInsight}
+                        className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-xs font-bold"
+                      >
+                        Simpan Insight
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -9162,18 +10264,50 @@ function App() {
                 <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
                   {invoices.length === 0 ? (
                     <p className="text-sm text-purple-400">Belum ada invoice.</p>
-                  ) : invoices.map(invoice => (
-                    <div key={invoice.id} className="rounded-xl border border-purple-100 bg-white p-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-[#4f4574] truncate">{invoice.title}</p>
-                        <p className="text-xs text-purple-400">{invoice.clientName} • Due {invoice.dueDate || '-'}</p>
+                  ) : invoices.map(invoice => {
+                    const hasSavedGeneratorInvoice = !!parseInvoiceGeneratorMeta(invoice.notes)
+                    return (
+                      <div key={invoice.id} className="rounded-xl border border-purple-100 bg-white p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-[#4f4574] truncate">{invoice.title}</p>
+                          <p className="text-xs text-purple-400">{invoice.clientName} • Due {formatLongDate(invoice.dueDate)}</p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:justify-end shrink-0">
+                          <div className="sm:text-right min-w-[130px]">
+                            <p className="text-sm font-bold text-[#8f75d8]">{formatCurrencyIDR(invoice.amount || 0)}</p>
+                            <select
+                              value={invoice.status || 'draft'}
+                              onChange={(e) => updateInvoiceStatus(invoice, e.target.value)}
+                              className="mt-1 h-8 px-2 rounded-lg border border-purple-100 bg-purple-50 text-[11px] font-bold uppercase text-[#6f3df3]"
+                            >
+                              <option value="draft">Draft</option>
+                              <option value="sent">Follow Up</option>
+                              <option value="paid">Paid / Lunas</option>
+                              <option value="overdue">Overdue</option>
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => openInvoiceGeneratorFromFollowUp(invoice)}
+                            className="h-8 px-3 rounded-lg bg-[#8f75d8] hover:bg-[#8069c8] text-white text-[11px] font-bold inline-flex items-center justify-center gap-1.5"
+                          >
+                            <FileText size={13} />
+                            Invoice
+                          </button>
+                          {hasSavedGeneratorInvoice && (
+                            <button
+                              type="button"
+                              onClick={() => setInvoicePreviewModalItem(invoice)}
+                              className="h-8 w-8 rounded-lg border border-purple-100 bg-white text-[#8f75d8] hover:bg-purple-50 inline-flex items-center justify-center"
+                              title="Lihat invoice"
+                            >
+                              <Eye size={14} />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-[#8f75d8]">{formatCurrencyIDR(invoice.amount || 0)}</p>
-                        <p className="text-[11px] text-slate-500 uppercase">{invoice.status || 'draft'}</p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -9234,6 +10368,14 @@ function App() {
                       <textarea rows={2} value={invoiceGeneratorTerms} onChange={(e) => setInvoiceGeneratorTerms(e.target.value)} placeholder="Terms & Condition" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
                       <input value={invoiceGeneratorSigner} onChange={(e) => setInvoiceGeneratorSigner(e.target.value)} placeholder="Nama penanggung jawab" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
                       <input value={invoiceGeneratorSignature} onChange={(e) => setInvoiceGeneratorSignature(e.target.value)} placeholder="Tanda tangan (teks)" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                      <button
+                        type="button"
+                        onClick={handleSaveInvoiceGeneratorDefaults}
+                        className="w-full py-2 rounded-xl border border-purple-100 bg-purple-50 hover:bg-purple-100 text-[#6f3df3] text-xs font-bold inline-flex items-center justify-center gap-1.5"
+                      >
+                        <Check size={13} />
+                        Simpan Input Default
+                      </button>
                       <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">{invoiceGeneratorEditingId ? 'Update Invoice' : 'Simpan Invoice'}</button>
                     </form>
                   )}
@@ -9247,7 +10389,7 @@ function App() {
                         <div key={item.id} className="rounded-xl border border-purple-100 bg-white p-3 flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold text-[#4f4574] truncate">{item.title}</p>
-                            <p className="text-xs text-purple-400 truncate">{item.clientName} • {item.issueDate}</p>
+                            <p className="text-xs text-purple-400 truncate">{item.clientName} • {formatLongDate(item.issueDate)}</p>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button type="button" onClick={() => loadInvoiceGeneratorFromInvoice(item)} className="px-2 py-1 rounded-lg border border-purple-100 text-[11px] font-bold text-[#8f75d8]">Edit</button>
@@ -9288,7 +10430,7 @@ function App() {
                         </div>
                         <div className="text-right">
                           <p className="text-4xl font-black tracking-tight">INVOICE</p>
-                          <p className="text-xs mt-1">DATE: {invoiceGeneratorDate}</p>
+                          <p className="text-xs mt-1">DATE: {formatLongDate(invoiceGeneratorDate)}</p>
                         </div>
                       </div>
                       <div className="mt-6 grid grid-cols-2 gap-4 bg-slate-100 p-4 text-xs">
@@ -9296,7 +10438,7 @@ function App() {
                         <div><p className="font-bold mb-1">SHIP TO</p><p className="whitespace-pre-line mt-1">{invoiceGeneratorShipTo}</p></div>
                       </div>
                       <div className="mt-5 flex items-center justify-between text-xs">
-                        <p>DATE: {invoiceGeneratorDate}</p>
+                        <p>DATE: {formatLongDate(invoiceGeneratorDate)}</p>
                         <p className="font-bold">INVOICE NO: {invoiceGeneratorNumber}</p>
                       </div>
                       <table className="w-full mt-2 text-xs border-t border-b border-slate-400">
@@ -9321,6 +10463,114 @@ function App() {
               </div>
             </div>
           )}
+
+          {invoicePreviewModalItem && (() => {
+            const previewMeta = parseInvoiceGeneratorMeta(invoicePreviewModalItem.notes)
+            if (!previewMeta) return null
+            const previewQty = Number(previewMeta.qty || 1)
+            const previewPrice = Number(previewMeta.price || invoicePreviewModalItem.amount || 0)
+            const previewStatus = invoicePreviewModalItem.status || previewMeta.status || 'draft'
+            return (
+              <div className="fixed inset-0 z-50 bg-slate-700/35 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setInvoicePreviewModalItem(null)}>
+                <div className="w-full max-w-5xl max-h-[92vh] overflow-auto rounded-[1.4rem] bg-white shadow-2xl border border-purple-100" onClick={(e) => e.stopPropagation()}>
+                  <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-purple-100 px-5 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Preview Invoice</p>
+                      <h4 className="text-base font-extrabold text-[#4f4574] truncate">{previewMeta.invoiceNumber || invoicePreviewModalItem.title}</h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInvoicePreviewModalItem(null)}
+                      className="h-8 w-8 rounded-lg border border-purple-100 text-purple-400 hover:bg-purple-50 inline-flex items-center justify-center"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="p-5 overflow-auto bg-[#f8f4ff]">
+                    <div className="relative mx-auto bg-white text-[#111] shadow-sm overflow-hidden" style={{ width: '210mm', minHeight: '297mm', padding: '16mm' }}>
+                      {['paid', 'lunas'].includes(String(previewStatus || '').toLowerCase()) && (
+                        <div className="absolute right-8 top-20 rotate-[-18deg] border-4 border-emerald-500 text-emerald-600 px-6 py-2 text-3xl font-black tracking-[0.12em] opacity-80">
+                          LUNAS
+                        </div>
+                      )}
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          {previewMeta.logo ? <img src={previewMeta.logo} alt="logo" className="h-12 w-auto object-contain" /> : null}
+                          <div>
+                            <p className="font-extrabold text-lg">{previewMeta.company || 'DyaTask Studio'}</p>
+                            <p className="text-[11px] text-slate-500">{previewMeta.tagline || 'Freelance Service Invoice'}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-4xl font-black tracking-tight">INVOICE</p>
+                          <p className="text-xs mt-1">DATE: {formatLongDate(previewMeta.invoiceDate || invoicePreviewModalItem.issueDate)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-6 grid grid-cols-2 gap-4 bg-slate-100 p-4 text-xs">
+                        <div>
+                          <p className="font-bold mb-1">INVOICE TO</p>
+                          <p className="font-semibold">{previewMeta.client || invoicePreviewModalItem.clientName}</p>
+                          <p className="whitespace-pre-line mt-1">{previewMeta.clientAddress}</p>
+                        </div>
+                        <div>
+                          <p className="font-bold mb-1">SHIP TO</p>
+                          <p className="whitespace-pre-line mt-1">{previewMeta.shipTo}</p>
+                        </div>
+                      </div>
+                      <div className="mt-5 flex items-center justify-between text-xs">
+                        <p>DATE: {formatLongDate(previewMeta.invoiceDate || invoicePreviewModalItem.issueDate)}</p>
+                        <p className="font-bold">INVOICE NO: {previewMeta.invoiceNumber || '-'}</p>
+                      </div>
+                      <table className="w-full mt-2 text-xs border-t border-b border-slate-400">
+                        <thead>
+                          <tr className="text-left">
+                            <th className="py-2">ITEM</th>
+                            <th>PRICE</th>
+                            <th>QTY</th>
+                            <th className="text-right">TOTAL</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="py-2">
+                              <p className="font-semibold">{previewMeta.service || invoicePreviewModalItem.orderType}</p>
+                              <p className="text-slate-500">{previewMeta.serviceDescription || invoicePreviewModalItem.title}</p>
+                            </td>
+                            <td>{formatCurrencyIDR(previewPrice)}</td>
+                            <td>{previewQty}</td>
+                            <td className="text-right font-bold">{formatCurrencyIDR(previewQty * previewPrice)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <p className="font-bold">Payment Info:</p>
+                          <p className="whitespace-pre-line mt-1">{previewMeta.paymentInfo}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">TOTAL DUE</p>
+                          <p className="text-3xl font-black mt-1">{formatCurrencyIDR(previewQty * previewPrice)}</p>
+                          <p className="mt-2 text-[11px] font-semibold uppercase">Status: {formatInvoiceStatusLabel(previewStatus)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-5 grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <p className="font-bold">Terms & Condition</p>
+                          <p className="whitespace-pre-line mt-1">{previewMeta.terms}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">Account Manager</p>
+                          <p className="italic text-lg mt-2">{previewMeta.signature || previewMeta.signer}</p>
+                          <p className="font-bold mt-1">{previewMeta.signer}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {activeTab === 'finance' && (
             <div className="mobile-page mobile-page-finance space-y-6">
@@ -9419,6 +10669,7 @@ function App() {
                   const dueDateKey = String(invoice.dueDate || '')
                   const isLate = dueDateKey && dueDateKey < todayString && !['paid'].includes(String(invoice.status || '').toLowerCase())
                   const displayStatus = isLate && invoice.status !== 'paid' ? 'overdue' : invoice.status
+                  const invoiceGeneratorMeta = parseInvoiceGeneratorMeta(invoice.notes)
                   const statusBadgeClass = displayStatus === 'paid'
                     ? 'bg-emerald-100 text-emerald-700'
                     : displayStatus === 'sent'
@@ -9444,15 +10695,26 @@ function App() {
                         </div>
                         <div className="rounded-xl border border-purple-100 bg-white p-2">
                           <p className="text-purple-400">Issue</p>
-                          <p className="font-bold text-sm mt-1">{invoice.issueDate || '-'}</p>
+                          <p className="font-bold text-sm mt-1">{formatLongDate(invoice.issueDate)}</p>
                         </div>
                         <div className="rounded-xl border border-purple-100 bg-white p-2">
                           <p className="text-purple-400">Due</p>
-                          <p className="font-bold text-sm mt-1">{invoice.dueDate || '-'}</p>
+                          <p className="font-bold text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
                         </div>
                       </div>
 
-                      {invoice.notes ? <p className="text-xs text-slate-500">{invoice.notes}</p> : null}
+                      {invoiceGeneratorMeta ? (
+                        <button
+                          type="button"
+                          onClick={() => setInvoicePreviewModalItem(invoice)}
+                          className="w-fit px-3 py-1.5 rounded-lg border border-purple-100 bg-white hover:bg-purple-50 text-[#8f75d8] text-xs font-bold inline-flex items-center gap-1.5"
+                        >
+                          <Eye size={13} />
+                          Preview Invoice
+                        </button>
+                      ) : invoice.notes ? (
+                        <p className="text-xs text-slate-500">{invoice.notes}</p>
+                      ) : null}
 
                       <div className="flex flex-wrap items-center gap-2">
                         <button type="button" onClick={() => startEditInvoice(invoice)} className="px-3 py-1.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold inline-flex items-center gap-1"><Pencil size={12} />Edit</button>
@@ -9705,7 +10967,7 @@ function App() {
                               : isAppointment
                                 ? `${item.clientName} • ${item.time} WIB`
                                 : isGoogleEvent
-                                  ? `${item.time} • ${item.calendarName}`
+                                  ? `${formatLongDate(item.date)} • ${item.time} • ${item.calendarName}`
                                   : 'Hari libur nasional Indonesia'
 
                             return (
@@ -9771,7 +11033,7 @@ function App() {
                               <span className={`mt-1 h-2.5 w-2.5 rounded-full ${item.tone === 'emerald' ? 'bg-emerald-400' : item.tone === 'amber' ? 'bg-amber-400' : item.tone === 'rose' ? 'bg-rose-400' : 'bg-[#8f75d8]'}`} />
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center justify-between gap-2">
-                                  <p className="text-[11px] text-[#8f75d8] font-bold">{item.date} • {item.time}</p>
+                                  <p className="text-[11px] text-[#8f75d8] font-bold">{formatLongDate(item.date)} • {item.time}</p>
                                   <span className={`text-[8px] uppercase tracking-wide px-1.5 py-0.5 rounded-lg border font-bold ${toneClass[item.tone]}`}>
                                     {item.type}
                                   </span>
@@ -9832,7 +11094,7 @@ function App() {
                           ...dayGoogleEvents.map(event => ({
                             ...event,
                             id: `gcal-${event.id}`,
-                            displayTitle: event.title,
+                            displayTitle: formatCalendarPillTitle(event.time, event.title),
                             pillTag: '',
                             bgColor: '#DDF7EA',
                             borderColor: '#A7E7C7',
@@ -9843,7 +11105,7 @@ function App() {
                             ...appt,
                             id: appt.id,
                             displayId: `appt-${appt.id}`,
-                            displayTitle: formatAppointmentLabel(appt),
+                            displayTitle: formatCalendarPillTitle(appt.time, formatAppointmentLabel(appt)),
                             pillTag: '',
                             bgColor: '#DFECFF',
                             borderColor: '#B6D3FF',
@@ -9854,8 +11116,8 @@ function App() {
                             ...task,
                             id: task.id,
                             displayId: `task-${task.id}`,
-                            displayTitle: task.title,
-                            pillTag: 'TASK',
+                            displayTitle: formatCalendarPillTitle(task.dueTime, task.title),
+                            pillTag: '',
                             bgColor: '#EFE7FF',
                             borderColor: '#D0B9FF',
                             itemType: 'task',
@@ -9925,18 +11187,19 @@ function App() {
           {/* TAB CONTENT: 4. ENCRYPTED NOTES VAULT */}
           {activeTab === 'notes' && (
             <div className="mobile-page mobile-page-notes">
-              {/* Security Advisory alert */}
-              <div className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-indigo-950/50 rounded-2xl flex items-start gap-3.5 mb-6">
-                <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-indigo-900 flex items-center justify-center text-purple-600 dark:text-purple-300 shrink-0">
-                  <Lock size={16} />
+              {isAppDeveloper && (
+                <div className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/50 dark:border-indigo-950/50 rounded-2xl flex items-start gap-3.5 mb-6">
+                  <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-indigo-900 flex items-center justify-center text-purple-600 dark:text-purple-300 shrink-0">
+                    <Lock size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-purple-700 dark:text-purple-300">Enkripsi End-to-End AES-256-GCM Klien</h4>
+                    <p className="text-xs text-purple-500 dark:text-purple-300 mt-1">
+                      Seluruh catatan pribadi dalam menu ini dienkripsi secara lokal di peramban Anda sebelum diunggah ke database SQL Supabase. Tanpa **Master Password**, siapapun (termasuk administrator server) tidak akan bisa membaca isinya.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-purple-700 dark:text-purple-300">Enkripsi End-to-End AES-256-GCM Klien</h4>
-                  <p className="text-xs text-purple-500 dark:text-purple-300 mt-1">
-                    Seluruh catatan pribadi dalam menu ini dienkripsi secara lokal di peramban Anda sebelum diunggah ke database SQL Supabase. Tanpa **Master Password**, siapapun (termasuk administrator server) tidak akan bisa membaca isinya.
-                  </p>
-                </div>
-              </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
@@ -10136,8 +11399,8 @@ function App() {
                     <h3 className="mt-1 text-lg font-extrabold text-[#4f4574] dark:text-white truncate">{calendarActionItem.title}</h3>
                     <p className="mt-1 text-xs text-slate-400">
                       {calendarActionItem.itemType === 'appointment'
-                        ? `${calendarActionItem.clientName || 'Klien'} • ${calendarActionItem.date} ${calendarActionItem.time || ''}`
-                        : `${calendarActionItem.category || 'Task'} • ${calendarActionItem.calendarDate || todayString} ${calendarActionItem.dueTime || ''}`}
+                        ? `${calendarActionItem.clientName || 'Klien'} • ${formatLongDate(calendarActionItem.date)} ${calendarActionItem.time || ''}`
+                        : `${calendarActionItem.category || 'Task'} • ${formatLongDate(calendarActionItem.calendarDate || todayString)} ${calendarActionItem.dueTime || ''}`}
                     </p>
                   </div>
                 </div>
@@ -10511,40 +11774,231 @@ function App() {
 
               </div>
 
-              {/* Data backup section */}
-              <div className="glass-panel p-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              {isAppDeveloper && (
+                <div className="glass-panel p-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div>
+                      <h3 className="text-lg font-bold">Backup Otomatis & Keamanan Database</h3>
+                      <p className="text-xs text-purple-400 dark:text-purple-300">Konfigurasi pencadangan data periodik Anda</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={triggerManualBackup}
+                        className="px-4 py-2 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                      >
+                        <Lock size={12} />
+                        Ekspor Backup Terenkripsi
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-purple-50/40 dark:bg-indigo-950/30 rounded-2xl border border-purple-200/20 flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-indigo-900 flex items-center justify-center text-purple-600 dark:text-purple-300 shrink-0">
+                      <ShieldCheck size={18} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300">Pencadangan Supabase Harian</h4>
+                      <p className="text-xs text-purple-500 dark:text-purple-300 mt-0.5">Backup otomatis berjalan setiap pukul 02:00 WIB. Disimpan di folder aman berkode kunci.</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 px-2 py-0.5 rounded font-bold uppercase tracking-wider">Aktif</span>
+                      <p className="text-[9px] text-purple-400 dark:text-purple-300 mt-0.5">Terakhir: Hari ini, 02:00 WIB</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {activeTab === 'tutorial' && (
+            <div className="mobile-page space-y-6">
+              <section className="glass-panel overflow-hidden">
+                <div className="relative min-h-[220px] p-6 md:p-8 bg-[#241a35] text-white">
+                  <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_20%,rgba(255,240,138,0.6),transparent_24%),radial-gradient(circle_at_80%_10%,rgba(143,117,216,0.9),transparent_28%),linear-gradient(135deg,#241a35,#8f75d8)]"></div>
+                  <div className="relative z-10 max-w-3xl">
+                    <p className="text-[11px] uppercase tracking-[0.22em] font-extrabold text-[#fff08a]">DyaTask Academy</p>
+                    <h3 className="mt-3 text-3xl md:text-4xl font-extrabold leading-tight text-white drop-shadow-sm">Tutorial Workspace dalam format course video</h3>
+                    <p className="mt-3 text-sm md:text-base text-white/90 leading-7">
+                      Pelajari alur utama DyaTask dari dashboard sampai workspace assistant lewat modul video singkat.
+                    </p>
+                    <div className="mt-6 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white/16 border border-white/30 px-3 py-1.5 text-xs font-bold text-white">{tutorialCourses.length} Course</span>
+                      <span className="rounded-full bg-white/16 border border-white/30 px-3 py-1.5 text-xs font-bold text-white">Gallery View</span>
+                      <span className="rounded-full bg-white/16 border border-white/30 px-3 py-1.5 text-xs font-bold text-white">Video LMS</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-5">
+                <aside className="glass-panel p-5 h-fit space-y-4">
                   <div>
-                    <h3 className="text-lg font-bold">Backup Otomatis & Keamanan Database</h3>
-                    <p className="text-xs text-purple-400 dark:text-purple-300">Konfigurasi pencadangan data periodik Anda</p>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">Learning Path</p>
+                    <h4 className="text-lg font-extrabold text-[#4f4574] mt-1">Workspace Essentials</h4>
                   </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={triggerManualBackup}
-                      className="px-4 py-2 bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1.5"
-                    >
-                      <Lock size={12} />
-                      Ekspor Backup Terenkripsi
-                    </button>
-                  </div>
-                </div>
+                  {['Fundamental', 'Workflow', 'Calendar', 'Finance', 'Team', 'Growth'].map((item, index) => (
+                    <div key={item} className="flex items-center gap-3 rounded-xl border border-purple-100 bg-white px-3 py-3">
+                      <span className="h-8 w-8 rounded-xl bg-[#8f75d8]/12 text-[#8f75d8] inline-flex items-center justify-center text-xs font-extrabold">{index + 1}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-[#4f4574]">{item}</p>
+                        <p className="text-[10px] text-purple-400">Modul video terstruktur</p>
+                      </div>
+                    </div>
+                  ))}
+                </aside>
 
-                <div className="p-4 bg-purple-50/40 dark:bg-indigo-950/30 rounded-2xl border border-purple-200/20 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-indigo-900 flex items-center justify-center text-purple-600 dark:text-purple-300 shrink-0">
-                    <ShieldCheck size={18} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300">Pencadangan Supabase Harian</h4>
-                    <p className="text-xs text-purple-500 dark:text-purple-300 mt-0.5">Backup otomatis berjalan setiap pukul 02:00 WIB. Disimpan di folder aman berkode kunci.</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 px-2 py-0.5 rounded font-bold uppercase tracking-wider">Aktif</span>
-                    <p className="text-[9px] text-purple-400 dark:text-purple-300 mt-0.5">Terakhir: Hari ini, 02:00 WIB</p>
-                  </div>
-                </div>
-              </div>
+                <div className="space-y-4">
+	                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+	                    <div>
+	                      <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">{tutorialViewMode === 'gallery' ? 'Gallery Course' : 'Riwayat Belajar'}</p>
+	                      <h4 className="text-2xl font-extrabold text-[#4f4574]">{tutorialViewMode === 'gallery' ? 'Video Tutorial' : 'Video Belum Selesai'}</h4>
+	                    </div>
+	                    <div className="inline-flex rounded-xl border border-purple-100 bg-white p-1 text-[11px] font-bold text-purple-500">
+	                      <button
+	                        type="button"
+	                        onClick={() => setTutorialViewMode('gallery')}
+	                        className={`rounded-lg px-3 py-1.5 ${tutorialViewMode === 'gallery' ? 'bg-[#8f75d8] text-white' : 'hover:bg-purple-50'}`}
+	                      >
+	                        Gallery
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => setTutorialViewMode('progress')}
+	                        className={`rounded-lg px-3 py-1.5 ${tutorialViewMode === 'progress' ? 'bg-[#8f75d8] text-white' : 'hover:bg-purple-50'}`}
+	                      >
+	                        Progress
+	                      </button>
+	                    </div>
+	                  </div>
 
+	                  {tutorialViewMode === 'gallery' ? (
+	                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+	                    {tutorialCourses.map((course) => {
+	                      const embedUrl = getYoutubeEmbedUrl(course.youtubeUrl)
+	                      const thumbnailUrl = getYoutubeThumbnailUrl(course.youtubeUrl)
+	                      const progress = tutorialProgressById[course.id]
+	                      const isUnfinished = progress?.status === 'in_progress'
+	                      return (
+	                      <article key={course.id} className="group overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all">
+                        <div className="relative aspect-video overflow-hidden" style={{ background: `linear-gradient(135deg, ${course.accent}, #241a35)` }}>
+                          {thumbnailUrl && (
+                            <img
+                              src={thumbnailUrl}
+                              alt=""
+                              className="absolute inset-0 h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          )}
+                          {thumbnailUrl && <div className="absolute inset-0 bg-[#241a35]/35"></div>}
+                          <div className="absolute inset-0 opacity-25 bg-[radial-gradient(circle_at_25%_25%,white,transparent_22%),radial-gradient(circle_at_75%_70%,white,transparent_18%)]"></div>
+                          <div className="absolute left-4 top-4 rounded-full bg-white/18 border border-white/25 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white">{course.module}</div>
+                          <button
+                            type="button"
+                            onClick={() => openTutorialCourse(course)}
+                            className="absolute inset-0 flex items-center justify-center"
+                            title={`Putar ${course.title}`}
+                          >
+                            <span className="h-14 w-14 rounded-full bg-white/92 text-[#4f4574] shadow-xl inline-flex items-center justify-center group-hover:scale-105 transition-transform">
+                              <PlayCircle size={29} />
+                            </span>
+                          </button>
+                          {isAppDeveloper && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openTutorialCourseEditor(course)
+                              }}
+                              className="absolute right-4 top-4 rounded-full bg-white/92 px-3 py-1 text-[10px] font-extrabold text-[#4f4574] shadow-sm"
+                            >
+                              Edit
+                            </button>
+                          )}
+	                          {embedUrl && (
+	                            <div className="absolute bottom-4 left-4 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[10px] font-bold text-white">YouTube</div>
+	                          )}
+	                          {isUnfinished && (
+	                            <div className="absolute left-4 bottom-12 rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-extrabold text-[#8f75d8] shadow-sm">Belum selesai</div>
+	                          )}
+	                          <div className="absolute bottom-4 right-4 rounded-full bg-black/35 px-2.5 py-1 text-[11px] font-bold text-white">{course.duration}</div>
+	                        </div>
+                        <button type="button" onClick={() => openTutorialCourse(course)} className="block w-full p-4 space-y-3 text-left">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h5 className="text-sm font-extrabold text-[#4f4574] leading-snug">{course.title}</h5>
+                              <p className="mt-1 text-xs leading-5 text-purple-400">{course.description}</p>
+                            </div>
+                            <BookOpen size={17} className="text-[#8f75d8] shrink-0 mt-0.5" />
+                          </div>
+                          <div className="flex items-center justify-between gap-2 border-t border-purple-50 pt-3">
+                            <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-bold text-purple-600">{course.level}</span>
+                            <span className="text-[10px] font-bold text-purple-400">{course.lessons} lesson</span>
+                          </div>
+                        </button>
+                      </article>
+	                      )
+	                    })}
+	                  </div>
+	                  ) : (
+	                  <div className="space-y-3">
+	                    {unfinishedTutorialHistory.length === 0 ? (
+	                      <div className="rounded-2xl border border-dashed border-purple-200 bg-white/70 p-6 text-center">
+	                        <PlayCircle size={34} className="mx-auto text-purple-300" />
+	                        <h5 className="mt-3 text-base font-extrabold text-[#4f4574]">Belum ada video yang tertunda</h5>
+	                        <p className="mt-1 text-xs text-purple-400">Video yang sudah dibuka dan belum ditandai selesai akan muncul di sini.</p>
+	                      </div>
+	                    ) : unfinishedTutorialHistory.map((item) => {
+	                      const course = item.course
+	                      const thumbnailUrl = getYoutubeThumbnailUrl(course.youtubeUrl)
+	                      return (
+	                        <article key={course.id} className="overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-sm">
+	                          <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]">
+	                            <button
+	                              type="button"
+	                              onClick={() => openTutorialCourse(course)}
+	                              className="relative aspect-video md:aspect-auto md:min-h-[150px] overflow-hidden text-left"
+	                              style={{ background: `linear-gradient(135deg, ${course.accent}, #241a35)` }}
+	                            >
+	                              {thumbnailUrl && <img src={thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />}
+	                              {thumbnailUrl && <div className="absolute inset-0 bg-[#241a35]/40"></div>}
+	                              <span className="absolute inset-0 flex items-center justify-center text-white">
+	                                <span className="h-12 w-12 rounded-full bg-white/90 text-[#4f4574] inline-flex items-center justify-center shadow-lg">
+	                                  <PlayCircle size={26} />
+	                                </span>
+	                              </span>
+	                              <span className="absolute bottom-3 right-3 rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-bold text-white">{course.duration}</span>
+	                            </button>
+	                            <div className="p-4 flex flex-col justify-between gap-4">
+	                              <div>
+	                                <div className="flex flex-wrap items-center gap-2">
+	                                  <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-purple-600">{course.module}</span>
+	                                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Belum selesai</span>
+	                                </div>
+	                                <h5 className="mt-3 text-base font-extrabold text-[#4f4574]">{course.title}</h5>
+	                                <p className="mt-1 text-xs leading-5 text-purple-400">{course.description}</p>
+	                                <p className="mt-2 text-[11px] text-slate-400">Terakhir dibuka: {formatLongDateTime(item.lastWatchedAt || item.startedAt)}</p>
+	                              </div>
+	                              <div className="flex flex-wrap gap-2">
+	                                <button type="button" onClick={() => openTutorialCourse(course)} className="rounded-xl bg-[#8f75d8] px-3 py-2 text-xs font-bold text-white inline-flex items-center gap-1.5">
+	                                  <PlayCircle size={13} />
+	                                  Lanjutkan
+	                                </button>
+	                                <button type="button" onClick={() => completeTutorialCourse(course.id)} className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 inline-flex items-center gap-1.5">
+	                                  <CheckCircle size={13} />
+	                                  Tandai selesai
+	                                </button>
+	                              </div>
+	                            </div>
+	                          </div>
+	                        </article>
+	                      )
+	                    })}
+	                  </div>
+	                  )}
+	                </div>
+              </section>
             </div>
           )}
 
@@ -10592,22 +12046,6 @@ function App() {
                 </div>
               </div>
 
-              <div className="glass-panel p-6">
-                <h4 className="text-base font-extrabold text-[#4f4574]">Saran Halaman Freelancer</h4>
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-purple-500">
-                  {[
-                    'Leads & Pipeline Client',
-                    'Proposal & Quotation',
-                    'Time Tracking per Project',
-                    'Revision Tracker',
-                    'Invoice & Payment Follow-up',
-                    'Content Planner',
-                    'Knowledge Base SOP'
-                  ].map((item) => (
-                    <div key={item} className="rounded-xl border border-purple-100 bg-white px-3 py-2">{item}</div>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 
@@ -10617,101 +12055,171 @@ function App() {
               
               {/* Left panel: Preferences */}
               <div className="glass-panel p-6 space-y-6">
-                <div>
-                  <h3 className="text-lg font-bold">Pengaturan Integrasi macOS Macbook</h3>
-                  <p className="text-xs text-purple-400 dark:text-purple-300">Sesuaikan integrasi sistem aplikasi DyaTask Manager</p>
-                </div>
+	                <div>
+	                  <h3 className="text-lg font-bold">Pengaturan Integrasi macOS Macbook</h3>
+	                  <p className="text-xs text-purple-400 dark:text-purple-300">Sesuaikan integrasi sistem aplikasi DyaTask Manager</p>
+	                </div>
 
-                <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-white/55 dark:bg-indigo-950/20 space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                     <div>
                       <h4 className="text-sm font-bold flex items-center gap-2">
-                        <Sparkles size={15} className="text-purple-500" />
-                        Header Branding
+                        <RefreshCw size={15} className="text-purple-500" />
+                        Versi & Update App
                       </h4>
-                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Atur tulisan kecil dan nama app yang tampil di header utama.</p>
+                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Cek versi PWA/web dan DMG macOS secara manual jika notifikasi otomatis belum muncul.</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAppHeaderTagline('Modern Soft Minimalist Amethyst')
-                        setAppHeaderTitle('Dyatask Manager - Superapp for Freelancer')
-                      }}
-                      className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-indigo-800 text-[10px] font-bold text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-indigo-900/40 transition-all"
-                    >
-                      Reset Default
-                    </button>
+                    <span className="rounded-full bg-purple-50 dark:bg-indigo-950/50 px-3 py-1.5 text-[10px] font-bold text-purple-600 dark:text-purple-300">
+                      {isElectronApp ? 'DMG macOS' : isPwaStandalone ? 'PWA Installed' : 'Web/PWA'}
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Tulisan Kecil Header</label>
-                      <input
-                        value={appHeaderTagline}
-                        onChange={(e) => setAppHeaderTagline(e.target.value)}
-                        placeholder="Contoh: Modern Soft Minimalist Amethyst"
-                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
-                      />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-slate-950/30 p-3">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Version</p>
+                      <p className="mt-1 text-sm font-extrabold text-[#4f4574] dark:text-white">v{currentAppVersion}</p>
                     </div>
-                    <div>
-                      <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Nama App</label>
-                      <input
-                        value={appHeaderTitle}
-                        onChange={(e) => setAppHeaderTitle(e.target.value)}
-                        placeholder="Contoh: Dyatask Manager"
-                        className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
-                      />
+                    <div className="rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-slate-950/30 p-3">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Update</p>
+                      <p className="mt-1 text-sm font-extrabold text-[#4f4574] dark:text-white">{updateStatusLabel}</p>
                     </div>
                   </div>
-                  <p className="text-[10px] text-purple-400 dark:text-purple-300">Perubahan tersimpan otomatis dan tetap aktif setelah refresh.</p>
+
+                  {manualUpdateStatus && (
+                    <p className="rounded-xl border border-purple-100 bg-purple-50/60 px-3 py-2 text-[11px] font-semibold text-purple-600 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-purple-200">
+                      {manualUpdateStatus}
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCheckManualUpdate}
+                      disabled={checkingManualUpdate}
+                      className="rounded-xl bg-[#8f75d8] px-3 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
+                    >
+                      <RefreshCw size={13} className={checkingManualUpdate ? 'animate-spin' : ''} />
+                      {checkingManualUpdate ? 'Mengecek...' : 'Cek Update'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
+                    >
+                      <RefreshCw size={13} />
+                      Reload PWA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadDmg}
+                      className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
+                    >
+                      <Download size={13} />
+                      DMG Terbaru
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-sm font-bold flex items-center gap-2">
-                        <FileText size={15} className="text-purple-500" />
-                        Gambar Login
-                      </h4>
-                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Upload gambar untuk mengganti visual kiri pada halaman login.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setLoginVisualImage('')}
-                      disabled={!loginVisualImage}
-                      className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-indigo-800 text-[10px] font-bold text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-indigo-900/40 disabled:opacity-45 disabled:cursor-not-allowed transition-all"
-                    >
-                      Reset Default
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 xl:grid-cols-[180px_1fr] gap-4 items-center">
-                    <div className="h-44 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-white/60 dark:bg-indigo-950/30 overflow-hidden flex items-center justify-center">
-                      {loginVisualImage ? (
-                        <img src={loginVisualImage} alt="Preview login visual" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="text-center px-4">
-                          <img src={dyataskMiniLogo} alt="" className="w-12 h-12 object-contain mx-auto opacity-80 mb-2" />
-                          <p className="text-[11px] text-purple-400 dark:text-purple-300">Default desk illustration aktif.</p>
+	                {isAppDeveloper && (
+                  <>
+                    <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-sm font-bold flex items-center gap-2">
+                            <Sparkles size={15} className="text-purple-500" />
+                            Header Branding
+                          </h4>
+                          <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Atur tulisan kecil dan nama app yang tampil di header utama.</p>
                         </div>
-                      )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAppHeaderTagline('Modern Soft Minimalist Amethyst')
+                            setAppHeaderTitle('Dyatask Manager - Superapp for Freelancer')
+                          }}
+                          className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-indigo-800 text-[10px] font-bold text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-indigo-900/40 transition-all"
+                        >
+                          Reset Default
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Tulisan Kecil Header</label>
+                          <input
+                            value={appHeaderTagline}
+                            onChange={(e) => setAppHeaderTagline(e.target.value)}
+                            placeholder="Contoh: Modern Soft Minimalist Amethyst"
+                            className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Nama App</label>
+                          <input
+                            value={appHeaderTitle}
+                            onChange={(e) => setAppHeaderTitle(e.target.value)}
+                            placeholder="Contoh: Dyatask Manager"
+                            className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-purple-400 dark:text-purple-300">Perubahan tersimpan otomatis dan tetap aktif setelah refresh.</p>
                     </div>
-                    <div className="space-y-3">
-                      <label className="block">
-                        <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Upload Gambar</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLoginVisualUpload}
-                          className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#8f75d8] file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
-                        />
-                      </label>
-                      <p className="text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
-                        Rekomendasi rasio 4:5 atau 1:1, ukuran maksimal 2MB. Gambar disimpan lokal di browser/app, jadi aman untuk personalisasi perangkat ini.
-                      </p>
+
+                    <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-sm font-bold flex items-center gap-2">
+                            <FileText size={15} className="text-purple-500" />
+                            Gambar Login
+                          </h4>
+                          <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Upload gambar untuk mengganti visual kiri pada halaman login.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleResetLoginVisual}
+                          disabled={!loginVisualImage || loginVisualUploading}
+                          className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-indigo-800 text-[10px] font-bold text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-indigo-900/40 disabled:opacity-45 disabled:cursor-not-allowed transition-all"
+                        >
+                          {loginVisualUploading ? 'Memproses...' : 'Reset Default'}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-[180px_1fr] gap-4 items-center">
+                        <div className="h-44 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-white/60 dark:bg-indigo-950/30 overflow-hidden flex items-center justify-center">
+                          {loginVisualImage ? (
+                            <img src={loginVisualImage} alt="Preview login visual" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="text-center px-4">
+                              <img src={dyataskMiniLogo} alt="" className="w-12 h-12 object-contain mx-auto opacity-80 mb-2" />
+                              <p className="text-[11px] text-purple-400 dark:text-purple-300">Default desk illustration aktif.</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-3">
+                          <label className="block">
+                            <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 dark:text-purple-300 mb-2">Upload Gambar</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLoginVisualUpload}
+                              disabled={loginVisualUploading}
+                              className="w-full px-3 py-2.5 rounded-xl border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-[#8f75d8] file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
+                            />
+                          </label>
+                          <p className="text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
+                            Rekomendasi rasio 4:5 atau 1:1, ukuran maksimal 2MB. Gambar disimpan global di database dan Supabase Storage, lalu tersinkron ke semua user.
+                          </p>
+                          {loginVisualSyncStatus && (
+                            <p className="rounded-xl border border-purple-100 bg-white/70 px-3 py-2 text-[10px] font-semibold text-purple-500 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-purple-200">
+                              {loginVisualSyncStatus}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
 
                 <div className="p-4 rounded-2xl border border-purple-200/50 dark:border-indigo-900/50 bg-purple-50/20 dark:bg-indigo-950/20 space-y-4">
                   <div className="flex items-center justify-between">
@@ -10934,16 +12442,17 @@ function App() {
                   </div>
                 </div>
 
-                {/* Penetration Testing Log section */}
-                <div className="p-4 bg-yellow-500/10 dark:bg-yellow-500/5 border border-yellow-500/20 rounded-2xl flex gap-3.5">
-                  <AlertCircle className="text-yellow-600 shrink-0 mt-0.5" size={18} />
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-yellow-600">Saran Keamanan & Uji Penetrasi Berkala</h4>
-                    <p className="text-xs text-purple-600 dark:text-purple-300 mt-0.5">
-                      Untuk rilis produksi, kami merekomendasikan penjadwalan pemindaian OWASP ZAP bulanan pada host backend Node.js dan mengunci database Supabase menggunakan RLS (Row Level Security) ketat seperti tertera dalam rencana implementasi.
-                    </p>
+                {isAppDeveloper && (
+                  <div className="p-4 bg-yellow-500/10 dark:bg-yellow-500/5 border border-yellow-500/20 rounded-2xl flex gap-3.5">
+                    <AlertCircle className="text-yellow-600 shrink-0 mt-0.5" size={18} />
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-yellow-600">Saran Keamanan & Uji Penetrasi Berkala</h4>
+                      <p className="text-xs text-purple-600 dark:text-purple-300 mt-0.5">
+                        Untuk rilis produksi, kami merekomendasikan penjadwalan pemindaian OWASP ZAP bulanan pada host backend Node.js dan mengunci database Supabase menggunakan RLS (Row Level Security) ketat seperti tertera dalam rencana implementasi.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Right panel: Team Assistant + Macbook Simulator preview */}
@@ -11107,11 +12616,13 @@ function App() {
 
       {workspaceChatModalOpen && (
         <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setWorkspaceChatModalOpen(false)}>
-          <div className="w-full max-w-2xl rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+          <div className={`w-full ${workspaceRole === 'owner' ? 'max-w-5xl' : 'max-w-2xl'} rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Workspace Chat</p>
-                <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574] dark:text-purple-100">Chat Owner & Assistant</h3>
+                <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574] dark:text-purple-100">
+                  {isAssistantWorkspace ? `Chat ${workspaceOwnerDisplayName}` : `Chat ${activeWorkspaceChatMemberName}`}
+                </h3>
                 <p className="mt-1 text-xs text-purple-400 dark:text-purple-300">Diskusi kerja realtime untuk owner dan assistant.</p>
               </div>
               <div className="flex items-center gap-2">
@@ -11134,58 +12645,91 @@ function App() {
               </div>
             </div>
 
-            <div className="mt-5 h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
-              {workspaceChatMessages.length === 0 ? (
-                <p className="text-xs text-purple-400">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
-              ) : workspaceChatItemsWithDateSeparator.map(item => {
-                if (item.__type === 'date_separator') {
-                  return (
-                    <div key={item.id} className="flex items-center gap-2 py-1">
-                      <div className="h-px flex-1 bg-purple-100" />
-                      <span className="text-[10px] font-bold text-purple-400 whitespace-nowrap px-2">{item.label}</span>
-                      <div className="h-px flex-1 bg-purple-100" />
-                    </div>
-                  )
-                }
-                const isMine = item?.metadata?.senderUserId === actorUserId
-                const isReminderMessage = item?.metadata?.reminderType && item?.metadata?.senderRole === 'assistant'
-                const canConfirmReminder = workspaceRole === 'owner' && !isMine && isReminderMessage && !workspaceChatAcknowledgedIds.has(item.id)
-                const sentTime = new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                const readLabel = workspaceChatAcknowledgedIds.has(item.id) ? 'Read' : 'Sent'
-                const mineBubbleClass = isReminderMessage
-                  ? 'bg-amber-500 text-white'
-                  : 'bg-[#8f75d8] text-white'
-                const incomingBubbleClass = isReminderMessage
-                  ? 'bg-amber-50 border border-amber-200 text-amber-900'
-                  : 'bg-white border border-purple-100 text-[#4f4574]'
-                return (
-                  <div key={item.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`flex items-end gap-2 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
-                        <p className="text-[10px] font-bold opacity-80">{item?.metadata?.senderName || 'User'}</p>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{item.detail}</p>
-                        {workspaceChatAcknowledgedIds.has(item.id) && (
-                          <p className="mt-1 text-[10px] font-bold opacity-80">Dikonfirmasi dibaca</p>
-                        )}
-                        {canConfirmReminder && (
-                          <button
-                            type="button"
-                            onClick={() => sendWorkspaceReminderAck(item.id)}
-                            className="mt-2 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                          >
-                            Konfirmasi Dibaca
-                          </button>
-                        )}
-                      </div>
-                      <div className={`pb-1 min-w-[48px] ${isMine ? 'text-right' : 'text-left'}`}>
-                        <p className="text-[10px] font-semibold text-purple-400">{sentTime}</p>
-                        <p className="text-[10px] font-bold text-purple-300">{readLabel}</p>
-                      </div>
-                    </div>
+            <div className={`mt-5 ${workspaceRole === 'owner' ? 'grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4' : ''}`}>
+              {workspaceRole === 'owner' && (
+                <div className="rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400 mb-2">Assistant</p>
+                  <div className="space-y-1.5 max-h-[430px] overflow-y-auto">
+                    {workspaceAssistantChatMembers.length === 0 ? (
+                      <p className="text-xs text-purple-400">Belum ada assistant aktif.</p>
+                    ) : workspaceAssistantChatMembers.map(member => {
+                      const memberName = formatDisplayName(member.memberEmail?.split('@')?.[0] || member.memberEmail || 'Assistant')
+                      const memberMessageCount = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat' && item?.metadata?.chatMemberId === member.id).length
+                      const isSelected = member.id === activeWorkspaceChatMemberId
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => setSelectedWorkspaceChatMemberId(member.id)}
+                          className={`w-full text-left rounded-xl px-3 py-2 border text-xs ${isSelected ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#4f4574] border-purple-100 hover:bg-purple-50'}`}
+                        >
+                          <span className="block font-bold truncate">{memberName}</span>
+                          <span className={`block text-[10px] truncate ${isSelected ? 'text-white/75' : 'text-purple-400'}`}>
+                            {member.status || 'active'} • {memberMessageCount} pesan
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
-                )
-              })}
-            </div>
+                </div>
+              )}
+
+              <div className="min-w-0">
+                <div className="h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
+                  {workspaceChatMessages.length === 0 ? (
+                    <p className="text-xs text-purple-400">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
+                  ) : workspaceChatItemsWithDateSeparator.map(item => {
+                    if (item.__type === 'date_separator') {
+                      return (
+                        <div key={item.id} className="flex items-center gap-2 py-1">
+                          <div className="h-px flex-1 bg-purple-100" />
+                          <span className="text-[10px] font-bold text-purple-400 whitespace-nowrap px-2">{item.label}</span>
+                          <div className="h-px flex-1 bg-purple-100" />
+                        </div>
+                      )
+                    }
+                    const isMine = item?.metadata?.senderUserId === actorUserId
+                    const isReminderMessage = item?.metadata?.reminderType && item?.metadata?.senderRole === 'assistant'
+                    const canConfirmReminder = workspaceRole === 'owner' && !isMine && isReminderMessage && !workspaceChatAcknowledgedIds.has(item.id)
+                    const sentTime = new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                    const readLabel = workspaceChatAcknowledgedIds.has(item.id) ? 'Read' : 'Sent'
+                    const mineBubbleClass = isReminderMessage
+                      ? 'bg-purple-500/15 border border-purple-300/60 text-[#4f4574]'
+                      : 'bg-[#8f75d8] text-white'
+                    const incomingBubbleClass = isReminderMessage
+                      ? 'bg-purple-500/10 border border-purple-200/80 text-[#4f4574]'
+                      : 'bg-white border border-purple-100 text-[#4f4574]'
+                    return (
+                      <div key={item.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`flex items-end gap-2 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                          <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
+                            <p className="text-[10px] font-bold opacity-80">{item?.metadata?.senderName || 'User'}</p>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
+                            {workspaceChatAcknowledgedIds.has(item.id) && (
+                              <p className="mt-1 text-[10px] font-bold opacity-90 inline-flex items-center gap-1">
+                                <CheckCircle size={12} />
+                                Dikonfirmasi dibaca
+                              </p>
+                            )}
+                            {canConfirmReminder && (
+                              <button
+                                type="button"
+                                onClick={() => sendWorkspaceReminderAck(item.id)}
+                                className="mt-2 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                              >
+                                Konfirmasi Dibaca
+                              </button>
+                            )}
+                          </div>
+                          <div className={`pb-1 min-w-[48px] ${isMine ? 'text-right' : 'text-left'}`}>
+                            <p className="text-[10px] font-semibold text-purple-400">{sentTime}</p>
+                            <p className="text-[10px] font-bold text-purple-300">{readLabel}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
 
             <form onSubmit={handleSendWorkspaceChatMessage} className="mt-4 space-y-4">
               {isAssistantWorkspace && (
@@ -11203,6 +12747,7 @@ function App() {
               <textarea
                 value={workspaceChatMessage}
                 onChange={(e) => setWorkspaceChatMessage(e.target.value)}
+                onKeyDown={handleWorkspaceChatInputKeyDown}
                 rows={1}
                 maxLength={500}
                 placeholder="Tulis pesan untuk owner/assistant..."
@@ -11212,6 +12757,30 @@ function App() {
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[10px] font-semibold text-purple-300">{workspaceChatMessage.trim().length}/500</span>
                 <div className="flex gap-2">
+                  <div className="relative">
+                    {workspaceEmojiPickerOpen && (
+                      <div className="absolute bottom-11 right-0 z-20 w-48 rounded-2xl border border-purple-100 bg-white dark:bg-slate-900 dark:border-indigo-900 p-2 shadow-xl grid grid-cols-6 gap-1">
+                        {WORKSPACE_CHAT_EMOJIS.map(emoji => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => appendWorkspaceChatEmoji(emoji)}
+                            className="h-8 w-8 rounded-lg hover:bg-purple-50 dark:hover:bg-slate-800 text-base flex items-center justify-center"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceEmojiPickerOpen(prev => !prev)}
+                      className="h-10 w-10 rounded-xl border border-purple-100 text-purple-500 hover:bg-purple-50 inline-flex items-center justify-center"
+                      title="Pilih emoticon"
+                    >
+                      <Smile size={16} />
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setWorkspaceChatModalOpen(false)}
@@ -11229,6 +12798,8 @@ function App() {
                 </div>
               </div>
             </form>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -11348,6 +12919,179 @@ function App() {
         </div>
       )}
 
+      {activeTutorialCourse && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#20182f]/55 p-4 backdrop-blur-sm" onClick={() => setActiveTutorialCourse(null)}>
+          <div className="w-full max-w-5xl overflow-hidden rounded-[1.6rem] border border-purple-100 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="relative aspect-video bg-black" style={{ background: `linear-gradient(135deg, ${activeTutorialCourse.accent || '#8f75d8'}, #241a35)` }}>
+              {getYoutubeEmbedUrl(activeTutorialCourse.youtubeUrl) ? (
+                <iframe
+                  src={`${getYoutubeEmbedUrl(activeTutorialCourse.youtubeUrl)}?rel=0&modestbranding=1&playsinline=1`}
+                  title={activeTutorialCourse.title}
+                  className="absolute inset-0 h-full w-full border-0 bg-black"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center text-center text-white">
+                  <PlayCircle size={58} className="mb-4 opacity-90" />
+                  <p className="text-xl font-extrabold">Video belum tersedia</p>
+                  <p className="mt-2 max-w-md text-sm text-white/75">Developer dapat menambahkan link YouTube dari tombol Edit pada card course ini.</p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveTutorialCourse(null)}
+                className="absolute right-4 top-4 h-10 w-10 rounded-full bg-white/90 text-[#4f4574] shadow-lg"
+                aria-label="Tutup video"
+              >
+                <X size={18} className="mx-auto" />
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-purple-400">{activeTutorialCourse.module}</p>
+                  <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574]">{activeTutorialCourse.title}</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-purple-500">{activeTutorialCourse.description}</p>
+	                </div>
+	                <div className="flex gap-2">
+	                  {tutorialProgressById[activeTutorialCourse.id]?.status !== 'completed' && (
+	                    <button
+	                      type="button"
+	                      onClick={() => completeTutorialCourse(activeTutorialCourse.id)}
+	                      className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 inline-flex items-center gap-1.5"
+	                    >
+	                      <CheckCircle size={13} />
+	                      Tandai selesai
+	                    </button>
+	                  )}
+	                  <span className="rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-600">{activeTutorialCourse.duration}</span>
+	                  <span className="rounded-full bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-600">{activeTutorialCourse.lessons} lesson</span>
+	                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingTutorialCourse && isAppDeveloper && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#20182f]/45 p-4 backdrop-blur-sm" onClick={() => setEditingTutorialCourse(null)}>
+          <form onSubmit={saveTutorialCourse} className="w-full max-w-2xl rounded-[1.6rem] border border-purple-100 bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-purple-400">Developer Course Editor</p>
+                <h3 className="mt-1 text-xl font-extrabold text-[#4f4574]">Edit Tutorial Video</h3>
+              </div>
+              <button type="button" onClick={() => setEditingTutorialCourse(null)} className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400">
+                <X size={16} className="mx-auto" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="block md:col-span-2">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Judul Course</span>
+                <input value={editingTutorialCourse.title || ''} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, title: e.target.value }))} className="w-full rounded-xl border border-purple-100 px-3 py-2.5 text-sm" required />
+              </label>
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Module</span>
+                <input value={editingTutorialCourse.module || ''} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, module: e.target.value }))} className="w-full rounded-xl border border-purple-100 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Durasi Video</span>
+                <input value={editingTutorialCourse.duration || ''} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, duration: e.target.value }))} placeholder="08:35" className="w-full rounded-xl border border-purple-100 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Link YouTube</span>
+                <input value={editingTutorialCourse.youtubeUrl || ''} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, youtubeUrl: e.target.value }))} placeholder="https://www.youtube.com/watch?v=..." className="w-full rounded-xl border border-purple-100 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Deskripsi</span>
+                <textarea value={editingTutorialCourse.description || ''} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, description: e.target.value }))} rows={3} className="w-full resize-none rounded-xl border border-purple-100 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Level</span>
+                <input value={editingTutorialCourse.level || ''} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, level: e.target.value }))} className="w-full rounded-xl border border-purple-100 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-wider font-bold text-purple-500 mb-2">Jumlah Lesson</span>
+                <input type="number" min="1" value={editingTutorialCourse.lessons || 1} onChange={(e) => setEditingTutorialCourse(prev => ({ ...prev, lessons: Number(e.target.value || 1) }))} className="w-full rounded-xl border border-purple-100 px-3 py-2.5 text-sm" />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingTutorialCourse(null)} className="rounded-xl border border-purple-100 px-4 py-2 text-xs font-bold text-purple-500">Batal</button>
+              <button type="submit" disabled={savingTutorialCourse} className="rounded-xl bg-[#8f75d8] px-4 py-2 text-xs font-bold text-white disabled:opacity-60">
+                {savingTutorialCourse ? 'Menyimpan...' : 'Simpan Tutorial'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {installOptionsOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#20182f]/50 p-4 backdrop-blur-sm" onClick={() => setInstallOptionsOpen(false)}>
+          <div className="w-full max-w-2xl rounded-[1.6rem] border border-purple-100 bg-white p-6 shadow-2xl dark:border-indigo-900 dark:bg-slate-950" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-purple-400">Install DyaTask</p>
+                <h3 className="mt-1 text-xl font-extrabold text-[#4f4574] dark:text-white">Pilih versi aplikasi</h3>
+                <p className="mt-1 text-xs leading-5 text-purple-400 dark:text-purple-300">PWA cocok untuk browser/tablet/handphone. DMG dipakai untuk instalasi native di macOS.</p>
+              </div>
+              <button type="button" onClick={() => setInstallOptionsOpen(false)} className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400 dark:border-indigo-800">
+                <X size={16} className="mx-auto" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleInstallPwa}
+                className="rounded-2xl border border-purple-100 bg-purple-50/60 p-4 text-left transition-all hover:border-[#8f75d8]/40 hover:bg-purple-50 dark:border-indigo-900 dark:bg-indigo-950/25"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#8f75d8] shadow-sm dark:bg-slate-900">
+                    <Smartphone size={20} />
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-[#4f4574] dark:text-white">Install PWA</h4>
+                    <p className="text-[11px] text-purple-400 dark:text-purple-300">{pwaInstallPrompt ? 'Prompt browser siap dibuka.' : 'Gunakan menu browser jika prompt belum tersedia.'}</p>
+                  </div>
+                </div>
+                <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-300">Untuk Chrome/Safari/Edge di tablet atau handphone yang mendukung Add to Home Screen.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleDownloadDmg()
+                  setInstallOptionsOpen(false)
+                }}
+                className={`rounded-2xl border p-4 text-left transition-all hover:border-[#8f75d8]/40 ${
+                  isMacOsDevice
+                    ? 'border-purple-100 bg-white hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-900'
+                    : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/70'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#8f75d8] text-white shadow-sm">
+                    <Download size={20} />
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-[#4f4574] dark:text-white">Download DMG macOS</h4>
+                    <p className="text-[11px] text-purple-400 dark:text-purple-300">Rilis terbaru dari GitHub.</p>
+                  </div>
+                </div>
+                <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-300">Untuk Macbook/iMac. Setelah rilis DMG baru dipublish, link ini selalu mengarah ke versi terbaru.</p>
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-purple-100 bg-purple-50/50 px-4 py-3 text-[11px] text-purple-500 dark:border-indigo-900 dark:bg-indigo-950/25 dark:text-purple-200">
+              Versi saat ini: <span className="font-bold">v{currentAppVersion}</span> • <span className="font-bold">{updateStatusLabel}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {deployUpdateInfo && (
         <div className={`fixed right-8 top-24 z-[70] w-[min(380px,calc(100vw-2rem))] rounded-[1.75rem] border p-4 shadow-2xl backdrop-blur-xl ${
           theme === 'dark'
@@ -11382,7 +13126,7 @@ function App() {
               </p>
               <div className="mt-3 rounded-2xl bg-purple-50/70 dark:bg-indigo-950/35 border border-purple-100 dark:border-indigo-800/60 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-300">
                 <p><span className="font-bold text-slate-700 dark:text-white">Commit:</span> {String(getDeployVersionKey(deployUpdateInfo)).slice(0, 7)}</p>
-                <p><span className="font-bold text-slate-700 dark:text-white">Build:</span> {deployUpdateInfo.buildTime ? new Date(deployUpdateInfo.buildTime).toLocaleString('id-ID') : 'Versi terbaru'}</p>
+                <p><span className="font-bold text-slate-700 dark:text-white">Rilis:</span> {deployUpdateInfo.buildTime ? formatLongDateTime(deployUpdateInfo.buildTime) : 'Versi terbaru'}</p>
               </div>
               <div className="mt-4 flex items-center gap-2">
                 <button
@@ -11411,7 +13155,7 @@ function App() {
       )}
 
       {/* 🚀 SIMULATED MAC PUSH NOTIFICATION TOAST */}
-      {activeNotifications.length > 0 && (
+      {activeNotifications.length > 0 && notificationBannerVisible && (
         <div className={`notification-banner glass-panel p-3 ${theme === 'dark' ? 'notif-dark' : 'notif-light'}`}>
           {!showNotificationList && activeNotifications.length > 1 ? (
             <button
@@ -11451,7 +13195,7 @@ function App() {
                         <p className={`text-[11px] font-semibold truncate ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{item.title}</p>
                         <button onClick={() => removeNotificationById(item.id)} className={`text-xs font-bold ${theme === 'dark' ? 'text-cyan-200 hover:text-white' : 'text-emerald-700 hover:text-emerald-900'}`}>✕</button>
                       </div>
-                      <p className={`text-[11px] mt-0.5 line-clamp-2 ${theme === 'dark' ? 'text-cyan-100/90' : 'text-slate-700'}`}>{item.body}</p>
+                      <p className={`text-[11px] mt-0.5 line-clamp-2 ${theme === 'dark' ? 'text-cyan-100/90' : 'text-slate-700'}`}>{formatTextDates(item.body)}</p>
                       <div className="mt-2">
                         <button
                           onClick={() => confirmNotificationById(item.id)}
@@ -11546,9 +13290,9 @@ function App() {
                         ✕
                       </button>
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 leading-relaxed line-clamp-2">{item.body}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 leading-relaxed line-clamp-2">{formatTextDates(item.body)}</p>
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <p className="text-[10px] text-[#8f75d8] font-semibold">{new Date(item.createdAt).toLocaleString('id-ID')}</p>
+                      <p className="text-[10px] text-[#8f75d8] font-semibold">{formatLongDateTime(item.createdAt)}</p>
                       {item.confirmed ? (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Terkonfirmasi</span>
                       ) : (
@@ -11578,6 +13322,85 @@ function App() {
           >
             Hapus Semua Riwayat
           </button>
+        </div>
+      )}
+
+      {workspaceInviteNotice && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#241a35]/35 backdrop-blur-sm" onClick={() => setWorkspaceInviteNotice(null)}></div>
+          <div className="relative w-full max-w-md rounded-[1.35rem] border border-purple-100 bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className={`h-10 w-10 shrink-0 rounded-2xl flex items-center justify-center ${
+                workspaceInviteNotice.tone === 'success'
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : workspaceInviteNotice.tone === 'warning'
+                    ? 'bg-amber-50 text-amber-600'
+                    : workspaceInviteNotice.tone === 'error'
+                      ? 'bg-red-50 text-red-500'
+                      : 'bg-purple-50 text-purple-600'
+              }`}>
+                {workspaceInviteNotice.tone === 'success' ? (
+                  <CheckCircle size={19} />
+                ) : workspaceInviteNotice.tone === 'warning' || workspaceInviteNotice.tone === 'error' ? (
+                  <AlertCircle size={19} />
+                ) : (
+                  <UserPlus size={19} />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-extrabold text-[#4f4574]">{workspaceInviteNotice.title}</p>
+                {workspaceInviteNotice.message && (
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">{workspaceInviteNotice.message}</p>
+                )}
+                {workspaceInviteNotice.detail && (
+                  <div className="mt-3 rounded-xl border border-purple-100 bg-[#faf8ff] px-3 py-2">
+                    <p className="break-all font-mono text-[11px] font-bold text-purple-700">{workspaceInviteNotice.detail}</p>
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setWorkspaceInviteNotice(null)}
+                className="h-8 w-8 shrink-0 rounded-xl border border-purple-100 text-purple-400 hover:text-purple-700"
+                title="Tutup"
+              >
+                <X size={15} className="mx-auto" />
+              </button>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setWorkspaceInviteNotice(null)}
+                className="rounded-xl bg-[#8f75d8] px-4 py-2 text-xs font-bold text-white hover:bg-[#8069c8]"
+              >
+                Oke
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isWorkspaceAccessRevoked && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-[#2b2238]/35 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-[1.6rem] border border-red-100 bg-white/95 p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+              <ShieldCheck size={26} />
+            </div>
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-red-400">Akses Workspace Dicabut</p>
+            <h2 className="mt-2 text-2xl font-extrabold leading-tight text-[#4f4574]">
+              Maaf, akses Anda sudah dicabut dari workspace ini.
+            </h2>
+            <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-slate-500">
+              Hubungi owner {workspaceOwnerDisplayName || 'workspace'} jika akses perlu diaktifkan kembali.
+            </p>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="mt-6 rounded-xl bg-[#8f75d8] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#8069c8]"
+            >
+              Keluar
+            </button>
+          </div>
         </div>
       )}
 
@@ -11740,6 +13563,8 @@ function App() {
           type="button"
           onClick={() => {
             setFloatingQuickAdd(false)
+            setNotificationBannerVisible(false)
+            setShowNotificationList(false)
             setShowNotificationHistory(prev => !prev)
           }}
           aria-label="Buka riwayat notifikasi"

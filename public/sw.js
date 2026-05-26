@@ -1,12 +1,12 @@
-const CACHE_NAME = 'dyatask-pwa-v1'
+const CACHE_NAME = 'dyatask-pwa-v2'
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
   '/favicon.png',
   '/apple-touch-icon.png',
-  '/pwa/icon-192.png',
-  '/pwa/icon-512.png',
-  '/pwa/maskable-512.png'
+  '/pwa/favicon-192.png',
+  '/pwa/favicon-512.png',
+  '/pwa/favicon-maskable-512.png'
 ]
 
 self.addEventListener('install', (event) => {
