@@ -1483,9 +1483,9 @@ function App() {
       const latestKey = getDeployVersionKey(data)
       if (latestKey && latestKey !== currentDeployKey) {
         setDeployUpdateInfo(data)
-        setManualUpdateStatus(`Versi web terbaru ditemukan: ${String(latestKey).slice(0, 7)}.`)
+        setManualUpdateStatus(`App perlu di update. Versi terbaru: v${data.version || 'terbaru'}.`)
       } else {
-        setManualUpdateStatus('PWA/web sudah memakai versi terbaru yang tersedia.')
+        setManualUpdateStatus('App up to date.')
       }
     } catch (error) {
       setManualUpdateStatus(error.message || 'Gagal memeriksa versi web.')
@@ -4232,7 +4232,7 @@ function App() {
 
       triggerMockNotification(
         'Update DyaTask tersedia',
-        `Cloudflare/GitHub sudah mempublikasikan versi ${String(latestKey).slice(0, 7)}. Reload untuk memperbarui aplikasi.`,
+        `Aplikasi sudah tersedia dalam versi terbaru yang sudah ditingkatkan. Versi saat ini v${currentAppVersion}, versi terbaru v${latest.version || 'terbaru'}.`,
         'system',
         { kind: 'deploy_update', versionKey: latestKey }
       )
@@ -13098,6 +13098,9 @@ function App() {
             ? 'bg-slate-950/92 border-indigo-800/70 text-white'
             : 'bg-white/95 border-purple-100 text-slate-900'
         }`}>
+          {(() => {
+            const latestVersion = deployUpdateInfo.version || 'terbaru'
+            return (
           <div className="flex items-start gap-3">
             <div className="w-11 h-11 rounded-2xl bg-[#8f75d8]/15 flex items-center justify-center shrink-0">
               <img src={dyataskMiniLogo} alt="DyaTask" className="w-8 h-8 object-contain" />
@@ -13122,11 +13125,11 @@ function App() {
                 </button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-300 mt-2 leading-relaxed">
-                Cloudflare/GitHub sudah punya versi baru. Reload untuk memperbarui tampilan PWA atau aplikasi DMG yang membaca domain publik.
+                Aplikasi sudah tersedia dalam versi terbaru yang sudah ditingkatkan. Reload aplikasi untuk memakai pembaruan.
               </p>
               <div className="mt-3 rounded-2xl bg-purple-50/70 dark:bg-indigo-950/35 border border-purple-100 dark:border-indigo-800/60 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-300">
-                <p><span className="font-bold text-slate-700 dark:text-white">Commit:</span> {String(getDeployVersionKey(deployUpdateInfo)).slice(0, 7)}</p>
-                <p><span className="font-bold text-slate-700 dark:text-white">Rilis:</span> {deployUpdateInfo.buildTime ? formatLongDateTime(deployUpdateInfo.buildTime) : 'Versi terbaru'}</p>
+                <p><span className="font-bold text-slate-700 dark:text-white">Versi saat ini:</span> v{currentAppVersion}</p>
+                <p><span className="font-bold text-slate-700 dark:text-white">Versi terbaru:</span> v{latestVersion}</p>
               </div>
               <div className="mt-4 flex items-center gap-2">
                 <button
@@ -13151,6 +13154,8 @@ function App() {
               </div>
             </div>
           </div>
+            )
+          })()}
         </div>
       )}
 
