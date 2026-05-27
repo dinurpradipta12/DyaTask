@@ -295,9 +295,29 @@ ipcMain.handle('check-for-updates-manual', async () => {
   }
 });
 
-ipcMain.handle('open-latest-dmg-release', async () => {
-  await shell.openExternal(UPDATE_FEED_URL);
-  return { ok: true, url: UPDATE_FEED_URL };
+ipcMain.handle('open-latest-dmg-release', async (_event, customUrl) => {
+  if (customUrl) {
+    await shell.openExternal(customUrl);
+    return { ok: true, url: customUrl };
+  }
+
+  let downloadUrl = UPDATE_FEED_URL;
+  try {
+    const response = await fetch('https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest', {
+      headers: { 'User-Agent': 'DyaTask-Electron' }
+    });
+    if (response.ok) {
+      const release = await response.json();
+      const dmgAsset = release.assets?.find(asset => asset.name && asset.name.endsWith('.dmg'));
+      if (dmgAsset && dmgAsset.browser_download_url) {
+        downloadUrl = dmgAsset.browser_download_url;
+      }
+    }
+  } catch (error) {
+    console.error('Gagal mengambil asset DMG terbaru dari GitHub:', error);
+  }
+  await shell.openExternal(downloadUrl);
+  return { ok: true, url: downloadUrl };
 });
 
 ipcMain.handle('export-invoice-pdf', async (_event, payload = {}) => {

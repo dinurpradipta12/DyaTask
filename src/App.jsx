@@ -359,6 +359,7 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard')
   const [isSidebarHovered, setIsSidebarHovered] = useState(false)
+  const [isReady, setIsReady] = useState(false)
   const [enabledPages, setEnabledPages] = useState(PAGE_TOGGLE_DEFAULTS)
   const [appHeaderTagline, setAppHeaderTagline] = useState(() => localStorage.getItem('dyatask_header_tagline') || 'Modern Soft Minimalist Amethyst')
   const [appHeaderTitle, setAppHeaderTitle] = useState(() => localStorage.getItem('dyatask_header_title') || 'Dyatask Manager - Superapp for Freelancer')
@@ -813,7 +814,7 @@ function App() {
 
   const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
     .filter(tab => canShowTab(tab) && canReadArea(tab))
-  const sidebarCollapsed = isMobileTabletView
+  const sidebarCollapsed = isMobileTabletView || !isSidebarHovered
 
   const handleSidebarMouseEnter = () => {
     if (isMobileTabletView) return
@@ -836,6 +837,11 @@ function App() {
       if (sidebarHoverTimerRef.current) clearTimeout(sidebarHoverTimerRef.current)
       if (contentPlannerAutosaveTimerRef.current) clearTimeout(contentPlannerAutosaveTimerRef.current)
     }
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsReady(true), 150)
+    return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -1445,15 +1451,30 @@ function App() {
 
   const handleDownloadDmg = async () => {
     const ipcRenderer = getElectronIpcRenderer()
+    let downloadUrl = 'https://github.com/dinurpradipta12/DyaTask/releases/latest'
+
+    try {
+      const response = await fetch('https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest')
+      if (response.ok) {
+        const release = await response.json()
+        const dmgAsset = release.assets?.find(asset => asset.name && asset.name.endsWith('.dmg'))
+        if (dmgAsset && dmgAsset.browser_download_url) {
+          downloadUrl = dmgAsset.browser_download_url
+        }
+      }
+    } catch (err) {
+      console.warn('Gagal memuat info rilis DMG dari GitHub API, fallback ke halaman rilis:', err)
+    }
+
     if (ipcRenderer?.invoke) {
       try {
-        await ipcRenderer.invoke('open-latest-dmg-release')
+        await ipcRenderer.invoke('open-latest-dmg-release', downloadUrl)
         return
       } catch {
         // Fall back to browser link below.
       }
     }
-    openExternalUrl(latestDmgReleaseUrl)
+    openExternalUrl(downloadUrl)
   }
 
   const handleCheckManualUpdate = async () => {
@@ -6074,15 +6095,31 @@ function App() {
     const ok = window.confirm(`Hapus client "${client.name}" dari CRM?`)
     if (!ok) return
 
-    const manualClients = crmClients.filter(item => getCrmClientKey(item.name, item.email) === client.key)
-    if (scopedUserId && manualClients.length) {
-      const manualIds = manualClients.map(item => item.id)
-      await supabase.from('crm_clients').delete().in('id', manualIds)
+    if (scopedUserId) {
+      const manualClients = crmClients.filter(item => getCrmClientKey(item.name, item.email) === client.key)
+      if (manualClients.length) {
+        const manualIds = manualClients.map(item => item.id)
+        await supabase.from('crm_clients').delete().in('id', manualIds)
+      }
       await supabase.from('crm_activities').delete().eq('client_key', client.key).eq('user_id', scopedUserId)
+
+      // Cascade delete appointments of this client
+      const appointmentIds = appointments.filter(item => getCrmClientKey(item.clientName, item.email) === client.key).map(item => item.id)
+      if (appointmentIds.length) {
+        await supabase.from('appointments').delete().in('id', appointmentIds)
+      }
+
+      // Cascade delete spreadsheet orders of this client
+      const orderIds = spreadsheetOrders.filter(item => getCrmClientKey(item.customerName) === client.key).map(item => item.id)
+      if (orderIds.length) {
+        await supabase.from('spreadsheet_orders').delete().in('id', orderIds)
+      }
     }
 
     setCrmClients(prev => prev.filter(item => getCrmClientKey(item.name, item.email) !== client.key))
     setCrmActivities(prev => prev.filter(activity => (activity.clientKey || getCrmClientKey(activity.clientName, activity.clientEmail)) !== client.key))
+    setAppointments(prev => prev.filter(item => getCrmClientKey(item.clientName, item.email) !== client.key))
+    setSpreadsheetOrders(prev => prev.filter(item => getCrmClientKey(item.customerName) !== client.key))
     setSelectedCrmClientId(prev => (prev === client.key ? null : prev))
     createActivityLog({
       type: 'CRM',
@@ -8165,7 +8202,7 @@ function App() {
   }
 
   return (
-    <div className={`app-wrapper ${theme === 'dark' ? 'dark' : ''}`}>
+    <div className={`app-wrapper ${theme === 'dark' ? 'dark' : ''} ${!isReady ? 'no-transition' : ''}`}>
       
       {/* 🖥️ Layout Grid */}
       <div className={`layout-grid ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>

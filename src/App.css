@@ -1142,3 +1142,13 @@ main {
 .macbook-red { background: #ff5f56; }
 .macbook-yellow { background: #ffbd2e; }
 .macbook-green { background: #27c93f; }
+
+/* Suppress all transitions/animations on page load to prevent glitches */
+.no-transition,
+.no-transition * {
+  transition: none !important;
+  animation: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
