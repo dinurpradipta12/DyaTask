@@ -1,6 +1,7 @@
 /* Mobile and tablet compatibility layer. Keeps the React structure intact. */
 
 .mobile-more-trigger,
+.mobile-chat-trigger,
 .mobile-more-backdrop,
 .mobile-more-drawer {
   display: none;
@@ -325,6 +326,46 @@
     color: #6f55bd;
     box-shadow: 0 16px 34px rgba(92, 70, 148, 0.16);
     backdrop-filter: blur(14px);
+  }
+
+  .mobile-chat-trigger {
+    display: inline-flex;
+    position: fixed;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(max(18px, env(safe-area-inset-bottom)) + 98px);
+    z-index: 81;
+    width: 52px;
+    height: 52px;
+    border-radius: 18px;
+    border: 1px solid rgba(143, 117, 216, 0.18);
+    background: rgba(255, 255, 255, 0.92);
+    color: #6f55bd;
+    box-shadow: 0 16px 34px rgba(92, 70, 148, 0.16);
+    backdrop-filter: blur(14px);
+  }
+
+  .mobile-chat-trigger svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .mobile-chat-trigger-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 999px;
+    border: 2px solid #fff;
+    background: #ef4444;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 20px rgba(239, 68, 68, 0.28);
   }
 
   .floating-notification-trigger {

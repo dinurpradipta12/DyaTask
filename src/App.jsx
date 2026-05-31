@@ -667,6 +667,11 @@ function App() {
   const [workspaceOwnerName, setWorkspaceOwnerName] = useState('')
   const [workspaceMembers, setWorkspaceMembers] = useState([])
   const [workspaceProfileNames, setWorkspaceProfileNames] = useState({})
+  const [developerMonitoringRows, setDeveloperMonitoringRows] = useState([])
+  const [developerMonitoringLoading, setDeveloperMonitoringLoading] = useState(false)
+  const [developerMonitoringError, setDeveloperMonitoringError] = useState('')
+  const [developerMonitoringUpdatedAt, setDeveloperMonitoringUpdatedAt] = useState('')
+  const [developerMonitoringSearch, setDeveloperMonitoringSearch] = useState('')
   const [workspaceInviteUsername, setWorkspaceInviteUsername] = useState('')
   const [workspaceInviteRole, setWorkspaceInviteRole] = useState('assistant')
   const [workspaceInviteToken, setWorkspaceInviteToken] = useState('')
@@ -689,6 +694,8 @@ function App() {
   const [editingTutorialCourse, setEditingTutorialCourse] = useState(null)
   const [savingTutorialCourse, setSavingTutorialCourse] = useState(false)
   const [workspaceChatModalOpen, setWorkspaceChatModalOpen] = useState(false)
+  const [workspaceChatAssistantPanelCollapsed, setWorkspaceChatAssistantPanelCollapsed] = useState(false)
+  const [workspaceChatStatusMenuOpen, setWorkspaceChatStatusMenuOpen] = useState(false)
   const [workspaceChatMessage, setWorkspaceChatMessage] = useState('')
   const [workspaceChatSending, setWorkspaceChatSending] = useState(false)
   const [workspaceChatLastReadAt, setWorkspaceChatLastReadAt] = useState(0)
@@ -721,6 +728,7 @@ function App() {
   const dismissedDeployVersionRef = useRef(localStorage.getItem('dyatask_dismissed_deploy_version') || '')
   const tutorialProgressLoadedRef = useRef(false)
   const seenAssistantNoteIdsRef = useRef(new Set())
+  const workspaceChatSeenSignatureRef = useRef('')
   const invoicePreviewRef = useRef(null)
 
   // macOS system configurations
@@ -783,6 +791,8 @@ function App() {
   const tutorialProgressStorageKey = scopedStorageKey('dyatask_tutorial_progress')
   const invoiceGeneratorDefaultsStorageKey = scopedStorageKey(INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY)
   const isPageEnabled = (pageKey) => enabledPages?.[pageKey] !== false
+  const mobilePrimaryNavTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'crm', 'finance']
+  const isPrimaryMobileNavTab = (tabKey) => !isMobileTabletView || mobilePrimaryNavTabs.includes(tabKey)
 
   const canShowTab = (tabKey) => {
     const tabToPage = {
@@ -982,7 +992,7 @@ function App() {
   }, [invoiceGeneratorDefaultsStorageKey])
 
   useEffect(() => {
-    if (workspaceRole !== 'owner' && !['pageControl', 'tutorial'].includes(activeTab) && !canReadArea(activeTab)) {
+    if (workspaceRole !== 'owner' && !['pageControl', 'tutorial', 'userMonitoring'].includes(activeTab) && !canReadArea(activeTab)) {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
     }
   }, [activeTab, workspaceRole, workspacePermissions, visiblePrimaryTabs])
@@ -993,6 +1003,18 @@ function App() {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
     }
   }, [activeTab, enabledPages, visiblePrimaryTabs])
+
+  useEffect(() => {
+    if (activeTab === 'userMonitoring' && !isAppDeveloper) {
+      setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
+    }
+  }, [activeTab, isAppDeveloper, visiblePrimaryTabs])
+
+  useEffect(() => {
+    if (workspaceChatModalOpen) {
+      setWorkspaceChatAssistantPanelCollapsed(false)
+    }
+  }, [workspaceChatModalOpen])
   const isPublicBookingMode = !!publicBookingToken
   const isPublicTrackingMode = !!publicTrackingToken
 
@@ -1579,9 +1601,31 @@ function App() {
     .map(item => {
       const course = tutorialCourses.find(courseItem => courseItem.id === item.courseId)
       return course ? { ...item, course } : null
-    })
-    .filter(Boolean)
-    .sort((a, b) => String(b.lastWatchedAt || b.startedAt || '').localeCompare(String(a.lastWatchedAt || a.startedAt || '')))
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(b.lastWatchedAt || b.startedAt || '').localeCompare(String(a.lastWatchedAt || a.startedAt || '')))
+  const developerMonitoringSearchValue = developerMonitoringSearch.trim().toLowerCase()
+  const matchesDeveloperMonitoringSearch = (row) => {
+    if (!developerMonitoringSearchValue) return true
+    const haystack = [
+      row?.full_name,
+      row?.email,
+      row?.role,
+      row?.status,
+      row?.invite_token,
+      row?.source_table,
+      row?.record_type
+    ].map(value => String(value || '').toLowerCase()).join(' | ')
+    return haystack.includes(developerMonitoringSearchValue)
+  }
+  const developerMonitoringSignupRows = developerMonitoringRows.filter(row => row.record_type === 'signup')
+  const developerMonitoringInviteRows = developerMonitoringRows.filter(row => row.record_type === 'invite')
+  const developerMonitoringFilteredSignupRows = developerMonitoringSignupRows.filter(matchesDeveloperMonitoringSearch)
+  const developerMonitoringFilteredInviteRows = developerMonitoringInviteRows.filter(matchesDeveloperMonitoringSearch)
+  const developerMonitoringSignupCount = developerMonitoringSignupRows.length
+  const developerMonitoringInviteCount = developerMonitoringInviteRows.length
+  const developerMonitoringActiveInviteCount = developerMonitoringInviteRows.filter(row => String(row.status || '').toLowerCase() === 'active').length
+  const developerMonitoringPendingInviteCount = developerMonitoringInviteRows.filter(row => String(row.status || '').toLowerCase() === 'pending').length
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
   const activeOrderPageMode = activeTab === 'designOrders' ? 'design' : activeTab === 'generalOrders' ? 'general' : 'spreadsheet'
   const isDesignOrderPage = activeTab === 'designOrders'
@@ -2062,7 +2106,14 @@ function App() {
     .filter(Boolean)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ') || fallback
-  const profileNameFromMap = workspaceProfileNames[actorUserId]?.fullName || workspaceProfileNames[actorUserId]?.email || ''
+  const workspaceMemberSelf = workspaceMembers.find(member => (
+    member.memberUserId === actorUserId
+    || String(member.memberEmail || '').toLowerCase() === String(session?.user?.email || '').toLowerCase()
+  )) || null
+  const profileNameFromMap = workspaceProfileNames[actorUserId]?.fullName
+    || workspaceProfileNames[actorUserId]?.email
+    || workspaceMemberSelf?.memberEmail
+    || ''
   const headerUserName = formatDisplayName(
     profileNameFromMap || session?.user?.user_metadata?.full_name || session?.user?.email || authUsername,
     'User'
@@ -2070,6 +2121,15 @@ function App() {
   const assistantDisplayName = headerUserName
   const isAssistantWorkspace = workspaceRole === 'assistant'
   const workspaceAssistantChatMembers = workspaceMembers.filter(member => member.role !== 'owner')
+  const workspaceChatStatusOptions = [
+    { value: 'active', label: 'Aktif', tone: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    { value: 'busy', label: 'Sibuk', tone: 'bg-amber-100 text-amber-700 border-amber-200' },
+    { value: 'inactive', label: 'Tidak Aktif', tone: 'bg-slate-100 text-slate-700 border-slate-200' }
+  ]
+  const workspaceChatStatusTitleLabel = (value) => (
+    workspaceChatStatusOptions.find(option => option.value === String(value || '').toLowerCase())?.label
+    || workspaceChatStatusOptions[0].label
+  )
   const resolveWorkspaceMemberName = (member, fallback = 'Assistant') => {
     if (!member) return fallback
     const profile = workspaceProfileNames[member.memberUserId] || {}
@@ -2088,7 +2148,48 @@ function App() {
   const activeWorkspaceChatMemberName = activeWorkspaceChatMember
     ? resolveWorkspaceMemberName(activeWorkspaceChatMember)
     : 'Assistant'
-  const workspaceChatButtonTitle = isAssistantWorkspace ? `Chat ${workspaceOwnerDisplayName}` : 'Chat Assistant Workspace'
+  const workspaceChatPeerUserId = isAssistantWorkspace
+    ? workspaceContext?.ownerUserId || ''
+    : activeWorkspaceChatMember?.memberUserId || ''
+  const workspaceChatTitleName = isAssistantWorkspace
+    ? workspaceOwnerDisplayName
+    : activeWorkspaceChatMemberName
+  const workspaceChatStatusTargetUserId = actorUserId
+  const workspaceChatStatusTargetLabel = headerUserName
+  const workspaceChatStatusLogs = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat_status')
+  const workspaceChatSelfStatusLog = workspaceChatStatusTargetUserId
+    ? workspaceChatStatusLogs.find(item => item?.metadata?.targetUserId === workspaceChatStatusTargetUserId)
+    : null
+  const workspaceChatStatusValue = String(workspaceChatSelfStatusLog?.metadata?.status || 'active').toLowerCase()
+  const workspaceChatStatusOption = workspaceChatStatusOptions.find(option => option.value === workspaceChatStatusValue) || workspaceChatStatusOptions[0]
+  const workspaceChatStatusLabel = workspaceChatStatusOption.label
+  const workspaceChatStatusTone = workspaceChatStatusOption.tone
+  const workspaceChatPeerStatusLog = workspaceChatPeerUserId
+    ? workspaceChatStatusLogs.find(item => item?.metadata?.targetUserId === workspaceChatPeerUserId)
+    : null
+  const workspaceChatPeerStatusValue = String(workspaceChatPeerStatusLog?.metadata?.status || 'active').toLowerCase()
+  const workspaceChatPeerStatusOption = workspaceChatStatusOptions.find(option => option.value === workspaceChatPeerStatusValue) || workspaceChatStatusOptions[0]
+  const workspaceChatPeerStatusLabel = workspaceChatPeerStatusOption.label
+  const workspaceChatPeerStatusTone = workspaceChatPeerStatusOption.tone
+  const workspaceChatStatusSectionLabel = 'Status Saya'
+  const workspaceChatLastSeenLog = workspaceChatPeerUserId
+    ? activityLogs.find(item => item?.metadata?.kind === 'workspace_chat_seen' && item?.metadata?.targetUserId === workspaceChatPeerUserId)
+    : null
+  const workspaceChatLastOpenedLabel = workspaceChatLastSeenLog
+    ? formatLongDateTime(workspaceChatLastSeenLog.createdAt)
+    : 'Belum pernah dibuka'
+  const workspaceChatLastOpenedText = workspaceChatLastSeenLog
+    ? `${workspaceChatPeerStatusLabel} • terakhir dibuka ${workspaceChatLastOpenedLabel}`
+    : `${workspaceChatPeerStatusLabel} • belum pernah dibuka`
+  const workspaceChatButtonTitle = workspaceRole === 'owner'
+    ? `Chat ${activeWorkspaceChatMemberName}`
+    : `Chat ${workspaceOwnerDisplayName}`
+  const getWorkspaceChatPresenceOption = (targetUserId) => {
+    const rawStatus = targetUserId
+      ? String(workspaceChatStatusLogs.find(item => item?.metadata?.targetUserId === targetUserId)?.metadata?.status || 'active').toLowerCase()
+      : 'active'
+    return workspaceChatStatusOptions.find(option => option.value === rawStatus) || workspaceChatStatusOptions[0]
+  }
   const getWorkspaceMessageSenderName = (item) => {
     const senderUserId = item?.metadata?.senderUserId || ''
     const metadataName = item?.metadata?.senderName || ''
@@ -2111,7 +2212,12 @@ function App() {
       if (item?.metadata?.kind !== 'workspace_chat') return false
       if (!activeWorkspaceChatMemberId) return true
       const messageChatMemberId = item?.metadata?.chatMemberId || ''
-      return messageChatMemberId === activeWorkspaceChatMemberId || (!messageChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+      const messageChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      return (
+        messageChatMemberId === activeWorkspaceChatMemberId
+        || (messageChatMemberUserId && messageChatMemberUserId === activeWorkspaceChatMember?.memberUserId)
+        || (!messageChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+      )
     })
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     .slice(-300)
@@ -2120,7 +2226,12 @@ function App() {
       if (item?.metadata?.kind !== 'workspace_chat_ack' || !item?.metadata?.ackForMessageId) return false
       if (!activeWorkspaceChatMemberId) return true
       const ackChatMemberId = item?.metadata?.chatMemberId || ''
-      return ackChatMemberId === activeWorkspaceChatMemberId || (!ackChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+      const ackChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      return (
+        ackChatMemberId === activeWorkspaceChatMemberId
+        || (ackChatMemberUserId && ackChatMemberUserId === activeWorkspaceChatMember?.memberUserId)
+        || (!ackChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+      )
     })
   const workspaceChatAcknowledgedIds = new Set(workspaceChatAcknowledgements.map(item => item.metadata.ackForMessageId))
   const workspaceChatItemsWithDateSeparator = workspaceChatMessages.reduce((acc, item) => {
@@ -2143,6 +2254,7 @@ function App() {
     && item.metadata.senderUserId !== actorUserId
     && new Date(item.createdAt).getTime() > workspaceChatLastReadAt
   )).length
+  const hasUnreadWorkspaceChat = workspaceUnreadChatCount > 0
   const headerHour = headerNow.getHours()
   const dayGreeting = headerHour < 12 ? 'Good Morning!' : headerHour < 18 ? 'Good Afternoon!' : 'Good Evening!'
   const headerDateLabel = formatLongDate(headerNow)
@@ -2892,6 +3004,29 @@ function App() {
           || (!row.member_user_id && String(row.member_email || '').toLowerCase() === actorEmail)
         ))
 
+        const invitedWorkspaceRows = relevantRows
+          .filter(row => row.owner_user_id && row.owner_user_id !== actorUserId)
+          .sort((a, b) => {
+            const statusRank = (row) => ({ active: 0, pending: 1, revoked: 2 }[row.status] ?? 3)
+            const identityRank = (row) => {
+              if (row.member_user_id === actorUserId) return 0
+              if (String(row.member_email || '').toLowerCase() === actorEmail) return 1
+              return 2
+            }
+            return statusRank(a) - statusRank(b) || identityRank(a) - identityRank(b) || new Date(a.created_at || 0) - new Date(b.created_at || 0)
+          })[0]
+
+        if (invitedWorkspaceRows?.owner_user_id) {
+          setWorkspaceContext({
+            ownerUserId: invitedWorkspaceRows.owner_user_id,
+            role: invitedWorkspaceRows.role || 'assistant',
+            status: invitedWorkspaceRows.status || 'active',
+            permissions: normalizeTeamPermissions(invitedWorkspaceRows.permissions || {})
+          })
+          await resolveWorkspaceOwnerName(invitedWorkspaceRows.owner_user_id)
+          return
+        }
+
         const preferredRow = relevantRows.sort((a, b) => {
           const rank = (row) => {
             if (row.member_user_id === actorUserId && row.owner_user_id !== actorUserId) return 0
@@ -2965,8 +3100,8 @@ function App() {
         : supabase
           .from('workspace_members')
           .select('*')
-          .eq('member_user_id', actorUserId)
-          .limit(1)
+          .eq('owner_user_id', workspaceContext.ownerUserId)
+          .order('created_at', { ascending: true })
 
       const { data, error } = await query
       if (cancelled) return
@@ -2975,7 +3110,14 @@ function App() {
         return
       }
 
-      const rows = (data || []).map(item => ({
+      const rawRows = canManageTeam
+        ? (data || [])
+        : (data || []).filter(item => (
+            item.member_user_id === actorUserId
+            || String(item.member_email || '').toLowerCase() === String(session?.user?.email || '').toLowerCase()
+          ))
+
+      const rows = rawRows.map(item => ({
         id: item.id,
         ownerUserId: item.owner_user_id,
         memberUserId: item.member_user_id,
@@ -3018,7 +3160,7 @@ function App() {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [actorUserId, workspaceContext?.ownerUserId, canManageTeam])
+  }, [actorUserId, workspaceContext?.ownerUserId, canManageTeam, session?.user?.email])
 
   useEffect(() => {
     const profileIds = [
@@ -3069,6 +3211,57 @@ function App() {
     workspaceContext?.ownerUserId,
     workspaceMembers.map(member => member.memberUserId).filter(Boolean).join('|')
   ])
+
+  useEffect(() => {
+    if (!actorUserId || !session?.user) return
+
+    const email = String(session.user.email || '').trim().toLowerCase()
+    const fullName = String(
+      session.user.user_metadata?.full_name
+      || workspaceMemberSelf?.memberEmail?.split('@')[0]
+      || authUsername
+      || ''
+    ).trim()
+
+    if (!email && !fullName) return
+
+    let cancelled = false
+
+    const syncSessionProfile = async () => {
+      const payload = {
+        id: actorUserId,
+        email: email || null,
+        full_name: fullName || null,
+        updated_at: new Date().toISOString()
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+
+      if (!cancelled && !error) {
+        setWorkspaceProfileNames(prev => ({
+          ...prev,
+          [actorUserId]: {
+            email: payload.email || '',
+            fullName: payload.full_name || ''
+          }
+        }))
+      }
+    }
+
+    syncSessionProfile()
+
+    return () => {
+      cancelled = true
+    }
+  }, [actorUserId, session?.user, workspaceMemberSelf?.memberEmail, authUsername])
+
+  useEffect(() => {
+    if (!isAppDeveloper || activeTab !== 'userMonitoring') return
+
+    refreshDeveloperMonitoring()
+  }, [activeTab, isAppDeveloper])
 
   // Monitor Supabase Connection Status & Real-time Sync Events
   useEffect(() => {
@@ -4008,6 +4201,7 @@ function App() {
     if (!message) return
 
     const chatMemberId = metadata.chatMemberId || activeWorkspaceChatMemberId
+    const chatMemberUserId = metadata.chatMemberUserId || activeWorkspaceChatMember?.memberUserId || actorUserId
     if (workspaceRole === 'owner' && workspaceAssistantChatMembers.length > 0 && !chatMemberId) {
       alert('Pilih assistant dulu sebelum mengirim chat.')
       return
@@ -4029,6 +4223,7 @@ function App() {
         senderEmail: session?.user?.email || '',
         workspaceOwnerId: workspaceContext?.ownerUserId || '',
         chatMemberId,
+        chatMemberUserId,
         chatMemberLabel: activeWorkspaceChatMemberName,
         ...metadata
       }
@@ -4131,10 +4326,85 @@ function App() {
     }))
   }
 
+  const updateWorkspaceChatStatus = async (statusValue) => {
+    const normalizedStatus = ['active', 'busy', 'inactive'].includes(String(statusValue || '').toLowerCase())
+      ? String(statusValue).toLowerCase()
+      : 'active'
+
+    if (!workspaceChatStatusTargetUserId) return
+
+    setWorkspaceChatStatusMenuOpen(false)
+    await createActivityLog({
+      type: 'Workspace Chat',
+      title: `Status user: ${workspaceChatStatusTitleLabel(normalizedStatus)}`,
+      detail: `${headerUserName} mengubah status menjadi ${workspaceChatStatusTitleLabel(normalizedStatus)}.`,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat_status',
+        senderRole: workspaceRole,
+        senderUserId: actorUserId,
+        senderName: headerUserName,
+        targetUserId: workspaceChatStatusTargetUserId,
+        targetLabel: workspaceChatStatusTargetLabel,
+        status: normalizedStatus,
+        chatMemberId: activeWorkspaceChatMemberId || '',
+        chatMemberLabel: activeWorkspaceChatMemberName,
+        workspaceOwnerId: workspaceContext?.ownerUserId || ''
+      }
+    })
+  }
+
   useEffect(() => {
     if (!workspaceChatModalOpen) return
     setWorkspaceChatLastReadAt(Date.now())
+    setWorkspaceChatStatusMenuOpen(false)
   }, [workspaceChatModalOpen, workspaceChatMessages.length])
+
+  useEffect(() => {
+    if (!workspaceChatModalOpen) {
+      workspaceChatSeenSignatureRef.current = ''
+      setWorkspaceChatStatusMenuOpen(false)
+      return
+    }
+
+    if (!actorUserId || !scopedUserId) return
+
+    const seenSignature = `${actorUserId}:${workspaceChatStatusTargetUserId || 'self'}`
+    if (workspaceChatSeenSignatureRef.current === seenSignature) return
+    workspaceChatSeenSignatureRef.current = seenSignature
+
+    createActivityLog({
+      type: 'Workspace Chat',
+      title: `Chat dibuka: ${workspaceChatTitleName}`,
+      detail: `${workspaceChatTitleName} membuka workspace chat.`,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat_seen',
+        senderRole: workspaceRole,
+        senderUserId: actorUserId,
+        senderName: workspaceChatTitleName,
+        targetUserId: actorUserId,
+        targetLabel: headerUserName,
+        chatMemberId: activeWorkspaceChatMemberId || '',
+        chatMemberLabel: activeWorkspaceChatMemberName,
+        workspaceOwnerId: workspaceContext?.ownerUserId || ''
+      }
+    })
+  }, [
+    workspaceChatModalOpen,
+    actorUserId,
+    scopedUserId,
+    workspaceChatStatusTargetUserId,
+    workspaceChatTitleName,
+    workspaceRole,
+    activeWorkspaceChatMemberId,
+    activeWorkspaceChatMemberName,
+    workspaceContext?.ownerUserId
+  ])
 
   useEffect(() => {
     if (isAssistantWorkspace) return
@@ -7508,6 +7778,30 @@ function App() {
     setTasks([])
     setAppointments([])
     setNotes([])
+    setDeveloperMonitoringRows([])
+    setDeveloperMonitoringLoading(false)
+    setDeveloperMonitoringError('')
+    setDeveloperMonitoringUpdatedAt('')
+    setDeveloperMonitoringSearch('')
+  }
+
+  const refreshDeveloperMonitoring = async () => {
+    if (!isAppDeveloper) return
+
+    setDeveloperMonitoringLoading(true)
+    setDeveloperMonitoringError('')
+
+    const { data, error } = await supabase.rpc('get_developer_user_monitoring')
+    if (error) {
+      setDeveloperMonitoringRows([])
+      setDeveloperMonitoringError(error.message)
+      setDeveloperMonitoringLoading(false)
+      return
+    }
+
+    setDeveloperMonitoringRows(Array.isArray(data) ? data : [])
+    setDeveloperMonitoringUpdatedAt(new Date().toISOString())
+    setDeveloperMonitoringLoading(false)
   }
 
   // Update user profile to Supabase
@@ -8224,7 +8518,7 @@ function App() {
 
           {/* Navigation Links */}
           <nav className="flex-1 sidebar-nav-scroll">
-            {canReadArea('dashboard') && canShowTab('dashboard') && (
+            {isPrimaryMobileNavTab('dashboard') && canReadArea('dashboard') && canShowTab('dashboard') && (
               <div 
                 data-mobile-nav="dashboard"
                 className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
@@ -8235,7 +8529,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('tasks') && canShowTab('tasks') && (
+            {isPrimaryMobileNavTab('tasks') && canReadArea('tasks') && canShowTab('tasks') && (
               <div 
                 data-mobile-nav="tasks"
                 className={`nav-link ${activeTab === 'tasks' ? 'active' : ''}`}
@@ -8246,7 +8540,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('calendar') && canShowTab('calendar') && (
+            {isPrimaryMobileNavTab('calendar') && canReadArea('calendar') && canShowTab('calendar') && (
               <div 
                 data-mobile-nav="calendar"
                 className={`nav-link ${activeTab === 'calendar' ? 'active' : ''}`}
@@ -8258,7 +8552,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('orders') && canShowTab('orders') && (
+            {isPrimaryMobileNavTab('orders') && canReadArea('orders') && canShowTab('orders') && (
               <div
                 data-mobile-nav="orders"
                 className={`nav-link ${activeTab === 'orders' ? 'active' : ''}`}
@@ -8269,7 +8563,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('designOrders') && canShowTab('designOrders') && (
+            {isPrimaryMobileNavTab('designOrders') && canReadArea('designOrders') && canShowTab('designOrders') && (
               <div
                 className={`nav-link ${activeTab === 'designOrders' ? 'active' : ''}`}
                 onClick={() => setActiveTab('designOrders')}
@@ -8279,7 +8573,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('generalOrders') && canShowTab('generalOrders') && (
+            {isPrimaryMobileNavTab('generalOrders') && canReadArea('generalOrders') && canShowTab('generalOrders') && (
               <div
                 className={`nav-link ${activeTab === 'generalOrders' ? 'active' : ''}`}
                 onClick={() => setActiveTab('generalOrders')}
@@ -8289,7 +8583,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('mentoringSchedule') && canShowTab('mentoringSchedule') && (
+            {isPrimaryMobileNavTab('mentoringSchedule') && canReadArea('mentoringSchedule') && canShowTab('mentoringSchedule') && (
               <div
                 className={`nav-link ${activeTab === 'mentoringSchedule' ? 'active' : ''}`}
                 onClick={() => setActiveTab('mentoringSchedule')}
@@ -8299,7 +8593,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('contentPlanner') && canShowTab('contentPlanner') && (
+            {isPrimaryMobileNavTab('contentPlanner') && canReadArea('contentPlanner') && canShowTab('contentPlanner') && (
               <div
                 className={`nav-link ${activeTab === 'contentPlanner' ? 'active' : ''}`}
                 onClick={() => setActiveTab('contentPlanner')}
@@ -8309,7 +8603,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('invoiceFollowUp') && canShowTab('invoiceFollowUp') && (
+            {isPrimaryMobileNavTab('invoiceFollowUp') && canReadArea('invoiceFollowUp') && canShowTab('invoiceFollowUp') && (
               <div
                 className={`nav-link ${activeTab === 'invoiceFollowUp' ? 'active' : ''}`}
                 onClick={() => setActiveTab('invoiceFollowUp')}
@@ -8319,7 +8613,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('invoiceGenerator') && canShowTab('invoiceGenerator') && (
+            {isPrimaryMobileNavTab('invoiceGenerator') && canReadArea('invoiceGenerator') && canShowTab('invoiceGenerator') && (
               <div
                 className={`nav-link ${activeTab === 'invoiceGenerator' ? 'active' : ''}`}
                 onClick={() => setActiveTab('invoiceGenerator')}
@@ -8329,7 +8623,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('crm') && canShowTab('crm') && (
+            {isPrimaryMobileNavTab('crm') && canReadArea('crm') && canShowTab('crm') && (
               <div
                 data-mobile-nav="crm"
                 className={`nav-link ${activeTab === 'crm' ? 'active' : ''}`}
@@ -8340,7 +8634,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('finance') && canShowTab('finance') && (
+            {isPrimaryMobileNavTab('finance') && canReadArea('finance') && canShowTab('finance') && (
               <div
                 data-mobile-nav="finance"
                 className={`nav-link ${activeTab === 'finance' ? 'active' : ''}`}
@@ -8351,7 +8645,7 @@ function App() {
               </div>
             )}
 
-            {canReadArea('reports') && canShowTab('reports') && (
+            {isPrimaryMobileNavTab('reports') && canReadArea('reports') && canShowTab('reports') && (
               <div
                 data-mobile-nav="reports"
                 className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
@@ -8392,6 +8686,25 @@ function App() {
               >
                 <Settings size={20} />
                 {!sidebarCollapsed && <span>Pengaturan macOS</span>}
+              </div>
+            )}
+
+            {isAppDeveloper && (
+              <div className="mt-3 pt-3 border-t border-white/25 dark:border-indigo-900/60">
+                {!sidebarCollapsed && (
+                  <div className="px-3 pb-2">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-yellow-100/90">Developer Tools</p>
+                  </div>
+                )}
+                <div
+                  data-mobile-secondary="true"
+                  className={`nav-link ${activeTab === 'userMonitoring' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('userMonitoring')}
+                >
+                  <ShieldCheck size={20} />
+                  {!sidebarCollapsed && <span>User Monitoring</span>}
+                  {!sidebarCollapsed && <span className="ml-auto rounded-full bg-yellow-200/30 px-2 py-0.5 text-[10px] font-extrabold text-yellow-50">DEV</span>}
+                </div>
               </div>
             )}
 
@@ -8501,16 +8814,18 @@ function App() {
                   <button
                     type="button"
                     onClick={() => setWorkspaceChatModalOpen(true)}
-                    className="relative w-11 h-11 rounded-full bg-white/95 hover:bg-white p-0 shadow-md active:scale-95 transition-all flex items-center justify-center"
+                    className={`relative w-11 h-11 rounded-full p-0 shadow-md active:scale-95 transition-all flex items-center justify-center ${
+                      hasUnreadWorkspaceChat ? 'bg-[#8f75d8] hover:bg-[#8069c8] text-white' : 'bg-white/95 hover:bg-white text-[#8f75d8]'
+                    }`}
                     title={workspaceChatButtonTitle}
                   >
                     <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-extrabold inline-flex items-center justify-center border border-white ${
-                      workspaceUnreadChatCount > 0 ? 'bg-red-500' : 'bg-purple-300'
+                      hasUnreadWorkspaceChat ? 'bg-red-500' : 'bg-purple-300'
                     }`}>
                       {workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}
                     </span>
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-300 flex items-center justify-center">
-                      <MessageSquare size={15} className="text-amber-800" />
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${hasUnreadWorkspaceChat ? 'bg-white/14' : 'bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-300'}`}>
+                      <MessageSquare size={15} className={hasUnreadWorkspaceChat ? 'text-white' : 'text-amber-800'} />
                     </div>
                   </button>
                 )}
@@ -12130,6 +12445,190 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'userMonitoring' && isAppDeveloper && (
+            <div className="mobile-page space-y-6">
+              <section className="glass-panel overflow-hidden">
+                <div className="relative p-6 md:p-8 bg-[radial-gradient(circle_at_14%_20%,rgba(255,229,76,0.28),transparent_22%),radial-gradient(circle_at_84%_18%,rgba(143,117,216,0.22),transparent_24%),linear-gradient(135deg,#241a35,#3f2c62_52%,#1f162d)] text-white">
+                  <div className="absolute inset-0 opacity-25 bg-[radial-gradient(circle_at_28%_28%,white,transparent_20%),radial-gradient(circle_at_75%_72%,white,transparent_16%)]"></div>
+                  <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                    <div className="max-w-3xl">
+                      <p className="text-[11px] uppercase tracking-[0.22em] font-extrabold text-[#fff08a]">Developer Only</p>
+                      <h3 className="mt-3 text-3xl md:text-4xl font-extrabold leading-tight text-white">User Monitoring</h3>
+                      <p className="mt-3 text-sm md:text-base text-white/85 leading-7">
+                        Pantau siapa yang mendaftar ke aplikasi dan siapa yang diundang ke workspace, langsung dari satu halaman.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white/14 border border-white/25 px-3 py-1.5 text-xs font-bold text-white">{developerMonitoringSignupCount} Signup</span>
+                      <span className="rounded-full bg-white/14 border border-white/25 px-3 py-1.5 text-xs font-bold text-white">{developerMonitoringInviteCount} Invite</span>
+                      <button
+                        type="button"
+                        onClick={refreshDeveloperMonitoring}
+                        className="inline-flex items-center gap-2 rounded-full bg-white text-[#4f4574] px-4 py-2 text-xs font-extrabold shadow-lg shadow-black/10"
+                      >
+                        <RefreshCw size={13} className={developerMonitoringLoading ? 'animate-spin' : ''} />
+                        {developerMonitoringLoading ? 'Memuat...' : 'Refresh'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Total Signup</p>
+                  <p className="mt-2 text-3xl font-extrabold text-[#4f4574]">{developerMonitoringSignupCount}</p>
+                  <p className="mt-1 text-xs text-purple-400">Semua user yang tercatat di `public.profiles`.</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Total Invite</p>
+                  <p className="mt-2 text-3xl font-extrabold text-[#4f4574]">{developerMonitoringInviteCount}</p>
+                  <p className="mt-1 text-xs text-purple-400">Semua undangan workspace non-owner.</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Invite Aktif</p>
+                  <p className="mt-2 text-3xl font-extrabold text-emerald-600">{developerMonitoringActiveInviteCount}</p>
+                  <p className="mt-1 text-xs text-purple-400">Undangan yang sudah terhubung ke member.</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Invite Pending</p>
+                  <p className="mt-2 text-3xl font-extrabold text-amber-600">{developerMonitoringPendingInviteCount}</p>
+                  <p className="mt-1 text-xs text-purple-400">Undangan yang belum dipakai.</p>
+                </div>
+              </section>
+
+              <section className="glass-panel p-5 md:p-6 space-y-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">Cari data</p>
+                    <h4 className="text-xl font-extrabold text-[#4f4574]">Filter nama, email, role, atau token</h4>
+                  </div>
+                  <div className="w-full md:w-[340px]">
+                    <input
+                      type="text"
+                      value={developerMonitoringSearch}
+                      onChange={(e) => setDeveloperMonitoringSearch(e.target.value)}
+                      placeholder="Cari user, email, atau token..."
+                      className="w-full rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-[#4f4574] focus:outline-none focus:ring-2 focus:ring-purple-200"
+                    />
+                  </div>
+                </div>
+
+                {developerMonitoringError && (
+                  <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    {developerMonitoringError}
+                  </div>
+                )}
+                {developerMonitoringUpdatedAt && !developerMonitoringError && (
+                  <p className="text-[11px] text-purple-400">Terakhir dimuat: {formatLongDateTime(developerMonitoringUpdatedAt)}</p>
+                )}
+              </section>
+
+              <section className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                <article className="glass-panel p-5 md:p-6 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">Registrations</p>
+                      <h4 className="text-xl font-extrabold text-[#4f4574]">User yang mendaftar</h4>
+                      <p className="text-xs text-purple-400 mt-1">Data dari `public.profiles`.</p>
+                    </div>
+                    <Users size={18} className="text-[#8f75d8]" />
+                  </div>
+
+                  <div className="space-y-3 max-h-[620px] overflow-auto pr-1">
+                    {developerMonitoringLoading && developerMonitoringFilteredSignupRows.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-5 text-center text-sm text-purple-400">
+                        Memuat data signup...
+                      </div>
+                    ) : developerMonitoringFilteredSignupRows.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-5 text-center text-sm text-purple-400">
+                        Tidak ada data signup yang cocok dengan filter.
+                      </div>
+                    ) : developerMonitoringFilteredSignupRows.map(row => {
+                      const displayName = formatDisplayName(row.full_name || row.email || 'Pengguna', 'Pengguna')
+                      return (
+                        <div key={`signup-${row.subject_user_id}`} className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-extrabold text-[#4f4574] truncate">{displayName}</p>
+                              <p className="mt-1 text-xs text-purple-400 truncate">{row.email || '-'}</p>
+                            </div>
+                            <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-bold text-purple-600">Signup</span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-purple-400">
+                            <div className="rounded-xl border border-purple-50 bg-[#fbfaff] px-3 py-2">
+                              <span className="block uppercase tracking-[0.12em] text-[10px] font-bold text-purple-300">Didaftarkan</span>
+                              <span className="block mt-1 text-[#4f4574] font-semibold">{formatLongDateTime(row.created_at)}</span>
+                            </div>
+                            <div className="rounded-xl border border-purple-50 bg-[#fbfaff] px-3 py-2">
+                              <span className="block uppercase tracking-[0.12em] text-[10px] font-bold text-purple-300">Terakhir Update</span>
+                              <span className="block mt-1 text-[#4f4574] font-semibold">{formatLongDateTime(row.updated_at)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </article>
+
+                <article className="glass-panel p-5 md:p-6 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">Invites</p>
+                      <h4 className="text-xl font-extrabold text-[#4f4574]">User yang di invite</h4>
+                      <p className="text-xs text-purple-400 mt-1">Data dari `public.workspace_members`.</p>
+                    </div>
+                    <UserPlus size={18} className="text-[#8f75d8]" />
+                  </div>
+
+                  <div className="space-y-3 max-h-[620px] overflow-auto pr-1">
+                    {developerMonitoringLoading && developerMonitoringFilteredInviteRows.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-5 text-center text-sm text-purple-400">
+                        Memuat data invite...
+                      </div>
+                    ) : developerMonitoringFilteredInviteRows.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-5 text-center text-sm text-purple-400">
+                        Tidak ada data invite yang cocok dengan filter.
+                      </div>
+                    ) : developerMonitoringFilteredInviteRows.map(row => {
+                      const displayName = formatDisplayName(row.full_name || row.email || 'Assistant', 'Assistant')
+                      const roleLabel = String(row.role || 'assistant').toUpperCase()
+                      const statusLabel = String(row.status || 'pending').toUpperCase()
+                      return (
+                        <div key={`invite-${row.invite_token || row.subject_user_id}`} className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-extrabold text-[#4f4574] truncate">{displayName}</p>
+                              <p className="mt-1 text-xs text-purple-400 truncate">{row.email || '-'}</p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{statusLabel}</span>
+                              <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-bold text-purple-600">{roleLabel}</span>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-purple-400">
+                            <div className="rounded-xl border border-purple-50 bg-[#fbfaff] px-3 py-2">
+                              <span className="block uppercase tracking-[0.12em] text-[10px] font-bold text-purple-300">Diundang</span>
+                              <span className="block mt-1 text-[#4f4574] font-semibold">{formatLongDateTime(row.created_at)}</span>
+                            </div>
+                            <div className="rounded-xl border border-purple-50 bg-[#fbfaff] px-3 py-2">
+                              <span className="block uppercase tracking-[0.12em] text-[10px] font-bold text-purple-300">Diterima</span>
+                              <span className="block mt-1 text-[#4f4574] font-semibold">{row.accepted_at ? formatLongDateTime(row.accepted_at) : '-'}</span>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-bold text-purple-400">
+                            <span className="rounded-full bg-[#fbfaff] px-2.5 py-1 border border-purple-50">Token: {row.invite_token || '-'}</span>
+                            <span className="rounded-full bg-[#fbfaff] px-2.5 py-1 border border-purple-50">Source: workspace_members</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </article>
+              </section>
+            </div>
+          )}
+
           {activeTab === 'pageControl' && (
             <div className="mobile-page space-y-6">
               <div className="glass-panel p-6">
@@ -12643,7 +13142,7 @@ function App() {
 
       <button
         type="button"
-        className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings'].includes(activeTab) ? 'active' : ''}`}
+        className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
         onClick={() => setShowMobileMoreMenu(prev => !prev)}
         aria-label="Buka menu lainnya"
       >
@@ -12687,6 +13186,50 @@ function App() {
                 <span>Pengaturan macOS</span>
               </button>
             )}
+            {['designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].map((tabKey) => {
+              if (!canReadArea(tabKey) || !canShowTab(tabKey)) return null
+              const mobileMenuLabel = {
+                designOrders: 'Pages Design Order',
+                generalOrders: 'Pages Orderan (General)',
+                mentoringSchedule: 'Pages Mentoring/Speaker',
+                contentPlanner: 'Content Planner',
+                invoiceFollowUp: 'Invoice Payment & Follow Up',
+                invoiceGenerator: 'Invoice Generator',
+                reports: 'Reports'
+              }[tabKey]
+              const mobileMenuIcon = {
+                designOrders: <Palette size={18} />,
+                generalOrders: <Clipboard size={18} />,
+                mentoringSchedule: <Mic2 size={18} />,
+                contentPlanner: <CalendarClock size={18} />,
+                invoiceFollowUp: <Mail size={18} />,
+                invoiceGenerator: <FileText size={18} />,
+                reports: <TrendingUp size={18} />
+              }[tabKey]
+              return (
+                <button
+                  key={tabKey}
+                  type="button"
+                  className="mobile-more-item"
+                  onClick={() => { setActiveTab(tabKey); setShowMobileMoreMenu(false) }}
+                >
+                  {mobileMenuIcon}
+                  <span>{mobileMenuLabel}</span>
+                </button>
+              )
+            })}
+            {isAppDeveloper && (
+              <>
+                <div className="mobile-more-divider" />
+                <div className="px-1 pb-1">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-purple-400">Developer Tools</p>
+                </div>
+                <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('userMonitoring'); setShowMobileMoreMenu(false) }}>
+                  <ShieldCheck size={18} />
+                  <span>User Monitoring</span>
+                </button>
+              </>
+            )}
             {workspaceRole === 'owner' && (
               <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('pageControl'); setShowMobileMoreMenu(false) }}>
                 <SlidersHorizontal size={18} />
@@ -12712,6 +13255,25 @@ function App() {
             )}
           </div>
         </>
+      )}
+
+      {isMobileTabletView && workspaceContext?.ownerUserId && (
+        <button
+          type="button"
+          onClick={() => {
+            setWorkspaceChatModalOpen(true)
+            setShowMobileMoreMenu(false)
+            setNotificationBannerVisible(false)
+            setShowNotificationList(false)
+          }}
+          aria-label="Buka chat workspace"
+          className={`mobile-chat-trigger fixed right-4 z-[81] inline-flex items-center justify-center ${hasUnreadWorkspaceChat ? 'active' : ''}`}
+        >
+          <MessageSquare size={18} className={hasUnreadWorkspaceChat ? 'text-white' : ''} />
+          {hasUnreadWorkspaceChat && (
+            <span className="mobile-chat-trigger-badge">{workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}</span>
+          )}
+        </button>
       )}
 
       {showNewFolderModal && (
@@ -12744,17 +13306,23 @@ function App() {
 
       {workspaceChatModalOpen && (
         <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setWorkspaceChatModalOpen(false)}>
-          <div className={`w-full ${workspaceRole === 'owner' ? 'max-w-5xl' : 'max-w-2xl'} rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50`} onClick={(e) => e.stopPropagation()}>
+          <div className={`w-full ${canManageTeam && workspaceAssistantChatMembers.length > 0 ? 'max-w-6xl' : 'max-w-2xl'} rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50`} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Workspace Chat</p>
                 <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574] dark:text-purple-100">
-                  {isAssistantWorkspace ? `Chat ${workspaceOwnerDisplayName}` : `Chat ${activeWorkspaceChatMemberName}`}
+                  {workspaceChatTitleName}
                 </h3>
-                <p className="mt-1 text-xs text-purple-400 dark:text-purple-300">Diskusi kerja realtime untuk owner dan assistant.</p>
+                <p className="mt-1 text-xs dark:text-purple-300 inline-flex items-center gap-2 text-purple-400">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${workspaceChatPeerStatusTone}`}>
+                    <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                    {workspaceChatPeerStatusLabel}
+                  </span>
+                  <span>{workspaceChatLastSeenLog ? `terakhir dibuka ${workspaceChatLastOpenedLabel}` : 'belum pernah dibuka'}</span>
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                {workspaceRole === 'owner' && (
+                {canManageTeam && activeWorkspaceChatMemberId && (
                   <button
                     type="button"
                     onClick={handleClearWorkspaceChat}
@@ -12763,6 +13331,44 @@ function App() {
                     Clear Chat
                   </button>
                 )}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceChatStatusMenuOpen(prev => !prev)}
+                    className={`h-9 px-3 rounded-xl border text-xs font-bold inline-flex items-center gap-2 ${workspaceChatStatusTone}`}
+                  >
+                    <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                    {workspaceChatStatusLabel}
+                    <ChevronDown size={14} />
+                  </button>
+                  {workspaceChatStatusMenuOpen && (
+                    <div className="absolute right-0 top-11 z-20 w-40 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl dark:bg-slate-900 dark:border-indigo-900">
+                      <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">
+                        {workspaceChatStatusSectionLabel}
+                      </p>
+                      <div className="space-y-1">
+                        {workspaceChatStatusOptions.map(option => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => updateWorkspaceChatStatus(option.value)}
+                            className={`w-full rounded-xl px-3 py-2 text-left text-xs font-semibold border inline-flex items-center justify-between gap-2 ${
+                              option.value === workspaceChatStatusValue
+                                ? option.tone
+                                : 'border-purple-100 text-[#4f4574] hover:bg-purple-50'
+                            }`}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                              {option.label}
+                            </span>
+                            {option.value === workspaceChatStatusValue && <Check size={13} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => setWorkspaceChatModalOpen(false)}
@@ -12773,33 +13379,98 @@ function App() {
               </div>
             </div>
 
-            <div className={`mt-5 ${workspaceRole === 'owner' ? 'grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4' : ''}`}>
-              {workspaceRole === 'owner' && (
-                <div className="rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400 mb-2">Assistant</p>
-                  <div className="space-y-1.5 max-h-[430px] overflow-y-auto">
-                    {workspaceAssistantChatMembers.length === 0 ? (
-                      <p className="text-xs text-purple-400">Belum ada assistant aktif.</p>
-                    ) : workspaceAssistantChatMembers.map(member => {
-                      const memberName = resolveWorkspaceMemberName(member)
-                      const memberMessageCount = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat' && item?.metadata?.chatMemberId === member.id).length
-                      const isSelected = member.id === activeWorkspaceChatMemberId
-                      return (
-                        <button
-                          key={member.id}
-                          type="button"
-                          onClick={() => setSelectedWorkspaceChatMemberId(member.id)}
-                          className={`w-full text-left rounded-xl px-3 py-2 border text-xs ${isSelected ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#4f4574] border-purple-100 hover:bg-purple-50'}`}
-                        >
-                          <span className="block font-bold truncate">{memberName}</span>
-                          <span className={`block text-[10px] truncate ${isSelected ? 'text-white/75' : 'text-purple-400'}`}>
-                            {member.status || 'active'} • {memberMessageCount} pesan
-                          </span>
-                        </button>
-                      )
-                    })}
+            <div className={`mt-5 ${canManageTeam && workspaceAssistantChatMembers.length > 0 ? 'grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-stretch' : ''}`}>
+              {canManageTeam && workspaceAssistantChatMembers.length > 0 && (
+                <>
+                  <div className={`hidden md:flex md:self-stretch md:flex-col rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 overflow-hidden ${workspaceChatAssistantPanelCollapsed ? 'md:w-14' : 'md:w-auto'}`}>
+                    <div className={`flex items-center ${workspaceChatAssistantPanelCollapsed ? 'justify-center' : 'justify-between'} gap-2 px-3 pt-3 pb-2`}>
+                      {!workspaceChatAssistantPanelCollapsed && (
+                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">Assistant</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setWorkspaceChatAssistantPanelCollapsed(prev => !prev)}
+                        className="h-8 w-8 rounded-xl border border-purple-100 bg-white text-purple-500 hover:bg-purple-50 inline-flex items-center justify-center"
+                        title={workspaceChatAssistantPanelCollapsed ? 'Tampilkan assistant' : 'Sembunyikan assistant'}
+                      >
+                        {workspaceChatAssistantPanelCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                      </button>
+                    </div>
+                    {workspaceChatAssistantPanelCollapsed ? (
+                      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 pb-3">
+                        {workspaceAssistantChatMembers.length > 0 && (
+                          <span className="rounded-full bg-[#8f75d8] px-2.5 py-1 text-[10px] font-bold text-white">{workspaceAssistantChatMembers.length}</span>
+                        )}
+                        <Users size={15} className="text-[#8f75d8]" />
+                      </div>
+                    ) : (
+                      <div className="flex-1 min-h-0 px-3 pb-3">
+                        <div className="space-y-1.5 h-full max-h-[520px] overflow-y-auto pr-1">
+                          {workspaceAssistantChatMembers.length === 0 ? (
+                            <p className="text-xs text-purple-400">Belum ada assistant aktif.</p>
+                          ) : workspaceAssistantChatMembers.map(member => {
+                            const memberName = resolveWorkspaceMemberName(member)
+                            const memberMessageCount = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat' && item?.metadata?.chatMemberId === member.id).length
+                            const memberPresence = getWorkspaceChatPresenceOption(member.memberUserId)
+                            const isSelected = member.id === activeWorkspaceChatMemberId
+                            return (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => setSelectedWorkspaceChatMemberId(member.id)}
+                                className={`w-full text-left rounded-xl px-3 py-2 border text-xs ${isSelected ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#4f4574] border-purple-100 hover:bg-purple-50'}`}
+                              >
+                                <span className="block font-bold truncate">{memberName}</span>
+                                <span className={`block text-[10px] truncate ${isSelected ? 'text-white/75' : 'text-purple-400'}`}>
+                                  {memberPresence.label} • {memberMessageCount} pesan
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
+
+                  <div className="md:hidden rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">Assistant</p>
+                      <button
+                        type="button"
+                        onClick={() => setWorkspaceChatAssistantPanelCollapsed(prev => !prev)}
+                        className="h-8 w-8 rounded-xl border border-purple-100 bg-white text-purple-500 hover:bg-purple-50 inline-flex items-center justify-center"
+                        title={workspaceChatAssistantPanelCollapsed ? 'Tampilkan assistant' : 'Sembunyikan assistant'}
+                      >
+                        {workspaceChatAssistantPanelCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                      </button>
+                    </div>
+                    {!workspaceChatAssistantPanelCollapsed && (
+                      <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                        {workspaceAssistantChatMembers.length === 0 ? (
+                          <p className="text-xs text-purple-400">Belum ada assistant aktif.</p>
+                        ) : workspaceAssistantChatMembers.map(member => {
+                          const memberName = resolveWorkspaceMemberName(member)
+                          const memberMessageCount = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat' && item?.metadata?.chatMemberId === member.id).length
+                          const memberPresence = getWorkspaceChatPresenceOption(member.memberUserId)
+                          const isSelected = member.id === activeWorkspaceChatMemberId
+                          return (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => setSelectedWorkspaceChatMemberId(member.id)}
+                              className={`w-full text-left rounded-xl px-3 py-2 border text-xs ${isSelected ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#4f4574] border-purple-100 hover:bg-purple-50'}`}
+                            >
+                              <span className="block font-bold truncate">{memberName}</span>
+                              <span className={`block text-[10px] truncate ${isSelected ? 'text-white/75' : 'text-purple-400'}`}>
+                                {memberPresence.label} • {memberMessageCount} pesan
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
 
               <div className="min-w-0">
