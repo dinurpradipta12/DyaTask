@@ -8,6 +8,26 @@ let tray;
 let isQuitting = false;
 const APP_NAME = 'Dyatask Manager - Superapp for Freelancer';
 const UPDATE_FEED_URL = 'https://github.com/dinurpradipta12/DyaTask/releases/latest';
+const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest';
+
+async function resolveLatestDmgAssetUrl() {
+  const response = await fetch(GITHUB_LATEST_RELEASE_API, {
+    headers: { 'User-Agent': 'DyaTask-Electron' }
+  });
+
+  if (!response.ok) {
+    throw new Error('Metadata rilis DMG terbaru belum bisa diambil.');
+  }
+
+  const release = await response.json();
+  const dmgAsset = release.assets?.find((asset) => asset?.name && asset.name.toLowerCase().endsWith('.dmg'));
+
+  if (!dmgAsset?.browser_download_url) {
+    throw new Error('DMG terbaru belum tersedia pada rilis terbaru.');
+  }
+
+  return dmgAsset.browser_download_url;
+}
 
 function sendUpdateStatus(payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -296,28 +316,25 @@ ipcMain.handle('check-for-updates-manual', async () => {
 });
 
 ipcMain.handle('open-latest-dmg-release', async (_event, customUrl) => {
-  if (customUrl) {
-    await shell.openExternal(customUrl);
-    return { ok: true, url: customUrl };
-  }
-
-  let downloadUrl = UPDATE_FEED_URL;
   try {
-    const response = await fetch('https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest', {
-      headers: { 'User-Agent': 'DyaTask-Electron' }
-    });
-    if (response.ok) {
-      const release = await response.json();
-      const dmgAsset = release.assets?.find(asset => asset.name && asset.name.endsWith('.dmg'));
-      if (dmgAsset && dmgAsset.browser_download_url) {
-        downloadUrl = dmgAsset.browser_download_url;
-      }
+    const downloadUrl =
+      customUrl && /\.dmg($|\?)/i.test(customUrl)
+        ? customUrl
+        : await resolveLatestDmgAssetUrl();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.downloadURL(downloadUrl);
+    } else {
+      await shell.openExternal(downloadUrl);
     }
+    return { ok: true, url: downloadUrl };
   } catch (error) {
     console.error('Gagal mengambil asset DMG terbaru dari GitHub:', error);
+    return {
+      ok: false,
+      error: error.message || 'DMG terbaru belum tersedia.'
+    };
   }
-  await shell.openExternal(downloadUrl);
-  return { ok: true, url: downloadUrl };
 });
 
 ipcMain.handle('export-invoice-pdf', async (_event, payload = {}) => {

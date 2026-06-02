@@ -156,6 +156,7 @@ const PAGE_TOGGLE_DEFAULTS = {
 const INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY = 'dyatask_invoice_generator_defaults'
 const LOGIN_VISUAL_SETTINGS_KEY = 'login_visual'
 const TUTORIAL_COURSES_SETTINGS_KEY = 'tutorial_courses'
+const USER_BROADCAST_SETTINGS_KEY = 'user_broadcast_message'
 const LOGIN_VISUAL_BUCKET = 'app-assets'
 const LOGIN_VISUAL_OBJECT_PATH = 'login/login-visual'
 const FALLBACK_INVOICE_GENERATOR_DEFAULTS = {
@@ -684,6 +685,11 @@ function App() {
   const [developerFeedbackError, setDeveloperFeedbackError] = useState('')
   const [developerFeedbackUpdatedAt, setDeveloperFeedbackUpdatedAt] = useState('')
   const [developerFeedbackSearch, setDeveloperFeedbackSearch] = useState('')
+  const [globalBroadcastMessage, setGlobalBroadcastMessage] = useState('')
+  const [globalBroadcastEnabled, setGlobalBroadcastEnabled] = useState(false)
+  const [globalBroadcastLoading, setGlobalBroadcastLoading] = useState(false)
+  const [globalBroadcastSaving, setGlobalBroadcastSaving] = useState(false)
+  const [globalBroadcastUpdatedAt, setGlobalBroadcastUpdatedAt] = useState('')
   const [showUserFeedbackModal, setShowUserFeedbackModal] = useState(false)
   const [userFeedbackName, setUserFeedbackName] = useState('')
   const [userFeedbackRating, setUserFeedbackRating] = useState(0)
@@ -692,6 +698,8 @@ function App() {
   const [userFeedbackSubmitError, setUserFeedbackSubmitError] = useState('')
   const [userFeedbackSubmitSuccess, setUserFeedbackSubmitSuccess] = useState('')
   const [hasSubmittedUserFeedback, setHasSubmittedUserFeedback] = useState(false)
+  const [userFeedbackBroadcastSnoozeUntil, setUserFeedbackBroadcastSnoozeUntil] = useState(0)
+  const [userFeedbackBroadcastNow, setUserFeedbackBroadcastNow] = useState(() => Date.now())
   const [workspaceInviteUsername, setWorkspaceInviteUsername] = useState('')
   const [workspaceInviteRole, setWorkspaceInviteRole] = useState('assistant')
   const [workspaceInviteToken, setWorkspaceInviteToken] = useState('')
@@ -724,9 +732,10 @@ function App() {
   const [workspaceChatReplyTarget, setWorkspaceChatReplyTarget] = useState(null)
   const [workspaceChatActionMessageId, setWorkspaceChatActionMessageId] = useState('')
   const [workspaceChatOwnerMenuOpen, setWorkspaceChatOwnerMenuOpen] = useState(false)
+  const [pageControlDraft, setPageControlDraft] = useState(PAGE_TOGGLE_DEFAULTS)
   const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
     if (typeof window === 'undefined') return false
-    return window.innerWidth <= 1180
+    return window.innerWidth <= 1024
   })
   const [mobileTaskFolderOpen, setMobileTaskFolderOpen] = useState(false)
   const [mobileOrderDetailOpen, setMobileOrderDetailOpen] = useState(false)
@@ -828,6 +837,7 @@ function App() {
   const contentPlannerFormStorageKey = scopedStorageKey('dyatask_show_content_planner_form')
   const notificationHistoryStorageKey = scopedStorageKey('dyatask_notification_history')
   const userFeedbackSubmittedStorageKey = scopedStorageKey('dyatask_feedback_submitted')
+  const userFeedbackBroadcastSnoozeStorageKey = scopedStorageKey('dyatask_feedback_broadcast_snooze_until')
   const bookingAvailabilityStorageKey = scopedStorageKey('dyatask_booking_availability')
   const bookingShareTokenStorageKey = scopedStorageKey('dyatask_booking_share_token')
   const reservationSessionPriceStorageKey = scopedStorageKey('dyatask_reservation_session_price')
@@ -836,8 +846,14 @@ function App() {
   const tutorialProgressStorageKey = scopedStorageKey('dyatask_tutorial_progress')
   const invoiceGeneratorDefaultsStorageKey = scopedStorageKey(INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY)
   const isPageEnabled = (pageKey) => enabledPages?.[pageKey] !== false
+  const isDraftPageEnabled = (pageKey) => pageControlDraft?.[pageKey] !== false
   const mobilePrimaryNavTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'crm', 'finance', 'invoiceFollowUp']
   const isPrimaryMobileNavTab = (tabKey) => !isMobileTabletView || mobilePrimaryNavTabs.includes(tabKey)
+  const shouldShowFeedbackBroadcast = globalBroadcastEnabled
+    && String(globalBroadcastMessage || '').trim()
+    && !hasSubmittedUserFeedback
+    && !showUserFeedbackModal
+    && userFeedbackBroadcastNow >= Number(userFeedbackBroadcastSnoozeUntil || 0)
 
   const canShowTab = (tabKey) => {
     const tabToPage = {
@@ -865,8 +881,9 @@ function App() {
   }
 
   const togglePageEnabled = (pageKey) => {
-    setEnabledPages(prev => ({ ...prev, [pageKey]: !(prev?.[pageKey] !== false) }))
+    setPageControlDraft(prev => ({ ...prev, [pageKey]: !(prev?.[pageKey] !== false) }))
   }
+  const pageControlDirty = JSON.stringify({ ...PAGE_TOGGLE_DEFAULTS, ...(pageControlDraft || {}) }) !== JSON.stringify({ ...PAGE_TOGGLE_DEFAULTS, ...(enabledPages || {}) })
 
   const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
     .filter(tab => canShowTab(tab) && canReadArea(tab))
@@ -886,7 +903,7 @@ function App() {
   }
 
   useEffect(() => {
-    const handleViewportResize = () => setIsMobileTabletView(window.innerWidth <= 1180)
+    const handleViewportResize = () => setIsMobileTabletView(window.innerWidth <= 1024)
     window.addEventListener('resize', handleViewportResize)
     return () => {
       window.removeEventListener('resize', handleViewportResize)
@@ -944,9 +961,12 @@ function App() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(pageControlStorageKey) || '{}')
-      setEnabledPages({ ...PAGE_TOGGLE_DEFAULTS, ...(saved || {}) })
+      const merged = { ...PAGE_TOGGLE_DEFAULTS, ...(saved || {}) }
+      setEnabledPages(merged)
+      setPageControlDraft(merged)
     } catch {
       setEnabledPages(PAGE_TOGGLE_DEFAULTS)
+      setPageControlDraft(PAGE_TOGGLE_DEFAULTS)
     }
   }, [pageControlStorageKey])
 
@@ -963,6 +983,10 @@ function App() {
       return JSON.stringify(prev) === JSON.stringify(merged) ? prev : merged
     })
   }, [integrationConfigsLoaded, integrationConfigs, scopedUserId])
+
+  useEffect(() => {
+    setPageControlDraft({ ...PAGE_TOGGLE_DEFAULTS, ...(enabledPages || {}) })
+  }, [enabledPages])
 
   useEffect(() => {
     if (!integrationConfigsLoaded) return
@@ -1251,6 +1275,50 @@ function App() {
         table: 'app_global_settings',
         filter: `key=eq.${TUTORIAL_COURSES_SETTINGS_KEY}`
       }, loadTutorialCourses)
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadGlobalBroadcastMessage = async () => {
+      setGlobalBroadcastLoading(true)
+      const { data, error } = await supabase
+        .from('app_global_settings')
+        .select('value, updated_at')
+        .eq('key', USER_BROADCAST_SETTINGS_KEY)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      if (error) {
+        console.warn('Gagal memuat broadcast global:', error.message)
+        setGlobalBroadcastLoading(false)
+        return
+      }
+
+      const value = data?.value && typeof data.value === 'object' ? data.value : {}
+      setGlobalBroadcastMessage(String(value.message || ''))
+      setGlobalBroadcastEnabled(Boolean(value.enabled && String(value.message || '').trim()))
+      setGlobalBroadcastUpdatedAt(data?.updated_at || value.updatedAt || '')
+      setGlobalBroadcastLoading(false)
+    }
+
+    loadGlobalBroadcastMessage()
+
+    const channel = supabase
+      .channel('app_global_settings_broadcast_message')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'app_global_settings',
+        filter: `key=eq.${USER_BROADCAST_SETTINGS_KEY}`
+      }, loadGlobalBroadcastMessage)
       .subscribe()
 
     return () => {
@@ -1587,32 +1655,52 @@ function App() {
     }
   }
 
+  const resolveLatestDmgAssetUrl = async () => {
+    const response = await fetch('https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest', {
+      headers: {
+        Accept: 'application/vnd.github+json'
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error('DMG terbaru belum bisa diambil saat ini.')
+    }
+
+    const release = await response.json()
+    const dmgAsset = release.assets?.find(asset => asset?.name && asset.name.toLowerCase().endsWith('.dmg'))
+
+    if (!dmgAsset?.browser_download_url) {
+      throw new Error('DMG terbaru belum tersedia pada rilis terbaru.')
+    }
+
+    return dmgAsset.browser_download_url
+  }
+
   const handleDownloadDmg = async () => {
     const ipcRenderer = getElectronIpcRenderer()
-    let downloadUrl = 'https://github.com/dinurpradipta12/DyaTask/releases/latest'
-
     try {
-      const response = await fetch('https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest')
-      if (response.ok) {
-        const release = await response.json()
-        const dmgAsset = release.assets?.find(asset => asset.name && asset.name.endsWith('.dmg'))
-        if (dmgAsset && dmgAsset.browser_download_url) {
-          downloadUrl = dmgAsset.browser_download_url
-        }
-      }
-    } catch (err) {
-      console.warn('Gagal memuat info rilis DMG dari GitHub API, fallback ke halaman rilis:', err)
-    }
+      const downloadUrl = await resolveLatestDmgAssetUrl()
 
-    if (ipcRenderer?.invoke) {
-      try {
-        await ipcRenderer.invoke('open-latest-dmg-release', downloadUrl)
+      if (ipcRenderer?.invoke) {
+        const result = await ipcRenderer.invoke('open-latest-dmg-release', downloadUrl)
+        if (!result?.ok) {
+          throw new Error(result?.error || 'DMG terbaru belum tersedia.')
+        }
         return
-      } catch {
-        // Fall back to browser link below.
       }
+
+      const anchor = document.createElement('a')
+      anchor.href = downloadUrl
+      anchor.rel = 'noopener noreferrer'
+      anchor.style.display = 'none'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    } catch (error) {
+      const message = error?.message || 'DMG terbaru belum tersedia untuk diunduh.'
+      setManualUpdateStatus(message)
+      alert(message)
     }
-    openExternalUrl(downloadUrl)
   }
 
   const handleCheckManualUpdate = async () => {
@@ -1702,7 +1790,6 @@ function App() {
 
   const normalizedPublicShareBaseUrl = publicShareBaseUrl.trim().replace(/\/+$/, '')
   const currentAppBaseUrl = `${window.location.origin}${window.location.pathname}`.replace(/\/+$/, '')
-  const latestDmgReleaseUrl = 'https://github.com/dinurpradipta12/DyaTask/releases/latest'
   const isElectronApp = !!getElectronIpcRenderer()
   const isMacOsDevice = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`)
   const mobilePwaGuideDetectedPlatform = useMemo(() => {
@@ -3859,6 +3946,30 @@ function App() {
     const stored = localStorage.getItem(userFeedbackSubmittedStorageKey)
     setHasSubmittedUserFeedback(stored === 'true')
   }, [userFeedbackSubmittedStorageKey])
+
+  useEffect(() => {
+    const stored = Number(localStorage.getItem(userFeedbackBroadcastSnoozeStorageKey) || 0)
+    setUserFeedbackBroadcastSnoozeUntil(Number.isFinite(stored) ? stored : 0)
+  }, [userFeedbackBroadcastSnoozeStorageKey])
+
+  useEffect(() => {
+    if (!userFeedbackBroadcastSnoozeUntil || hasSubmittedUserFeedback) {
+      setUserFeedbackBroadcastNow(Date.now())
+      return
+    }
+
+    const remainingMs = Math.max(0, Number(userFeedbackBroadcastSnoozeUntil) - Date.now())
+    if (!remainingMs) {
+      setUserFeedbackBroadcastNow(Date.now())
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setUserFeedbackBroadcastNow(Date.now())
+    }, remainingMs + 50)
+
+    return () => window.clearTimeout(timer)
+  }, [userFeedbackBroadcastSnoozeUntil, hasSubmittedUserFeedback])
 
   // Monitor Supabase Connection Status & Real-time Sync Events
   useEffect(() => {
@@ -8996,6 +9107,62 @@ function App() {
     setDeveloperFeedbackLoading(false)
   }
 
+  const saveGlobalBroadcastMessage = async ({ enabled, message }) => {
+    if (!isAppDeveloper) return
+
+    const nextMessage = String(message || '').trim()
+    setGlobalBroadcastSaving(true)
+    try {
+      const { error } = await supabase
+        .from('app_global_settings')
+        .upsert({
+          key: USER_BROADCAST_SETTINGS_KEY,
+          value: {
+            enabled: Boolean(enabled && nextMessage),
+            message: nextMessage,
+            updatedAt: new Date().toISOString()
+          },
+          updated_by: actorUserId || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      setGlobalBroadcastEnabled(Boolean(enabled && nextMessage))
+      setGlobalBroadcastMessage(nextMessage)
+      setGlobalBroadcastUpdatedAt(new Date().toISOString())
+      showWorkspaceInviteNotice({
+        tone: 'success',
+        title: enabled ? 'Broadcast Aktif' : 'Broadcast Dimatikan',
+        message: enabled
+          ? 'Pesan broadcast sudah dikirim realtime ke semua user.'
+          : 'Banner broadcast sudah disembunyikan dari semua user.'
+      })
+    } catch (error) {
+      showWorkspaceInviteNotice({
+        tone: 'error',
+        title: 'Gagal Menyimpan Broadcast',
+        message: error.message || 'Broadcast belum bisa disimpan.'
+      })
+    } finally {
+      setGlobalBroadcastSaving(false)
+    }
+  }
+
+  const handleEnableGlobalBroadcast = async () => {
+    await saveGlobalBroadcastMessage({
+      enabled: true,
+      message: globalBroadcastMessage
+    })
+  }
+
+  const handleDisableGlobalBroadcast = async () => {
+    await saveGlobalBroadcastMessage({
+      enabled: false,
+      message: globalBroadcastMessage
+    })
+  }
+
   const openUserFeedbackModal = () => {
     setUserFeedbackSubmitError('')
     setUserFeedbackSubmitSuccess('')
@@ -9005,6 +9172,12 @@ function App() {
 
   const closeUserFeedbackModal = () => {
     if (userFeedbackSubmitting) return
+    if (!hasSubmittedUserFeedback) {
+      const nextSnoozeUntil = Date.now() + (30 * 60 * 1000)
+      setUserFeedbackBroadcastSnoozeUntil(nextSnoozeUntil)
+      setUserFeedbackBroadcastNow(Date.now())
+      localStorage.setItem(userFeedbackBroadcastSnoozeStorageKey, String(nextSnoozeUntil))
+    }
     setShowUserFeedbackModal(false)
     setUserFeedbackSubmitError('')
     setUserFeedbackSubmitSuccess('')
@@ -9062,6 +9235,9 @@ function App() {
     setUserFeedbackSubmitting(false)
     setHasSubmittedUserFeedback(true)
     localStorage.setItem(userFeedbackSubmittedStorageKey, 'true')
+    setUserFeedbackBroadcastSnoozeUntil(0)
+    setUserFeedbackBroadcastNow(Date.now())
+    localStorage.removeItem(userFeedbackBroadcastSnoozeStorageKey)
     setTimeout(() => {
       setShowUserFeedbackModal(false)
       setUserFeedbackSubmitSuccess('')
@@ -9765,6 +9941,38 @@ function App() {
 
   return (
     <div className={`app-wrapper ${theme === 'dark' ? 'dark' : ''} ${!isReady ? 'no-transition' : ''}`}>
+      {shouldShowFeedbackBroadcast && (
+        <div
+          className="fixed left-1/2 top-4 z-[115] w-[min(720px,calc(100vw-2rem))] -translate-x-1/2"
+          style={{ top: 'max(16px, calc(env(safe-area-inset-top) + 12px))' }}
+        >
+          <div className="rounded-[1.4rem] border border-amber-200 bg-white/95 px-4 py-3 shadow-[0_18px_42px_rgba(52,35,98,0.16)] backdrop-blur-xl">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+                <BellRing size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500">Broadcast Message</p>
+                <p className="mt-1 text-sm font-semibold leading-6 text-[#4f4574]">{globalBroadcastMessage}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserFeedbackSubmitError('')
+                      setUserFeedbackSubmitSuccess('')
+                      setUserFeedbackBroadcastNow(Date.now())
+                      openUserFeedbackModal()
+                    }}
+                    className="inline-flex items-center rounded-xl bg-[#8f75d8] px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-purple-500/15 transition-all hover:bg-[#8069c8]"
+                  >
+                    Saya mengerti
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* 🖥️ Layout Grid */}
       <div className={`layout-grid ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -14452,6 +14660,62 @@ function App() {
                 </div>
               </section>
 
+              <section className="glass-panel p-5 md:p-6 space-y-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">Broadcast ke semua user</p>
+                    <h4 className="text-xl font-extrabold text-[#4f4574]">Banner notifikasi global</h4>
+                    <p className="mt-1 text-xs text-purple-400">Pesan akan muncul di atas tengah layar semua user selama broadcast aktif.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${globalBroadcastEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {globalBroadcastEnabled ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                    {globalBroadcastUpdatedAt && (
+                      <span className="rounded-full bg-purple-50 px-3 py-1.5 text-[11px] font-bold text-purple-500">
+                        {formatLongDateTime(globalBroadcastUpdatedAt)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-purple-100 bg-[#fbfaff] p-4 md:p-5">
+                  <label className="block">
+                    <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Isi broadcast</span>
+                    <textarea
+                      value={globalBroadcastMessage}
+                      onChange={(e) => setGlobalBroadcastMessage(e.target.value)}
+                      placeholder="Contoh: Maintenance singkat pukul 19:00 WITA. Mohon simpan pekerjaan Anda terlebih dahulu."
+                      rows={4}
+                      className="w-full rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-[#4f4574] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
+                    />
+                  </label>
+                  <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[11px] text-purple-400">
+                      Klik <span className="font-bold text-purple-600">Aktifkan Broadcast</span> untuk menampilkan banner ke semua user. Klik <span className="font-bold text-purple-600">Matikan Broadcast</span> untuk menghilangkannya realtime.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDisableGlobalBroadcast}
+                        disabled={globalBroadcastSaving || (!globalBroadcastEnabled && !globalBroadcastMessage.trim())}
+                        className="rounded-xl border border-purple-100 bg-white px-4 py-2.5 text-xs font-bold text-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {globalBroadcastSaving && !globalBroadcastEnabled ? 'Menyimpan...' : 'Matikan Broadcast'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleEnableGlobalBroadcast}
+                        disabled={globalBroadcastSaving || !globalBroadcastMessage.trim()}
+                        className="rounded-xl bg-[#8f75d8] px-4 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {globalBroadcastSaving && globalBroadcastMessage.trim() ? 'Menyimpan...' : 'Aktifkan Broadcast'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
               <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="glass-panel p-5">
                   <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Total Feedback</p>
@@ -14550,7 +14814,7 @@ function App() {
             <div className="mobile-page space-y-6">
               <div className="glass-panel p-6">
                 <h3 className="text-xl font-extrabold text-[#4f4574]">Kontrol Halaman Workspace</h3>
-                <p className="text-sm text-purple-400 mt-1">Pilih halaman yang ingin dipakai. Yang nonaktif otomatis hilang dari sidebar.</p>
+                <p className="text-sm text-purple-400 mt-1">Pilih halaman yang ingin dipakai. Perubahan baru diterapkan ke sidebar setelah Anda menekan Simpan.</p>
               </div>
 
               <div className="glass-panel p-6">
@@ -14578,15 +14842,38 @@ function App() {
                       type="button"
                       onClick={() => togglePageEnabled(key)}
                       className={`rounded-xl border px-3 py-3 text-left transition-all ${
-                        isPageEnabled(key)
+                        isDraftPageEnabled(key)
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                           : 'border-purple-100 bg-white text-purple-400'
                       }`}
                     >
                       <p className="text-sm font-bold">{label}</p>
-                      <p className="text-[11px] mt-1">{isPageEnabled(key) ? 'Aktif' : 'Nonaktif'}</p>
+                      <p className="text-[11px] mt-1">{isDraftPageEnabled(key) ? 'Aktif' : 'Nonaktif'}</p>
                     </button>
                   ))}
+                </div>
+                <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className={`text-[11px] font-semibold ${pageControlDirty ? 'text-amber-500' : 'text-purple-400'}`}>
+                    {pageControlDirty ? 'Ada perubahan yang belum disimpan.' : 'Sidebar memakai pengaturan terakhir yang sudah disimpan.'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPageControlDraft({ ...PAGE_TOGGLE_DEFAULTS, ...(enabledPages || {}) })}
+                      disabled={!pageControlDirty}
+                      className="rounded-xl border border-purple-100 bg-white px-4 py-2.5 text-xs font-bold text-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEnabledPages({ ...PAGE_TOGGLE_DEFAULTS, ...(pageControlDraft || {}) })}
+                      disabled={!pageControlDirty}
+                      className="rounded-xl bg-[#8f75d8] px-4 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Simpan
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -15166,26 +15453,19 @@ function App() {
               <User size={18} />
               <span>Profil</span>
             </button>
-            {isMobileTabletView ? (
-              <button
-                type="button"
-                className="mobile-more-item"
-                  onClick={() => {
-                    setShowMobileMoreMenu(false)
-                    setMobilePwaGuidePlatform(mobilePwaGuideDetectedPlatform)
-                    setMobilePwaGuideForceOpen(true)
-                    setMobilePwaGuideOpen(true)
-                  }}
-                >
-                <Smartphone size={18} />
-                <span>Tutorial Install App</span>
-              </button>
-            ) : (
-              <button type="button" className="mobile-more-item" onClick={() => { toggleTheme(); setShowMobileMoreMenu(false) }}>
-                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-                <span>{theme === 'dark' ? 'Tema Terang' : 'Tema Gelap'}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              className="mobile-more-item"
+              onClick={() => {
+                setShowMobileMoreMenu(false)
+                setMobilePwaGuidePlatform(mobilePwaGuideDetectedPlatform)
+                setMobilePwaGuideForceOpen(true)
+                setMobilePwaGuideOpen(true)
+              }}
+            >
+              <Smartphone size={18} />
+              <span>Tutorial Install App</span>
+            </button>
             {!isAssistantWorkspace && (
               <button type="button" className="mobile-more-item danger" onClick={() => { handleSignOut(); setShowMobileMoreMenu(false) }}>
                 <ExternalLink size={18} />
@@ -16198,10 +16478,10 @@ function App() {
                   </span>
                   <div>
                     <h4 className="text-sm font-extrabold text-[#4f4574] dark:text-white">Download DMG macOS</h4>
-                    <p className="text-[11px] text-purple-400 dark:text-purple-300">Rilis terbaru dari GitHub.</p>
+                    <p className="text-[11px] text-purple-400 dark:text-purple-300">Unduh file DMG terbaru secara langsung.</p>
                   </div>
                 </div>
-                <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-300">Untuk Macbook/iMac. Setelah rilis DMG baru dipublish, link ini selalu mengarah ke versi terbaru.</p>
+                <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-300">Untuk Macbook/iMac. Saat DMG terbaru sudah dipublish ke GitHub Release, tombol ini akan langsung mengunduh file terbarunya.</p>
               </button>
             </div>
 
