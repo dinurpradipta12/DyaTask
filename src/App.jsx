@@ -53,6 +53,7 @@ import {
   Users,
   UserPlus,
   MessageSquare,
+  SendHorizontal,
   CalendarClock,
   BadgeDollarSign,
   Palette,
@@ -358,6 +359,8 @@ function App() {
   const [showAuthPassword, setShowAuthPassword] = useState(false)
 
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [mobileWorkspaceChatPreviousTab, setMobileWorkspaceChatPreviousTab] = useState('dashboard')
+  const [mobileWorkspaceChatView, setMobileWorkspaceChatView] = useState('list')
   const [isSidebarHovered, setIsSidebarHovered] = useState(false)
   const [isReady, setIsReady] = useState(false)
   const [enabledPages, setEnabledPages] = useState(PAGE_TOGGLE_DEFAULTS)
@@ -729,6 +732,11 @@ function App() {
   const tutorialProgressLoadedRef = useRef(false)
   const seenAssistantNoteIdsRef = useRef(new Set())
   const workspaceChatSeenSignatureRef = useRef('')
+  const workspaceChatInactiveNoticeSignatureRef = useRef('')
+  const workspaceChatTypingHeartbeatRef = useRef(null)
+  const workspaceChatTypingIdleTimerRef = useRef(null)
+  const workspaceChatTypingStateRef = useRef(false)
+  const workspaceChatFeedRef = useRef(null)
   const invoicePreviewRef = useRef(null)
 
   // macOS system configurations
@@ -746,6 +754,13 @@ function App() {
   const [integrationFormData, setIntegrationFormData] = useState({})
 
   const activeNotifications = notifications.filter(item => !item.confirmed)
+  const isMobileWorkspaceChatView = isMobileTabletView && activeTab === 'workspaceChat'
+  const isWorkspaceChatOpen = workspaceChatModalOpen || isMobileWorkspaceChatView
+  const isWorkspaceChatThreadVisible = workspaceChatModalOpen || (
+    isMobileTabletView
+    && activeTab === 'workspaceChat'
+    && ((workspaceContext?.role || 'owner') !== 'owner' || mobileWorkspaceChatView === 'detail')
+  )
   const [testingGoogleConnection, setTestingGoogleConnection] = useState(false)
   const [googleConnectionStatus, setGoogleConnectionStatus] = useState(null)
   const [calendarActionItem, setCalendarActionItem] = useState(null)
@@ -812,7 +827,8 @@ function App() {
       notes: 'notes',
       integrations: 'integrations',
       settings: 'settings',
-      tutorial: null
+      tutorial: null,
+      workspaceChat: null
     }
     const pageKey = tabToPage[tabKey]
     return !pageKey || isPageEnabled(pageKey)
@@ -865,6 +881,12 @@ function App() {
       setMobileCrmDetailOpen(false)
     }
   }, [isMobileTabletView, activeTab])
+
+  useEffect(() => {
+    if (!isMobileTabletView && activeTab === 'workspaceChat') {
+      setActiveTab(mobileWorkspaceChatPreviousTab || 'dashboard')
+    }
+  }, [isMobileTabletView, activeTab, mobileWorkspaceChatPreviousTab])
 
   useEffect(() => {
     if (editingOrderId) return
@@ -992,7 +1014,11 @@ function App() {
   }, [invoiceGeneratorDefaultsStorageKey])
 
   useEffect(() => {
-    if (workspaceRole !== 'owner' && !['pageControl', 'tutorial', 'userMonitoring'].includes(activeTab) && !canReadArea(activeTab)) {
+    if (
+      workspaceRole !== 'owner'
+      && !['pageControl', 'tutorial', 'userMonitoring', 'workspaceChat'].includes(activeTab)
+      && !canReadArea(activeTab)
+    ) {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
     }
   }, [activeTab, workspaceRole, workspacePermissions, visiblePrimaryTabs])
@@ -1015,6 +1041,66 @@ function App() {
       setWorkspaceChatAssistantPanelCollapsed(false)
     }
   }, [workspaceChatModalOpen])
+  const openWorkspaceChatExperience = (event) => {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+    if (isMobileTabletView) {
+      setMobileWorkspaceChatPreviousTab(activeTab === 'workspaceChat' ? (mobileWorkspaceChatPreviousTab || 'dashboard') : activeTab)
+      setMobileWorkspaceChatView(workspaceRole === 'owner' ? 'list' : 'detail')
+      setWorkspaceChatModalOpen(false)
+      setActiveTab('workspaceChat')
+      setShowMobileMoreMenu(false)
+      setNotificationBannerVisible(false)
+      setShowNotificationList(false)
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => setActiveTab('workspaceChat'))
+      }
+      return
+    }
+    setWorkspaceChatModalOpen(true)
+  }
+
+  const handleWorkspaceChatTriggerClick = (event) => {
+    if (isMobileTabletView) {
+      if (isWorkspaceChatOpen) {
+        event?.preventDefault?.()
+        event?.stopPropagation?.()
+        closeWorkspaceChatExperience()
+        return
+      }
+      return
+    }
+    if (workspaceChatModalOpen) {
+      event?.preventDefault?.()
+      event?.stopPropagation?.()
+      closeWorkspaceChatExperience()
+      return
+    }
+    openWorkspaceChatExperience(event)
+  }
+
+  const handleWorkspaceChatTriggerPointerDown = (event) => {
+    if (!isMobileTabletView) return
+    if (isWorkspaceChatOpen) {
+      event?.preventDefault?.()
+      event?.stopPropagation?.()
+      closeWorkspaceChatExperience()
+      return
+    }
+    openWorkspaceChatExperience(event)
+  }
+
+  const closeWorkspaceChatExperience = () => {
+    if (isMobileTabletView) {
+      if (workspaceRole === 'owner' && mobileWorkspaceChatView === 'detail') {
+        setMobileWorkspaceChatView('list')
+        return
+      }
+      setActiveTab(mobileWorkspaceChatPreviousTab || 'dashboard')
+      return
+    }
+    setWorkspaceChatModalOpen(false)
+  }
   const isPublicBookingMode = !!publicBookingToken
   const isPublicTrackingMode = !!publicTrackingToken
 
@@ -2172,8 +2258,15 @@ function App() {
   const workspaceChatPeerStatusLabel = workspaceChatPeerStatusOption.label
   const workspaceChatPeerStatusTone = workspaceChatPeerStatusOption.tone
   const workspaceChatStatusSectionLabel = 'Status Saya'
+  const rawWorkspaceChatLogs = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat')
   const workspaceChatLastSeenLog = workspaceChatPeerUserId
-    ? activityLogs.find(item => item?.metadata?.kind === 'workspace_chat_seen' && item?.metadata?.targetUserId === workspaceChatPeerUserId)
+    ? activityLogs.find(item => (
+      item?.metadata?.kind === 'workspace_chat_seen'
+      && (
+        item?.metadata?.targetUserId === workspaceChatPeerUserId
+        || item?.metadata?.senderUserId === workspaceChatPeerUserId
+      )
+    ))
     : null
   const workspaceChatLastOpenedLabel = workspaceChatLastSeenLog
     ? formatLongDateTime(workspaceChatLastSeenLog.createdAt)
@@ -2190,35 +2283,164 @@ function App() {
       : 'active'
     return workspaceChatStatusOptions.find(option => option.value === rawStatus) || workspaceChatStatusOptions[0]
   }
+  const getWorkspaceThreadSeenAt = (member) => {
+    if (!actorUserId || !member) return 0
+    return activityLogs.reduce((latest, item) => {
+      if (item?.metadata?.kind !== 'workspace_chat_seen') return latest
+      if (item?.metadata?.senderUserId !== actorUserId) return latest
+      const seenChatMemberId = item?.metadata?.chatMemberId || ''
+      const seenChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      const matchesMember = (
+        (seenChatMemberId && seenChatMemberId === member.id)
+        || (seenChatMemberUserId && seenChatMemberUserId === member.memberUserId)
+        || (!seenChatMemberId && !seenChatMemberUserId && member.id === workspaceAssistantChatMembers[0]?.id)
+      )
+      if (!matchesMember) return latest
+      const seenAt = new Date(item.createdAt).getTime()
+      return seenAt > latest ? seenAt : latest
+    }, 0)
+  }
+  const getWorkspacePeerThreadSeenAt = (member = activeWorkspaceChatMember) => {
+    if (!workspaceChatPeerUserId || !member) return 0
+    return activityLogs.reduce((latest, item) => {
+      if (item?.metadata?.kind !== 'workspace_chat_seen') return latest
+      if (item?.metadata?.senderUserId !== workspaceChatPeerUserId) return latest
+      const seenChatMemberId = item?.metadata?.chatMemberId || ''
+      const seenChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      const matchesMember = (
+        (seenChatMemberId && seenChatMemberId === member.id)
+        || (seenChatMemberUserId && seenChatMemberUserId === member.memberUserId)
+        || (!seenChatMemberId && !seenChatMemberUserId && member.id === workspaceAssistantChatMembers[0]?.id)
+      )
+      if (!matchesMember) return latest
+      const seenAt = new Date(item.createdAt).getTime()
+      return seenAt > latest ? seenAt : latest
+    }, 0)
+  }
+  const workspaceChatMemberSummaries = workspaceAssistantChatMembers.map(member => {
+    const memberName = resolveWorkspaceMemberName(member)
+    const memberPresence = getWorkspaceChatPresenceOption(member.memberUserId)
+    const matchedMemberMessages = rawWorkspaceChatLogs.filter(item => matchesWorkspaceChatMember(item, member))
+    const memberMessages = (matchedMemberMessages.length
+      ? matchedMemberMessages
+      : rawWorkspaceChatLogs.filter(item => {
+          const senderUserId = item?.metadata?.senderUserId || ''
+          return senderUserId === member.memberUserId || senderUserId === workspaceContext?.ownerUserId
+        }))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    const lastMessage = memberMessages[0] || null
+    const threadSeenAt = getWorkspaceThreadSeenAt(member)
+    const unreadCount = memberMessages.filter(item => (
+      item?.metadata?.senderUserId
+      && item.metadata.senderUserId !== actorUserId
+      && new Date(item.createdAt).getTime() > threadSeenAt
+    )).length
+    return {
+      member,
+      memberName,
+      memberPresence,
+      lastMessage,
+      unreadCount
+    }
+  }).sort((a, b) => {
+    const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0
+    const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0
+    return bTime - aTime
+  })
   const getWorkspaceMessageSenderName = (item) => {
     const senderUserId = item?.metadata?.senderUserId || ''
-    const metadataName = item?.metadata?.senderName || ''
+    const metadataName = String(item?.metadata?.senderName || '').trim()
+    const metadataNameLower = metadataName.toLowerCase()
     const senderRole = item?.metadata?.senderRole || ''
+    const messageChatMemberUserId = item?.metadata?.chatMemberUserId || ''
     if (senderUserId === actorUserId) return headerUserName
     if (senderUserId === workspaceContext?.ownerUserId) return workspaceOwnerDisplayName
-    const senderMember = workspaceMembers.find(member => member.memberUserId === senderUserId)
-    if (senderMember) return resolveWorkspaceMemberName(senderMember)
-    if (metadataName && metadataName.toLowerCase() !== 'user') {
-      return formatDisplayName(metadataName, 'User')
-    }
     if (senderRole === 'owner') return workspaceRole === 'owner' ? headerUserName : workspaceOwnerDisplayName
     if (senderRole === 'assistant') return workspaceRole === 'assistant' ? headerUserName : activeWorkspaceChatMemberName
+    if (workspaceRole === 'assistant' && messageChatMemberUserId && messageChatMemberUserId === actorUserId) {
+      return headerUserName
+    }
+    if (metadataNameLower === 'owner') {
+      return workspaceRole === 'owner' ? headerUserName : workspaceOwnerDisplayName
+    }
+    if (metadataNameLower === 'assistant') {
+      return workspaceRole === 'assistant' ? headerUserName : activeWorkspaceChatMemberName
+    }
+    if (metadataNameLower === 'system' || metadataNameLower === 'sistem') {
+      return 'Sistem'
+    }
+    const senderMember = workspaceMembers.find(member => member.memberUserId === senderUserId)
+    if (senderMember) return resolveWorkspaceMemberName(senderMember)
+    if (metadataName && !['user', 'owner', 'assistant', 'system', 'sistem'].includes(metadataNameLower)) {
+      return formatDisplayName(metadataName, 'User')
+    }
     const chatMember = workspaceMembers.find(member => member.id === item?.metadata?.chatMemberId)
     if (chatMember) return resolveWorkspaceMemberName(chatMember)
     return formatDisplayName(item?.metadata?.senderEmail || headerUserName || activeWorkspaceChatMemberName, 'Pengguna')
   }
-  const workspaceChatMessages = activityLogs
-    .filter(item => {
-      if (item?.metadata?.kind !== 'workspace_chat') return false
-      if (!activeWorkspaceChatMemberId) return true
-      const messageChatMemberId = item?.metadata?.chatMemberId || ''
-      const messageChatMemberUserId = item?.metadata?.chatMemberUserId || ''
-      return (
-        messageChatMemberId === activeWorkspaceChatMemberId
-        || (messageChatMemberUserId && messageChatMemberUserId === activeWorkspaceChatMember?.memberUserId)
-        || (!messageChatMemberId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
-      )
-    })
+  function matchesWorkspaceChatMember (item, member = activeWorkspaceChatMember) {
+    if (item?.metadata?.kind !== 'workspace_chat') return false
+    if (!member) return true
+
+    const messageChatMemberId = item?.metadata?.chatMemberId || ''
+    const messageChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+    const senderUserId = item?.metadata?.senderUserId || ''
+    const senderRole = item?.metadata?.senderRole || ''
+
+    if (messageChatMemberId && messageChatMemberId === member.id) return true
+    if (messageChatMemberUserId && messageChatMemberUserId === member.memberUserId) return true
+
+    if (isAssistantWorkspace) {
+      if (senderUserId && [actorUserId, workspaceContext?.ownerUserId].includes(senderUserId)) return true
+      if (!messageChatMemberId && !messageChatMemberUserId && ['owner', 'assistant'].includes(senderRole)) return true
+    }
+
+    return !messageChatMemberId && member.id === workspaceAssistantChatMembers[0]?.id
+  }
+  function isWorkspaceChatMine (item) {
+    const senderUserId = item?.metadata?.senderUserId || ''
+    const senderName = String(item?.metadata?.senderName || '').trim().toLowerCase()
+    const senderRole = item?.metadata?.senderRole || ''
+    const messageChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+    const normalizedHeaderUserName = String(headerUserName || '').trim().toLowerCase()
+    const normalizedOwnerName = String(workspaceOwnerDisplayName || '').trim().toLowerCase()
+    const normalizedAssistantName = String(activeWorkspaceChatMemberName || '').trim().toLowerCase()
+    if (workspaceRole === 'assistant') {
+      if (
+        messageChatMemberUserId
+        && messageChatMemberUserId === actorUserId
+        && senderRole !== 'owner'
+        && senderName !== normalizedOwnerName
+      ) return true
+      if (senderRole === 'assistant') return true
+      if (senderName && ['assistant', normalizedHeaderUserName, normalizedAssistantName].includes(senderName)) return true
+      if (senderUserId && senderUserId === workspaceContext?.ownerUserId) return false
+      if (senderName && normalizedOwnerName && senderName === normalizedOwnerName) return false
+    }
+    if (workspaceRole === 'owner') {
+      if (senderRole === 'owner') return true
+      if (senderName && ['owner', normalizedHeaderUserName].includes(senderName)) return true
+    }
+    if (senderUserId) return senderUserId === actorUserId
+    if (workspaceRole === 'owner') return senderRole === 'owner'
+    if (workspaceRole === 'assistant') return senderRole === 'assistant'
+    return false
+  }
+  const matchedWorkspaceChatMessages = rawWorkspaceChatLogs.filter(item => (
+    !activeWorkspaceChatMemberId ? true : matchesWorkspaceChatMember(item)
+  ))
+  const workspaceChatMessages = (matchedWorkspaceChatMessages.length
+    ? matchedWorkspaceChatMessages
+    : rawWorkspaceChatLogs.filter(item => {
+        const senderUserId = item?.metadata?.senderUserId || ''
+        if (isAssistantWorkspace) {
+          return senderUserId === actorUserId || senderUserId === workspaceContext?.ownerUserId || !senderUserId
+        }
+        if (activeWorkspaceChatMember?.memberUserId) {
+          return senderUserId === activeWorkspaceChatMember.memberUserId || senderUserId === workspaceContext?.ownerUserId || !senderUserId
+        }
+        return true
+      }))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     .slice(-300)
   const workspaceChatAcknowledgements = activityLogs
@@ -2234,6 +2456,32 @@ function App() {
       )
     })
   const workspaceChatAcknowledgedIds = new Set(workspaceChatAcknowledgements.map(item => item.metadata.ackForMessageId))
+  const workspaceChatPeerSeenAt = getWorkspacePeerThreadSeenAt()
+  const workspaceChatPeerTypingLog = activityLogs.reduce((latest, item) => {
+    if (item?.metadata?.kind !== 'workspace_chat_typing') return latest
+    if (item?.metadata?.senderUserId !== workspaceChatPeerUserId) return latest
+    const typingChatMemberId = item?.metadata?.chatMemberId || ''
+    const typingChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+    const matchesMember = (
+      (typingChatMemberId && typingChatMemberId === activeWorkspaceChatMemberId)
+      || (typingChatMemberUserId && activeWorkspaceChatMember?.memberUserId && typingChatMemberUserId === activeWorkspaceChatMember.memberUserId)
+      || (!typingChatMemberId && !typingChatMemberUserId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+    )
+    if (!matchesMember) return latest
+    const createdAt = new Date(item.createdAt).getTime()
+    return createdAt > latest.createdAt ? { createdAt, item } : latest
+  }, { createdAt: 0, item: null }).item
+  const workspaceChatPeerIsTyping = Boolean(
+    workspaceChatPeerTypingLog?.metadata?.typing
+    && (Date.now() - new Date(workspaceChatPeerTypingLog.createdAt).getTime()) < 6000
+  )
+  const workspaceChatPeerTypingLabel = workspaceRole === 'assistant'
+    ? `${workspaceOwnerDisplayName} sedang mengetik...`
+    : `${activeWorkspaceChatMemberName} sedang mengetik...`
+  const workspaceChatLatestMessage = workspaceChatMessages[workspaceChatMessages.length - 1] || null
+  const workspaceChatLatestMessageMarker = workspaceChatLatestMessage
+    ? `${workspaceChatLatestMessage.id}:${workspaceChatLatestMessage.createdAt}`
+    : 'no-message'
   const workspaceChatItemsWithDateSeparator = workspaceChatMessages.reduce((acc, item) => {
     const messageDate = new Date(item.createdAt)
     const dateKey = `${messageDate.getFullYear()}-${String(messageDate.getMonth() + 1).padStart(2, '0')}-${String(messageDate.getDate()).padStart(2, '0')}`
@@ -2402,6 +2650,12 @@ function App() {
   ].sort((a, b) => a.sortDate.localeCompare(b.sortDate))
   const overdueTasks = tasks.filter(task => task.status !== 'done' && (task.calendarDate || todayString) < todayString)
   const completedTodayTasks = todayTasks.filter(task => task.status === 'done')
+  const mobileWorkspaceChatBottomStats = [
+    { label: 'Task Hari Ini', value: todayTasks.length },
+    { label: 'Selesai', value: completedTodayTasks.length },
+    { label: 'Urgent', value: overdueTasks.length },
+    { label: 'Event', value: todayLocalAppointments.length + todayGoogleEvents.length }
+  ]
   const upcomingCalendarItems = [
     ...appointments.map(appt => ({ ...appt, source: 'appointment', sortDate: `${appt.date} ${appt.time || '23:59'}` })),
     ...googleCalendarEvents.map(event => ({ ...event, source: 'google_event', sortDate: `${event.date} ${event.time || '23:59'}` })),
@@ -3719,7 +3973,7 @@ function App() {
         .select('*')
         .eq('user_id', scopedUserId)
         .order('created_at', { ascending: false })
-        .limit(80)
+        .limit(300)
 
       if (cancelled) return
       if (error) {
@@ -3732,12 +3986,13 @@ function App() {
     }
 
     loadActivityLogs()
-    const interval = setInterval(loadActivityLogs, 15000)
+    const interval = setInterval(loadActivityLogs, 3000)
 
     const activityChannel = supabase
       .channel(`activity_logs_realtime_${scopedUserId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs', filter: `user_id=eq.${scopedUserId}` }, (payload) => {
         const incoming = payload?.new || null
+        const previous = payload?.old || null
         if (
           payload?.eventType === 'INSERT'
           && incoming?.metadata?.kind === 'workspace_chat'
@@ -3759,6 +4014,30 @@ function App() {
             }
           )
         }
+        setActivityLogs(prev => {
+          const mapRow = (row) => ({
+            id: row.id,
+            type: row.event_type || 'Log',
+            title: row.title,
+            detail: row.detail || '',
+            tone: row.tone || 'purple',
+            sourceTable: row.source_table || '',
+            sourceId: row.source_id || '',
+            metadata: row.metadata || {},
+            createdAt: row.created_at
+          })
+          if (payload?.eventType === 'INSERT' && incoming?.id) {
+            const next = [mapRow(incoming), ...prev.filter(item => item.id !== incoming.id)]
+            return next.slice(0, 300)
+          }
+          if (payload?.eventType === 'UPDATE' && incoming?.id) {
+            return prev.map(item => item.id === incoming.id ? mapRow(incoming) : item)
+          }
+          if (payload?.eventType === 'DELETE' && previous?.id) {
+            return prev.filter(item => item.id !== previous.id)
+          }
+          return prev
+        })
         loadActivityLogs()
       })
       .subscribe()
@@ -4174,7 +4453,7 @@ function App() {
       createdAt
     }
 
-    setActivityLogs(prev => [localLog, ...prev].slice(0, 80))
+    setActivityLogs(prev => [localLog, ...prev].slice(0, 300))
 
     if (!scopedUserId) return
 
@@ -4207,6 +4486,16 @@ function App() {
       return
     }
 
+    if (workspaceChatTypingHeartbeatRef.current) {
+      clearInterval(workspaceChatTypingHeartbeatRef.current)
+      workspaceChatTypingHeartbeatRef.current = null
+    }
+    if (workspaceChatTypingIdleTimerRef.current) {
+      clearTimeout(workspaceChatTypingIdleTimerRef.current)
+      workspaceChatTypingIdleTimerRef.current = null
+    }
+    workspaceChatTypingStateRef.current = false
+
     setWorkspaceChatSending(true)
     await createActivityLog({
       type: 'Workspace Chat',
@@ -4230,6 +4519,32 @@ function App() {
     })
     setWorkspaceChatSending(false)
     setWorkspaceChatMessage('')
+  }
+
+  const publishWorkspaceChatTyping = async (typing) => {
+    if (!actorUserId || !scopedUserId || !isWorkspaceChatThreadVisible) return
+    const chatMemberId = activeWorkspaceChatMemberId || ''
+    const chatMemberUserId = activeWorkspaceChatMember?.memberUserId || actorUserId
+    await createActivityLog({
+      type: 'Workspace Chat',
+      title: typing ? 'Sedang mengetik...' : 'Berhenti mengetik',
+      detail: typing ? `${headerUserName} sedang mengetik.` : `${headerUserName} berhenti mengetik.`,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat_typing',
+        typing,
+        senderRole: workspaceRole,
+        senderUserId: actorUserId,
+        senderName: isAssistantWorkspace ? assistantDisplayName : headerUserName,
+        senderEmail: session?.user?.email || '',
+        workspaceOwnerId: workspaceContext?.ownerUserId || '',
+        chatMemberId,
+        chatMemberUserId,
+        chatMemberLabel: activeWorkspaceChatMemberName
+      }
+    })
   }
 
   const handleSendWorkspaceChatMessage = async (e) => {
@@ -4293,9 +4608,39 @@ function App() {
 
   const sendWorkspaceReminderAck = async (messageId) => {
     if (workspaceRole !== 'owner' || !messageId) return
-    await sendWorkspaceChat('✅ Konfirmasi: pengingat sudah dibaca.', {
-      kind: 'workspace_chat_ack',
-      ackForMessageId: messageId
+    const acknowledgedMessage = workspaceChatMessages.find(item => item.id === messageId)
+    const acknowledgedSummary = String(acknowledgedMessage?.detail || '')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)[0] || 'Pengingat sudah dibaca.'
+    const ownerName = String(headerUserName || 'Owner').trim()
+    const confirmationMessage = `${ownerName} telah mengkonfirmasi ${acknowledgedSummary},\n\nTerimakasih telah mengingatkan`
+
+    await createActivityLog({
+      type: 'Workspace Chat',
+      title: 'Konfirmasi pengingat dibaca',
+      detail: acknowledgedSummary,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat_ack',
+        senderRole: workspaceRole,
+        senderUserId: actorUserId,
+        senderName: headerUserName,
+        senderEmail: session?.user?.email || '',
+        workspaceOwnerId: workspaceContext?.ownerUserId || '',
+        chatMemberId: activeWorkspaceChatMemberId || '',
+        chatMemberUserId: activeWorkspaceChatMember?.memberUserId || '',
+        chatMemberLabel: activeWorkspaceChatMemberName,
+        ackForMessageId: messageId
+      }
+    })
+
+    await sendWorkspaceChat(confirmationMessage, {
+      replyType: 'ack_visible',
+      ackForMessageId: messageId,
+      ackVisible: true
     })
   }
 
@@ -4357,21 +4702,111 @@ function App() {
   }
 
   useEffect(() => {
-    if (!workspaceChatModalOpen) return
+    if (!isWorkspaceChatThreadVisible) return
     setWorkspaceChatLastReadAt(Date.now())
     setWorkspaceChatStatusMenuOpen(false)
-  }, [workspaceChatModalOpen, workspaceChatMessages.length])
+  }, [isWorkspaceChatThreadVisible, workspaceChatMessages.length])
 
   useEffect(() => {
-    if (!workspaceChatModalOpen) {
+    if (!isWorkspaceChatThreadVisible) return
+    const feed = workspaceChatFeedRef.current
+    if (!feed) return
+    const scrollToBottom = () => {
+      feed.scrollTop = feed.scrollHeight
+    }
+    scrollToBottom()
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(scrollToBottom)
+    }
+  }, [isWorkspaceChatThreadVisible, workspaceChatMessages.length])
+
+  useEffect(() => {
+    const clearTypingTimers = () => {
+      if (workspaceChatTypingHeartbeatRef.current) {
+        clearInterval(workspaceChatTypingHeartbeatRef.current)
+        workspaceChatTypingHeartbeatRef.current = null
+      }
+      if (workspaceChatTypingIdleTimerRef.current) {
+        clearTimeout(workspaceChatTypingIdleTimerRef.current)
+        workspaceChatTypingIdleTimerRef.current = null
+      }
+    }
+
+    if (!isWorkspaceChatThreadVisible || !actorUserId || !scopedUserId) {
+      clearTypingTimers()
+      if (workspaceChatTypingStateRef.current) {
+        publishWorkspaceChatTyping(false)
+      }
+      workspaceChatTypingStateRef.current = false
+      return
+    }
+
+    const isTypingNow = workspaceChatMessage.trim().length > 0
+    if (!isTypingNow) {
+      clearTypingTimers()
+      if (workspaceChatTypingStateRef.current) {
+        workspaceChatTypingStateRef.current = false
+        publishWorkspaceChatTyping(false)
+      }
+      return
+    }
+
+    if (!workspaceChatTypingStateRef.current) {
+      workspaceChatTypingStateRef.current = true
+      publishWorkspaceChatTyping(true)
+    }
+
+    if (!workspaceChatTypingHeartbeatRef.current) {
+      workspaceChatTypingHeartbeatRef.current = setInterval(() => {
+        publishWorkspaceChatTyping(true)
+      }, 2500)
+    }
+
+    if (workspaceChatTypingIdleTimerRef.current) {
+      clearTimeout(workspaceChatTypingIdleTimerRef.current)
+    }
+    workspaceChatTypingIdleTimerRef.current = setTimeout(() => {
+      clearTypingTimers()
+      if (workspaceChatTypingStateRef.current) {
+        workspaceChatTypingStateRef.current = false
+        publishWorkspaceChatTyping(false)
+      }
+    }, 3200)
+
+    return clearTypingTimers
+  }, [
+    isWorkspaceChatThreadVisible,
+    workspaceChatMessage,
+    actorUserId,
+    scopedUserId,
+    activeWorkspaceChatMemberId,
+    activeWorkspaceChatMember?.memberUserId,
+    activeWorkspaceChatMemberName,
+    workspaceRole,
+    headerUserName,
+    assistantDisplayName,
+    isAssistantWorkspace,
+    session?.user?.email,
+    workspaceContext?.ownerUserId
+  ])
+
+  useEffect(() => {
+    if (!isWorkspaceChatThreadVisible) {
       workspaceChatSeenSignatureRef.current = ''
+      workspaceChatInactiveNoticeSignatureRef.current = ''
       setWorkspaceChatStatusMenuOpen(false)
       return
     }
 
     if (!actorUserId || !scopedUserId) return
 
-    const seenSignature = `${actorUserId}:${workspaceChatStatusTargetUserId || 'self'}`
+    const seenSignature = [
+      actorUserId || 'self',
+      workspaceChatStatusTargetUserId || 'self',
+      activeWorkspaceChatMemberId || 'no-member',
+      activeWorkspaceChatMember?.memberUserId || 'no-member-user',
+      workspaceChatLatestMessageMarker
+    ].join(':')
     if (workspaceChatSeenSignatureRef.current === seenSignature) return
     workspaceChatSeenSignatureRef.current = seenSignature
 
@@ -4390,20 +4825,98 @@ function App() {
         targetUserId: actorUserId,
         targetLabel: headerUserName,
         chatMemberId: activeWorkspaceChatMemberId || '',
+        chatMemberUserId: activeWorkspaceChatMember?.memberUserId || '',
         chatMemberLabel: activeWorkspaceChatMemberName,
         workspaceOwnerId: workspaceContext?.ownerUserId || ''
       }
     })
   }, [
-    workspaceChatModalOpen,
+    isWorkspaceChatThreadVisible,
     actorUserId,
     scopedUserId,
     workspaceChatStatusTargetUserId,
     workspaceChatTitleName,
     workspaceRole,
     activeWorkspaceChatMemberId,
+    activeWorkspaceChatMember?.memberUserId,
     activeWorkspaceChatMemberName,
-    workspaceContext?.ownerUserId
+    workspaceContext?.ownerUserId,
+    workspaceChatLatestMessageMarker
+  ])
+
+  useEffect(() => {
+    if (!isWorkspaceChatThreadVisible) return
+    if (workspaceChatPeerStatusValue !== 'inactive') return
+    if (!scopedUserId || !workspaceChatPeerUserId) return
+
+    const currentStatusLogCreatedAt = workspaceChatPeerStatusLog?.createdAt || ''
+    const noticeSignature = [
+      actorUserId || 'self',
+      workspaceChatPeerUserId,
+      activeWorkspaceChatMemberId || 'no-member',
+      activeWorkspaceChatMember?.memberUserId || 'no-member-user',
+      currentStatusLogCreatedAt || 'no-status-log'
+    ].join(':')
+
+    if (workspaceChatInactiveNoticeSignatureRef.current === noticeSignature) return
+
+    const hasExistingInactiveNotice = activityLogs.some(item => (
+      item?.metadata?.kind === 'workspace_chat'
+      && item?.metadata?.statusInactiveAutoNotice === true
+      && item?.metadata?.statusNoticeForUserId === actorUserId
+      && item?.metadata?.statusNoticePeerUserId === workspaceChatPeerUserId
+      && item?.metadata?.statusLogCreatedAt === currentStatusLogCreatedAt
+      && (
+        (item?.metadata?.chatMemberId || '') === (activeWorkspaceChatMemberId || '')
+        || (
+          (item?.metadata?.chatMemberUserId || '')
+          && item.metadata.chatMemberUserId === (activeWorkspaceChatMember?.memberUserId || '')
+        )
+      )
+    ))
+
+    if (hasExistingInactiveNotice) {
+      workspaceChatInactiveNoticeSignatureRef.current = noticeSignature
+      return
+    }
+
+    workspaceChatInactiveNoticeSignatureRef.current = noticeSignature
+
+    createActivityLog({
+      type: 'Workspace Chat',
+      title: `Status tidak aktif: ${workspaceChatTitleName}`,
+      detail: `${workspaceChatTitleName} sedang tidak aktif saat ini.\n\nPesan Anda akan dibalas setelah kembali aktif.`,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat',
+        senderRole: 'system',
+        senderUserId: workspaceChatPeerUserId,
+        senderName: 'Sistem',
+        workspaceOwnerId: workspaceContext?.ownerUserId || '',
+        chatMemberId: activeWorkspaceChatMemberId || '',
+        chatMemberUserId: activeWorkspaceChatMember?.memberUserId || '',
+        chatMemberLabel: activeWorkspaceChatMemberName,
+        statusInactiveAutoNotice: true,
+        statusNoticeForUserId: actorUserId,
+        statusNoticePeerUserId: workspaceChatPeerUserId,
+        statusLogCreatedAt: currentStatusLogCreatedAt
+      }
+    })
+  }, [
+    isWorkspaceChatThreadVisible,
+    workspaceChatPeerStatusValue,
+    workspaceChatPeerStatusLog?.createdAt,
+    scopedUserId,
+    workspaceChatPeerUserId,
+    actorUserId,
+    activeWorkspaceChatMemberId,
+    activeWorkspaceChatMember?.memberUserId,
+    activeWorkspaceChatMemberName,
+    workspaceChatTitleName,
+    workspaceContext?.ownerUserId,
+    activityLogs
   ])
 
   useEffect(() => {
@@ -8502,8 +9015,9 @@ function App() {
       <div className={`layout-grid ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         
         {/* 1. Sidebar Navigation */}
+        {!(isMobileTabletView && workspaceChatModalOpen) && (
         <aside
-          className={`sidebar sidebar-floating ${sidebarCollapsed ? 'collapsed' : ''}`}
+          className={`sidebar sidebar-floating ${sidebarCollapsed ? 'collapsed' : ''} ${isMobileTabletView && isWorkspaceChatOpen ? 'chat-summary-mode' : ''}`}
           onMouseEnter={handleSidebarMouseEnter}
           onMouseLeave={handleSidebarMouseLeave}
         >
@@ -8517,7 +9031,26 @@ function App() {
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex-1 sidebar-nav-scroll">
+          <nav className={`flex-1 sidebar-nav-scroll ${isMobileTabletView && isWorkspaceChatOpen ? 'mobile-chat-bottom-nav' : ''}`}>
+            {isMobileTabletView && isWorkspaceChatOpen ? (
+              <div className="mobile-chat-bottom-summary">
+                <div className="mobile-chat-bottom-summary-head">
+                  <div>
+                    <h4>{headerDateLabel}</h4>
+                  </div>
+                  <div className="mobile-chat-bottom-summary-time">{headerTimeLabel}</div>
+                </div>
+                <div className="mobile-chat-bottom-summary-grid">
+                  {mobileWorkspaceChatBottomStats.map(item => (
+                    <div key={item.label} className="mobile-chat-bottom-summary-card">
+                      <span>{item.label}</span>
+                      <strong>{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
             {isPrimaryMobileNavTab('dashboard') && canReadArea('dashboard') && canShowTab('dashboard') && (
               <div 
                 data-mobile-nav="dashboard"
@@ -8707,6 +9240,8 @@ function App() {
                 </div>
               </div>
             )}
+              </>
+            )}
 
           </nav>
 
@@ -8716,7 +9251,8 @@ function App() {
               {workspaceContext?.ownerUserId && (
                 <button
                   type="button"
-                  onClick={() => setWorkspaceChatModalOpen(true)}
+                  onClick={handleWorkspaceChatTriggerClick}
+                  onPointerDown={handleWorkspaceChatTriggerPointerDown}
                   className="relative flex items-center gap-3 p-3 rounded-xl border border-yellow-200 bg-[#FFF7C7] hover:bg-[#FFF3AE] text-yellow-950 transition-all active:scale-95 shadow-sm"
                 >
                   <span className={`absolute -top-2 -right-2 min-w-[22px] h-6 px-1 rounded-full text-white text-[11px] font-extrabold inline-flex items-center justify-center shadow-md border-2 border-white ${
@@ -8813,7 +9349,8 @@ function App() {
                 {workspaceContext?.ownerUserId && (
                   <button
                     type="button"
-                    onClick={() => setWorkspaceChatModalOpen(true)}
+                    onClick={handleWorkspaceChatTriggerClick}
+                    onPointerDown={handleWorkspaceChatTriggerPointerDown}
                     className={`relative w-11 h-11 rounded-full p-0 shadow-md active:scale-95 transition-all flex items-center justify-center ${
                       hasUnreadWorkspaceChat ? 'bg-[#8f75d8] hover:bg-[#8069c8] text-white' : 'bg-white/95 hover:bg-white text-[#8f75d8]'
                     }`}
@@ -8854,11 +9391,382 @@ function App() {
           )}
 
         </aside>
+        )}
 
         {/* 2. Main Content Area */}
         <main className="p-6 md:p-8 overflow-y-auto max-h-screen" onMouseEnter={handleSidebarMouseLeave}>
           
+          {activeTab === 'workspaceChat' && isMobileTabletView && (
+            <section className="workspace-chat-page">
+              <div className={`workspace-chat-page-shell ${workspaceRole === 'owner' && mobileWorkspaceChatView === 'list' ? 'list-view' : 'detail-view'}`}>
+                {workspaceRole === 'owner' && mobileWorkspaceChatView === 'list' ? (
+                  <>
+                    <div className="workspace-chat-list-header">
+                    <div>
+                        <p className="text-[11px] text-white/70">Workspace Chat</p>
+                        <h2 className="text-2xl font-extrabold text-white mt-0.5">Inbox</h2>
+                      </div>
+                    <div className="workspace-chat-list-header-actions">
+                      <button type="button" onClick={closeWorkspaceChatExperience} className="workspace-chat-list-circle">
+                        <ArrowLeft size={18} />
+                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setWorkspaceChatStatusMenuOpen(prev => !prev)}
+                          className={`workspace-chat-list-status ${workspaceChatStatusTone}`}
+                        >
+                          <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                          {workspaceChatStatusLabel}
+                          <ChevronDown size={14} />
+                        </button>
+                        {workspaceChatStatusMenuOpen && (
+                          <div className="absolute right-4 top-20 z-20 w-40 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl">
+                            <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">{workspaceChatStatusSectionLabel}</p>
+                            <div className="space-y-1">
+                              {workspaceChatStatusOptions.map(option => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => updateWorkspaceChatStatus(option.value)}
+                                  className={`w-full rounded-xl px-3 py-2 text-left text-xs font-semibold border inline-flex items-center justify-between gap-2 ${
+                                    option.value === workspaceChatStatusValue
+                                      ? option.tone
+                                      : 'border-purple-100 text-[#4f4574] hover:bg-purple-50'
+                                  }`}
+                                >
+                                  <span className="inline-flex items-center gap-2">
+                                    <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                                    {option.label}
+                                  </span>
+                                  {option.value === workspaceChatStatusValue && <Check size={13} />}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="workspace-chat-list-tabs">
+                      <button type="button" className="workspace-chat-list-tab active">All Chats</button>
+                    </div>
+
+                    <div className="workspace-chat-list-feed">
+                      {workspaceChatMemberSummaries.length === 0 ? (
+                        <div className="workspace-chat-list-empty">Belum ada assistant aktif.</div>
+                      ) : workspaceChatMemberSummaries.map(({ member, memberName, memberPresence, lastMessage, unreadCount }) => (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedWorkspaceChatMemberId(member.id)
+                            setMobileWorkspaceChatView('detail')
+                          }}
+                          className="workspace-chat-list-item"
+                        >
+                          <div className="workspace-chat-list-avatar">{memberName.charAt(0)}</div>
+                          <div className="workspace-chat-list-content">
+                            <div className="workspace-chat-list-row">
+                              <p className="workspace-chat-list-name">{memberName}</p>
+                              <span className="workspace-chat-list-time">
+                                {lastMessage ? new Date(lastMessage.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}
+                              </span>
+                            </div>
+                            <div className="workspace-chat-list-row">
+                              <p className="workspace-chat-list-preview">
+                                {lastMessage ? formatTextDates(lastMessage.detail) : memberPresence.label}
+                              </p>
+                            </div>
+                          </div>
+                          {unreadCount > 0 && <span className="workspace-chat-list-badge workspace-chat-list-badge-side">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                <div className="workspace-chat-page-header">
+                  <div className="workspace-chat-page-topbar">
+                    {!(isMobileTabletView && isAssistantWorkspace) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (workspaceRole === 'owner' && mobileWorkspaceChatView === 'detail') {
+                            setMobileWorkspaceChatView('list')
+                            return
+                          }
+                          closeWorkspaceChatExperience()
+                        }}
+                        className="workspace-chat-page-back"
+                        title="Kembali"
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
+                    )}
+                    <div className="workspace-chat-page-title">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/70">Workspace Chat</p>
+                      <h2 className="text-xl font-extrabold text-white">{workspaceChatTitleName}</h2>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/80">
+                        <span className={`workspace-chat-page-status-badge inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-bold ${isMobileTabletView ? workspaceChatPeerStatusTone : 'border-white/20 bg-white/12 text-white'}`}>
+                          <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                          {workspaceChatPeerStatusLabel}
+                        </span>
+                        <span className="workspace-chat-page-last-opened">{workspaceChatLastSeenLog ? `Terakhir dibuka ${workspaceChatLastOpenedLabel}` : 'Belum pernah dibuka'}</span>
+                      </div>
+                    </div>
+                    <div className="workspace-chat-page-actions">
+                      <div className="relative">
+                        {(isMobileTabletView && isAssistantWorkspace) ? (
+                          <div className="workspace-chat-list-header-actions">
+                            <button
+                              type="button"
+                              onClick={() => setWorkspaceChatStatusMenuOpen(prev => !prev)}
+                              className={`workspace-chat-list-status ${workspaceChatStatusTone}`}
+                            >
+                              <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                              {workspaceChatStatusLabel}
+                              <ChevronDown size={14} />
+                            </button>
+                            {workspaceChatStatusMenuOpen && (
+                              <div className="absolute right-12 top-12 z-20 w-40 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl">
+                                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">{workspaceChatStatusSectionLabel}</p>
+                                <div className="space-y-1">
+                                  {workspaceChatStatusOptions.map(option => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => updateWorkspaceChatStatus(option.value)}
+                                      className={`w-full rounded-xl px-3 py-2 text-left text-xs font-semibold border inline-flex items-center justify-between gap-2 ${
+                                        option.value === workspaceChatStatusValue
+                                          ? option.tone
+                                          : 'border-purple-100 text-[#4f4574] hover:bg-purple-50'
+                                      }`}
+                                    >
+                                      <span className="inline-flex items-center gap-2">
+                                        <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                                        {option.label}
+                                      </span>
+                                      {option.value === workspaceChatStatusValue && <Check size={13} />}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={closeWorkspaceChatExperience}
+                              className="workspace-chat-list-circle"
+                              title="Tutup chat"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : !isMobileTabletView && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setWorkspaceChatStatusMenuOpen(prev => !prev)}
+                              className={`h-10 px-3 rounded-2xl border text-xs font-bold inline-flex items-center gap-2 bg-white/90 ${workspaceChatStatusTone}`}
+                            >
+                              <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                              {workspaceChatStatusLabel}
+                              <ChevronDown size={14} />
+                            </button>
+                            {workspaceChatStatusMenuOpen && (
+                              <div className="absolute right-0 top-11 z-20 w-40 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl">
+                                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">{workspaceChatStatusSectionLabel}</p>
+                                <div className="space-y-1">
+                                  {workspaceChatStatusOptions.map(option => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => updateWorkspaceChatStatus(option.value)}
+                                      className={`w-full rounded-xl px-3 py-2 text-left text-xs font-semibold border inline-flex items-center justify-between gap-2 ${
+                                        option.value === workspaceChatStatusValue
+                                          ? option.tone
+                                          : 'border-purple-100 text-[#4f4574] hover:bg-purple-50'
+                                      }`}
+                                    >
+                                      <span className="inline-flex items-center gap-2">
+                                        <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                                        {option.label}
+                                      </span>
+                                      {option.value === workspaceChatStatusValue && <Check size={13} />}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {canManageTeam && workspaceAssistantChatMembers.length > 0 && !isMobileTabletView && (
+                    <div className="workspace-chat-page-assistants">
+                      {workspaceAssistantChatMembers.map(member => {
+                        const memberName = resolveWorkspaceMemberName(member)
+                        const memberMessageCount = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat' && item?.metadata?.chatMemberId === member.id).length
+                        const memberPresence = getWorkspaceChatPresenceOption(member.memberUserId)
+                        const isSelected = member.id === activeWorkspaceChatMemberId
+                        return (
+                          <button
+                            key={member.id}
+                            type="button"
+                            onClick={() => setSelectedWorkspaceChatMemberId(member.id)}
+                            className={`workspace-chat-page-assistant-item ${isSelected ? 'active' : ''}`}
+                          >
+                            <span className="block font-bold truncate">{memberName}</span>
+                            <span className="block text-[10px] opacity-80 truncate">{memberPresence.label} • {memberMessageCount} pesan</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {workspaceChatPeerIsTyping && (
+                  <p className={`mb-2 text-[11px] font-semibold ${
+                    isMobileTabletView && (workspaceRole !== 'owner' || mobileWorkspaceChatView === 'detail')
+                      ? 'text-purple-400'
+                      : 'text-white/80'
+                  }`}>
+                    {workspaceChatPeerTypingLabel}
+                  </p>
+                )}
+
+                <div ref={workspaceChatFeedRef} className="workspace-chat-page-feed">
+                  {workspaceChatMessages.length === 0 ? (
+                    <p className="text-sm text-white/75">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
+                  ) : workspaceChatItemsWithDateSeparator.map(item => {
+                    if (item.__type === 'date_separator') {
+                      const isDetailMobileView = isMobileTabletView
+                        && (workspaceRole !== 'owner' || mobileWorkspaceChatView === 'detail')
+                      return (
+                        <div key={item.id} className="flex items-center gap-2 py-1">
+                          <div className={`h-px flex-1 ${isDetailMobileView ? 'bg-purple-200' : 'bg-white/15'}`} />
+                          <span className={`text-[10px] font-bold whitespace-nowrap px-2 ${isDetailMobileView ? 'text-purple-400' : 'text-white/70'}`}>{item.label}</span>
+                          <div className={`h-px flex-1 ${isDetailMobileView ? 'bg-purple-200' : 'bg-white/15'}`} />
+                        </div>
+                      )
+                    }
+                    const isMine = isWorkspaceChatMine(item)
+                    const isReminderMessage = item?.metadata?.reminderType && item?.metadata?.senderRole === 'assistant'
+                    const isAckVisibleMessage = item?.metadata?.ackVisible || item?.metadata?.replyType === 'ack_visible'
+                    const canConfirmReminder = workspaceRole === 'owner' && !isMine && isReminderMessage && !workspaceChatAcknowledgedIds.has(item.id)
+                    const sentTime = new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                    const readLabel = (
+                      workspaceChatAcknowledgedIds.has(item.id)
+                      || (isMine && workspaceChatPeerSeenAt > 0 && new Date(item.createdAt).getTime() <= workspaceChatPeerSeenAt)
+                    ) ? 'Read' : 'Sent'
+                    return (
+                      <div key={item.id} className={`workspace-chat-page-message-row ${isMine ? 'mine' : ''}`}>
+                        {isMine && (
+                          <div className="workspace-chat-page-meta text-left">
+                            <p>{sentTime}</p>
+                            <p>{readLabel}</p>
+                          </div>
+                        )}
+                        <div className={`workspace-chat-page-bubble ${isMine ? 'mine' : 'incoming'} ${isReminderMessage ? 'reminder' : ''} ${isAckVisibleMessage ? 'ack-visible' : ''}`}>
+                          <p className="text-[10px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
+                          {workspaceChatAcknowledgedIds.has(item.id) && (
+                            <p className="mt-1 text-[10px] font-bold opacity-90 inline-flex items-center gap-1">
+                              <CheckCircle size={12} />
+                              Dikonfirmasi dibaca
+                            </p>
+                          )}
+                          {canConfirmReminder && (
+                            <button
+                              type="button"
+                              onClick={() => sendWorkspaceReminderAck(item.id)}
+                              className="mt-2 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700"
+                            >
+                              Konfirmasi Dibaca
+                            </button>
+                          )}
+                        </div>
+                        {!isMine && (
+                          <div className="workspace-chat-page-meta text-right">
+                            <p>{sentTime}</p>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <form onSubmit={handleSendWorkspaceChatMessage} className="workspace-chat-page-composer">
+                  {workspaceChatPeerIsTyping && (
+                    <p className={`mb-2 text-[11px] font-semibold ${
+                      isMobileTabletView && (workspaceRole !== 'owner' || mobileWorkspaceChatView === 'detail')
+                        ? 'text-white/90'
+                        : 'text-purple-400'
+                    }`}>
+                      {workspaceChatPeerTypingLabel}
+                    </p>
+                  )}
+                  {isAssistantWorkspace && (
+                    <div className="workspace-chat-page-quick-actions">
+                      <button type="button" onClick={() => sendQuickWorkspaceReminder('task')} className="workspace-chat-page-chip">Task Hari Ini</button>
+                      <button type="button" onClick={() => sendQuickWorkspaceReminder('event')} className="workspace-chat-page-chip">Event Hari Ini</button>
+                      <button type="button" onClick={() => sendQuickWorkspaceReminder('gcall')} className="workspace-chat-page-chip">GCall Hari Ini</button>
+                      <button type="button" onClick={() => sendQuickWorkspaceReminder('deadline')} className="workspace-chat-page-chip">Deadline Hari Ini</button>
+                    </div>
+                  )}
+                  <div className="workspace-chat-page-composer-row">
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceEmojiPickerOpen(prev => !prev)}
+                      className="workspace-chat-page-icon-button"
+                      title="Pilih emoticon"
+                    >
+                      <Smile size={16} />
+                    </button>
+                    <div className="workspace-chat-page-input-wrap">
+                      {workspaceEmojiPickerOpen && (
+                        <div className="absolute bottom-12 left-0 z-20 w-48 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl grid grid-cols-6 gap-1">
+                          {WORKSPACE_CHAT_EMOJIS.map(emoji => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => appendWorkspaceChatEmoji(emoji)}
+                              className="h-8 w-8 rounded-lg hover:bg-purple-50 text-base flex items-center justify-center"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <textarea
+                        value={workspaceChatMessage}
+                        onChange={(e) => setWorkspaceChatMessage(e.target.value)}
+                        onKeyDown={handleWorkspaceChatInputKeyDown}
+                        rows={1}
+                        maxLength={500}
+                        placeholder=""
+                        className="workspace-chat-page-textarea"
+                        autoFocus
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={workspaceChatSending || !workspaceChatMessage.trim()}
+                      className="workspace-chat-page-send"
+                    >
+                      <SendHorizontal size={16} />
+                    </button>
+                  </div>
+                </form>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Header Bar */}
+          {activeTab !== 'workspaceChat' && (
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-purple-100 dark:border-indigo-950 pb-6 mb-6">
             <div>
 	              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-[#4f4574]">
@@ -8913,6 +9821,7 @@ function App() {
               </button>
             </div>
           </header>
+          )}
 
           {/* TAB CONTENT: 1. DASHBOARD */}
           {activeTab === 'dashboard' && (
@@ -13140,16 +14049,18 @@ function App() {
         
       </div>
 
-      <button
-        type="button"
-        className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
-        onClick={() => setShowMobileMoreMenu(prev => !prev)}
-        aria-label="Buka menu lainnya"
-      >
-        <MoreHorizontal size={20} />
-      </button>
+      {activeTab !== 'workspaceChat' && !workspaceChatModalOpen && (
+        <button
+          type="button"
+          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
+          onClick={() => setShowMobileMoreMenu(prev => !prev)}
+          aria-label="Buka menu lainnya"
+        >
+          <MoreHorizontal size={20} />
+        </button>
+      )}
 
-      {showMobileMoreMenu && (
+      {showMobileMoreMenu && !workspaceChatModalOpen && (
         <>
           <button
             type="button"
@@ -13260,16 +14171,12 @@ function App() {
       {isMobileTabletView && workspaceContext?.ownerUserId && (
         <button
           type="button"
-          onClick={() => {
-            setWorkspaceChatModalOpen(true)
-            setShowMobileMoreMenu(false)
-            setNotificationBannerVisible(false)
-            setShowNotificationList(false)
-          }}
-          aria-label="Buka chat workspace"
-          className={`mobile-chat-trigger fixed right-4 z-[81] inline-flex items-center justify-center ${hasUnreadWorkspaceChat ? 'active' : ''}`}
+          onClick={handleWorkspaceChatTriggerClick}
+          onPointerDown={handleWorkspaceChatTriggerPointerDown}
+          aria-label={isWorkspaceChatOpen ? 'Tutup chat workspace' : 'Buka chat workspace'}
+          className={`mobile-chat-trigger fixed right-4 z-[81] inline-flex items-center justify-center ${hasUnreadWorkspaceChat ? 'active' : ''} ${isWorkspaceChatOpen ? 'chat-open' : ''}`}
         >
-          <MessageSquare size={18} className={hasUnreadWorkspaceChat ? 'text-white' : ''} />
+          {isWorkspaceChatOpen ? <X size={18} /> : <MessageSquare size={18} />}
           {hasUnreadWorkspaceChat && (
             <span className="mobile-chat-trigger-badge">{workspaceUnreadChatCount > 99 ? '99+' : workspaceUnreadChatCount}</span>
           )}
@@ -13305,23 +14212,33 @@ function App() {
       )}
 
       {workspaceChatModalOpen && (
-        <div className="fixed inset-0 bg-slate-500/35 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setWorkspaceChatModalOpen(false)}>
-          <div className={`w-full ${canManageTeam && workspaceAssistantChatMembers.length > 0 ? 'max-w-6xl' : 'max-w-2xl'} rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50`} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
+        <div
+          className={`workspace-chat-overlay fixed inset-0 bg-slate-500/35 backdrop-blur-sm ${isMobileTabletView ? 'z-[140] p-0 items-stretch justify-stretch' : 'z-50 flex items-center justify-center p-4'}`}
+          style={isMobileTabletView ? { padding: 0, inset: 0, alignItems: 'stretch', justifyContent: 'stretch' } : undefined}
+          onClick={() => setWorkspaceChatModalOpen(false)}
+        >
+          <div className={`workspace-chat-shell w-full ${isMobileTabletView
+            ? 'h-[100dvh] max-w-none rounded-none border-0 bg-white dark:bg-slate-900 p-6 shadow-2xl'
+            : `${canManageTeam && workspaceAssistantChatMembers.length > 0 ? 'max-w-6xl' : 'max-w-2xl'} rounded-[1.6rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50`
+          }`}
+          style={isMobileTabletView ? { width: '100vw', height: '100dvh', maxHeight: '100dvh', borderRadius: 0, margin: 0 } : undefined}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <div className="workspace-chat-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="workspace-chat-title-block min-w-0 flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-purple-400">Workspace Chat</p>
                 <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574] dark:text-purple-100">
                   {workspaceChatTitleName}
                 </h3>
-                <p className="mt-1 text-xs dark:text-purple-300 inline-flex items-center gap-2 text-purple-400">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${workspaceChatPeerStatusTone}`}>
+                <div className="workspace-chat-presence mt-2 flex flex-wrap items-center gap-2 text-xs text-purple-400 dark:text-purple-300">
+                  <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${workspaceChatPeerStatusTone}`}>
                     <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
                     {workspaceChatPeerStatusLabel}
                   </span>
-                  <span>{workspaceChatLastSeenLog ? `terakhir dibuka ${workspaceChatLastOpenedLabel}` : 'belum pernah dibuka'}</span>
-                </p>
+                  <span className="leading-snug">{workspaceChatLastSeenLog ? `Terakhir dibuka ${workspaceChatLastOpenedLabel}` : 'Belum pernah dibuka'}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="workspace-chat-actions flex items-center justify-end gap-2 sm:justify-start">
                 {canManageTeam && activeWorkspaceChatMemberId && (
                   <button
                     type="button"
@@ -13379,7 +14296,7 @@ function App() {
               </div>
             </div>
 
-            <div className={`mt-5 ${canManageTeam && workspaceAssistantChatMembers.length > 0 ? 'grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-stretch' : ''}`}>
+            <div className={`workspace-chat-layout mt-5 ${canManageTeam && workspaceAssistantChatMembers.length > 0 ? 'grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-4 items-stretch' : ''}`}>
               {canManageTeam && workspaceAssistantChatMembers.length > 0 && (
                 <>
                   <div className={`hidden md:flex md:self-stretch md:flex-col rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 overflow-hidden ${workspaceChatAssistantPanelCollapsed ? 'md:w-14' : 'md:w-auto'}`}>
@@ -13432,7 +14349,7 @@ function App() {
                     )}
                   </div>
 
-                  <div className="md:hidden rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-3">
+                  <div className="workspace-chat-mobile-assistant md:hidden rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-3">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">Assistant</p>
                       <button
@@ -13445,7 +14362,7 @@ function App() {
                       </button>
                     </div>
                     {!workspaceChatAssistantPanelCollapsed && (
-                      <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                      <div className="workspace-chat-mobile-assistant-list space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
                         {workspaceAssistantChatMembers.length === 0 ? (
                           <p className="text-xs text-purple-400">Belum ada assistant aktif.</p>
                         ) : workspaceAssistantChatMembers.map(member => {
@@ -13458,7 +14375,7 @@ function App() {
                               key={member.id}
                               type="button"
                               onClick={() => setSelectedWorkspaceChatMemberId(member.id)}
-                              className={`w-full text-left rounded-xl px-3 py-2 border text-xs ${isSelected ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#4f4574] border-purple-100 hover:bg-purple-50'}`}
+                              className={`workspace-chat-mobile-assistant-item w-full text-left rounded-xl px-3 py-2 border text-xs ${isSelected ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white text-[#4f4574] border-purple-100 hover:bg-purple-50'}`}
                             >
                               <span className="block font-bold truncate">{memberName}</span>
                               <span className={`block text-[10px] truncate ${isSelected ? 'text-white/75' : 'text-purple-400'}`}>
@@ -13473,8 +14390,8 @@ function App() {
                 </>
               )}
 
-              <div className="min-w-0">
-                <div className="h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
+              <div className="workspace-chat-thread min-w-0">
+                <div ref={workspaceChatFeedRef} className="workspace-chat-feed h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
                   {workspaceChatMessages.length === 0 ? (
                     <p className="text-xs text-purple-400">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
                   ) : workspaceChatItemsWithDateSeparator.map(item => {
@@ -13487,20 +14404,28 @@ function App() {
                         </div>
                       )
                     }
-                    const isMine = item?.metadata?.senderUserId === actorUserId
+                    const isMine = isWorkspaceChatMine(item)
                     const isReminderMessage = item?.metadata?.reminderType && item?.metadata?.senderRole === 'assistant'
+                    const isAckVisibleMessage = item?.metadata?.ackVisible || item?.metadata?.replyType === 'ack_visible'
                     const canConfirmReminder = workspaceRole === 'owner' && !isMine && isReminderMessage && !workspaceChatAcknowledgedIds.has(item.id)
                     const sentTime = new Date(item.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                    const readLabel = workspaceChatAcknowledgedIds.has(item.id) ? 'Read' : 'Sent'
+                    const readLabel = (
+                      workspaceChatAcknowledgedIds.has(item.id)
+                      || (isMine && workspaceChatPeerSeenAt > 0 && new Date(item.createdAt).getTime() <= workspaceChatPeerSeenAt)
+                    ) ? 'Read' : 'Sent'
                     const mineBubbleClass = isReminderMessage
                       ? 'bg-purple-500/15 border border-purple-300/60 text-[#4f4574]'
-                      : 'bg-[#8f75d8] text-white'
+                      : isAckVisibleMessage
+                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                        : 'bg-[#8f75d8] text-white'
                     const incomingBubbleClass = isReminderMessage
                       ? 'bg-purple-500/10 border border-purple-200/80 text-[#4f4574]'
-                      : 'bg-white border border-purple-100 text-[#4f4574]'
+                      : isAckVisibleMessage
+                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                        : 'bg-white border border-purple-100 text-[#4f4574]'
                     return (
                       <div key={item.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`flex items-end gap-2 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className={`flex items-end gap-1 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                           <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
                             <p className="text-[10px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
                             <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
@@ -13520,9 +14445,9 @@ function App() {
                               </button>
                             )}
                           </div>
-                          <div className={`pb-1 min-w-[48px] ${isMine ? 'text-right' : 'text-left'}`}>
+                          <div className={`pb-1 min-w-[36px] leading-tight ${isMine ? 'text-right' : 'text-left'}`}>
                             <p className="text-[10px] font-semibold text-purple-400">{sentTime}</p>
-                            <p className="text-[10px] font-bold text-purple-300">{readLabel}</p>
+                            {isMine && <p className="text-[10px] font-bold text-purple-300">{readLabel}</p>}
                           </div>
                         </div>
                       </div>
@@ -13530,9 +14455,9 @@ function App() {
                   })}
                 </div>
 
-            <form onSubmit={handleSendWorkspaceChatMessage} className="mt-4 space-y-4">
+            <form onSubmit={handleSendWorkspaceChatMessage} className="workspace-chat-composer mt-4 space-y-4">
               {isAssistantWorkspace && (
-                <div className="space-y-2">
+                <div className="workspace-chat-quick-actions space-y-2">
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">Pengingat Cepat</p>
                   <div className="flex flex-wrap gap-1.5">
                     <button type="button" onClick={() => sendQuickWorkspaceReminder('task')} className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-bold hover:bg-amber-200">Task Hari Ini</button>
@@ -13543,6 +14468,12 @@ function App() {
                 </div>
               )}
 
+              {workspaceChatPeerIsTyping && (
+                <p className="mb-2 text-[11px] font-semibold text-purple-400">
+                  {workspaceChatPeerTypingLabel}
+                </p>
+              )}
+
               <textarea
                 value={workspaceChatMessage}
                 onChange={(e) => setWorkspaceChatMessage(e.target.value)}
@@ -13550,12 +14481,12 @@ function App() {
                 rows={1}
                 maxLength={500}
                 placeholder="Tulis pesan untuk owner/assistant..."
-                className="w-full h-20 rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 px-4 py-3 text-sm text-[#4f4574] dark:text-purple-100 resize-none focus:outline-none focus:ring-2 focus:ring-purple-300/50"
+                className="workspace-chat-textarea w-full h-20 rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 px-4 py-3 text-sm text-[#4f4574] dark:text-purple-100 resize-none focus:outline-none focus:ring-2 focus:ring-purple-300/50"
                 autoFocus
               />
-              <div className="flex items-center justify-between gap-3">
+              <div className="workspace-chat-composer-actions flex items-center justify-between gap-3">
                 <span className="text-[10px] font-semibold text-purple-300">{workspaceChatMessage.trim().length}/500</span>
-                <div className="flex gap-2">
+                <div className="workspace-chat-composer-buttons flex gap-2">
                   <div className="relative">
                     {workspaceEmojiPickerOpen && (
                       <div className="absolute bottom-11 right-0 z-20 w-48 rounded-2xl border border-purple-100 bg-white dark:bg-slate-900 dark:border-indigo-900 p-2 shadow-xl grid grid-cols-6 gap-1">
@@ -13959,7 +14890,7 @@ function App() {
       )}
 
       {/* 🚀 SIMULATED MAC PUSH NOTIFICATION TOAST */}
-      {activeNotifications.length > 0 && notificationBannerVisible && (
+      {activeNotifications.length > 0 && notificationBannerVisible && !isMobileWorkspaceChatView && (
         <div className={`notification-banner glass-panel p-3 ${theme === 'dark' ? 'notif-dark' : 'notif-light'}`}>
           {!showNotificationList && activeNotifications.length > 1 ? (
             <button
@@ -14362,7 +15293,7 @@ function App() {
       )}
 
       {/* 🚀 FLOATING WIDGET BUTTON ON MACBOOK PREVIEW */}
-      {floatingMenuEnabled && (
+      {floatingMenuEnabled && !isMobileWorkspaceChatView && !workspaceChatModalOpen && (
         <button 
           type="button"
           onClick={() => {
