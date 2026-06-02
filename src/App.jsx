@@ -61,6 +61,7 @@ import {
   SlidersHorizontal,
   Clipboard,
   MoreHorizontal,
+  CornerUpLeft,
   Smile,
   LogOut,
   X
@@ -704,6 +705,9 @@ function App() {
   const [workspaceChatLastReadAt, setWorkspaceChatLastReadAt] = useState(0)
   const [selectedWorkspaceChatMemberId, setSelectedWorkspaceChatMemberId] = useState('')
   const [workspaceEmojiPickerOpen, setWorkspaceEmojiPickerOpen] = useState(false)
+  const [workspaceChatReplyTarget, setWorkspaceChatReplyTarget] = useState(null)
+  const [workspaceChatActionMessageId, setWorkspaceChatActionMessageId] = useState('')
+  const [workspaceChatOwnerMenuOpen, setWorkspaceChatOwnerMenuOpen] = useState(false)
   const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1180
@@ -736,6 +740,8 @@ function App() {
   const workspaceChatTypingHeartbeatRef = useRef(null)
   const workspaceChatTypingIdleTimerRef = useRef(null)
   const workspaceChatTypingStateRef = useRef(false)
+  const workspaceChatLongPressTimerRef = useRef(null)
+  const workspaceChatTouchStartRef = useRef({ x: 0, y: 0, messageId: '' })
   const workspaceChatFeedRef = useRef(null)
   const invoicePreviewRef = useRef(null)
 
@@ -806,7 +812,7 @@ function App() {
   const tutorialProgressStorageKey = scopedStorageKey('dyatask_tutorial_progress')
   const invoiceGeneratorDefaultsStorageKey = scopedStorageKey(INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY)
   const isPageEnabled = (pageKey) => enabledPages?.[pageKey] !== false
-  const mobilePrimaryNavTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'crm', 'finance']
+  const mobilePrimaryNavTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'crm', 'finance', 'invoiceFollowUp']
   const isPrimaryMobileNavTab = (tabKey) => !isMobileTabletView || mobilePrimaryNavTabs.includes(tabKey)
 
   const canShowTab = (tabKey) => {
@@ -2378,6 +2384,48 @@ function App() {
     if (chatMember) return resolveWorkspaceMemberName(chatMember)
     return formatDisplayName(item?.metadata?.senderEmail || headerUserName || activeWorkspaceChatMemberName, 'Pengguna')
   }
+  const summarizeWorkspaceChatMessage = (value) => {
+    const text = String(value || '').replace(/\s+/g, ' ').trim()
+    if (!text) return 'Pesan'
+    return text.length > 84 ? `${text.slice(0, 84)}...` : text
+  }
+
+  const getWorkspaceChatReplyMeta = (item) => {
+    const replyToMessageId = item?.metadata?.replyToMessageId || ''
+    if (!replyToMessageId) return null
+    return {
+      id: replyToMessageId,
+      senderName: item?.metadata?.replyToSenderName || 'Pesan',
+      preview: item?.metadata?.replyToPreview || 'Pesan dibalas'
+    }
+  }
+
+  const resolvePersistedWorkspaceChatMessageId = (item) => {
+    if (!item?.id) return ''
+    const rawId = String(item.id)
+    if (!rawId.startsWith('local-')) return rawId
+
+    const targetDetail = String(item.detail || '').trim()
+    const targetSenderUserId = item?.metadata?.senderUserId || ''
+    const targetSenderRole = item?.metadata?.senderRole || ''
+    const targetChatMemberId = item?.metadata?.chatMemberId || ''
+    const targetChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+    const targetCreatedAt = new Date(item.createdAt || Date.now()).getTime()
+
+    const persistedMatch = activityLogs.find(log => {
+      if (!log?.id || String(log.id).startsWith('local-')) return false
+      if (log?.metadata?.kind !== 'workspace_chat') return false
+      if (String(log.detail || '').trim() !== targetDetail) return false
+      if ((log?.metadata?.senderUserId || '') !== targetSenderUserId) return false
+      if ((log?.metadata?.senderRole || '') !== targetSenderRole) return false
+      if ((log?.metadata?.chatMemberId || '') !== targetChatMemberId) return false
+      if ((log?.metadata?.chatMemberUserId || '') !== targetChatMemberUserId) return false
+      const createdGap = Math.abs(new Date(log.createdAt || Date.now()).getTime() - targetCreatedAt)
+      return createdGap < 15000
+    })
+
+    return persistedMatch?.id ? String(persistedMatch.id) : ''
+  }
   function matchesWorkspaceChatMember (item, member = activeWorkspaceChatMember) {
     if (item?.metadata?.kind !== 'workspace_chat') return false
     if (!member) return true
@@ -2396,6 +2444,33 @@ function App() {
     }
 
     return !messageChatMemberId && member.id === workspaceAssistantChatMembers[0]?.id
+  }
+  function matchesWorkspaceChatThreadLog (item, member = activeWorkspaceChatMember) {
+    const kind = item?.metadata?.kind || ''
+    if (!['workspace_chat', 'workspace_chat_ack', 'workspace_chat_seen', 'workspace_chat_typing'].includes(kind)) return false
+    if (!member) return true
+
+    const messageChatMemberId = item?.metadata?.chatMemberId || ''
+    const messageChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+    const senderUserId = item?.metadata?.senderUserId || ''
+    const senderRole = item?.metadata?.senderRole || ''
+
+    if (messageChatMemberId && messageChatMemberId === member.id) return true
+    if (messageChatMemberUserId && messageChatMemberUserId === member.memberUserId) return true
+
+    if (!messageChatMemberId && !messageChatMemberUserId) {
+      if (kind === 'workspace_chat') return matchesWorkspaceChatMember(item, member)
+      if (isAssistantWorkspace) {
+        if (senderUserId && [actorUserId, workspaceContext?.ownerUserId].includes(senderUserId)) return true
+        if (!senderUserId && ['owner', 'assistant'].includes(senderRole)) return true
+      }
+      if (workspaceRole === 'owner') {
+        if (senderUserId && [workspaceContext?.ownerUserId, member.memberUserId].includes(senderUserId)) return true
+        if (!senderUserId && ['owner', 'assistant'].includes(senderRole)) return true
+      }
+    }
+
+    return false
   }
   function isWorkspaceChatMine (item) {
     const senderUserId = item?.metadata?.senderUserId || ''
@@ -2497,11 +2572,14 @@ function App() {
     acc.push({ ...item, __type: 'message', __dateKey: dateKey })
     return acc
   }, [])
-  const workspaceUnreadChatCount = workspaceChatMessages.filter(item => (
-    item?.metadata?.senderUserId
-    && item.metadata.senderUserId !== actorUserId
-    && new Date(item.createdAt).getTime() > workspaceChatLastReadAt
-  )).length
+  const workspaceCurrentThreadSeenAt = getWorkspaceThreadSeenAt(activeWorkspaceChatMember)
+  const workspaceUnreadChatCount = workspaceRole === 'owner'
+    ? workspaceChatMemberSummaries.reduce((sum, summary) => sum + (summary.unreadCount || 0), 0)
+    : workspaceChatMessages.filter(item => (
+        item?.metadata?.senderUserId
+        && item.metadata.senderUserId !== actorUserId
+        && new Date(item.createdAt).getTime() > workspaceCurrentThreadSeenAt
+      )).length
   const hasUnreadWorkspaceChat = workspaceUnreadChatCount > 0
   const headerHour = headerNow.getHours()
   const dayGreeting = headerHour < 12 ? 'Good Morning!' : headerHour < 18 ? 'Good Afternoon!' : 'Good Evening!'
@@ -4514,11 +4592,102 @@ function App() {
         chatMemberId,
         chatMemberUserId,
         chatMemberLabel: activeWorkspaceChatMemberName,
+        ...(workspaceChatReplyTarget ? {
+          replyToMessageId: workspaceChatReplyTarget.id,
+          replyToSenderName: workspaceChatReplyTarget.senderName,
+          replyToPreview: workspaceChatReplyTarget.preview
+        } : {}),
         ...metadata
       }
     })
     setWorkspaceChatSending(false)
     setWorkspaceChatMessage('')
+    setWorkspaceChatReplyTarget(null)
+  }
+
+  const openWorkspaceChatReply = (item) => {
+    if (!item?.id) return
+    setWorkspaceChatActionMessageId('')
+    setWorkspaceChatReplyTarget({
+      id: item.id,
+      senderName: getWorkspaceMessageSenderName(item),
+      preview: summarizeWorkspaceChatMessage(item.detail)
+    })
+  }
+
+  const deleteWorkspaceChatMessage = async (item) => {
+    if (!item?.id || !scopedUserId) return
+    const isMine = isWorkspaceChatMine(item)
+    if (!isMine && !canManageTeam) {
+      alert('Hanya pengirim pesan atau owner yang bisa menghapus chat ini.')
+      return
+    }
+    const ok = window.confirm('Hapus pesan ini dari chat?')
+    if (!ok) return
+
+    const targetId = resolvePersistedWorkspaceChatMessageId(item)
+    if (!targetId && String(item.id || '').startsWith('local-')) {
+      setActivityLogs(prev => prev.filter(log => log.id !== item.id))
+      if (workspaceChatReplyTarget?.id === item.id) {
+        setWorkspaceChatReplyTarget(null)
+      }
+      setWorkspaceChatActionMessageId('')
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('activity_logs')
+      .delete()
+      .eq('user_id', scopedUserId)
+      .eq('id', targetId || item.id)
+      .select('id')
+
+    if (error) {
+      alert(`Gagal menghapus chat: ${error.message}`)
+      return
+    }
+    if ((data || []).length === 0 && !(targetId || item.id)) {
+      alert('Pesan belum ditemukan di database. Coba ulang beberapa detik lagi.')
+      return
+    }
+
+    const deletedIds = new Set([String(item.id), String(targetId || item.id)])
+    setActivityLogs(prev => prev.filter(log => !deletedIds.has(String(log.id))))
+    if (workspaceChatReplyTarget?.id === item.id || workspaceChatReplyTarget?.id === (targetId || item.id)) {
+      setWorkspaceChatReplyTarget(null)
+    }
+    setWorkspaceChatActionMessageId('')
+  }
+
+  const handleWorkspaceChatBubblePointerDown = (event, item) => {
+    if (!item?.id) return
+    const pointX = event?.clientX ?? event?.touches?.[0]?.clientX ?? 0
+    const pointY = event?.clientY ?? event?.touches?.[0]?.clientY ?? 0
+    workspaceChatTouchStartRef.current = { x: pointX, y: pointY, messageId: item.id }
+    if (workspaceChatLongPressTimerRef.current) clearTimeout(workspaceChatLongPressTimerRef.current)
+    workspaceChatLongPressTimerRef.current = setTimeout(() => {
+      setWorkspaceChatActionMessageId(item.id)
+    }, 420)
+  }
+
+  const clearWorkspaceChatBubbleGesture = () => {
+    if (workspaceChatLongPressTimerRef.current) {
+      clearTimeout(workspaceChatLongPressTimerRef.current)
+      workspaceChatLongPressTimerRef.current = null
+    }
+  }
+
+  const handleWorkspaceChatBubblePointerUp = (event, item) => {
+    const start = workspaceChatTouchStartRef.current
+    clearWorkspaceChatBubbleGesture()
+    if (!item?.id || start.messageId !== item.id) return
+    const pointX = event?.clientX ?? event?.changedTouches?.[0]?.clientX ?? 0
+    const pointY = event?.clientY ?? event?.changedTouches?.[0]?.clientY ?? 0
+    const deltaX = pointX - start.x
+    const deltaY = Math.abs(pointY - start.y)
+    if (deltaX > 54 && deltaY < 36) {
+      openWorkspaceChatReply(item)
+    }
   }
 
   const publishWorkspaceChatTyping = async (typing) => {
@@ -4651,24 +4820,55 @@ function App() {
     }
     const ok = window.confirm(activeWorkspaceChatMemberId ? `Hapus history chat dengan ${activeWorkspaceChatMemberName}?` : 'Hapus semua history chat owner-assistant?')
     if (!ok) return
-    let deleteQuery = supabase
-      .from('activity_logs')
-      .delete()
-      .eq('user_id', scopedUserId)
-      .eq('event_type', 'Workspace Chat')
-    if (activeWorkspaceChatMemberId) {
-      deleteQuery = deleteQuery.eq('metadata->>chatMemberId', activeWorkspaceChatMemberId)
+
+    const threadLogIds = Array.from(new Set(
+      activityLogs
+        .filter(item => matchesWorkspaceChatThreadLog(item))
+        .map(item => resolvePersistedWorkspaceChatMessageId(item) || String(item.id || ''))
+        .filter(Boolean)
+        .filter(id => !String(id).startsWith('local-'))
+    ))
+
+    let error = null
+    if (threadLogIds.length > 0) {
+      for (let index = 0; index < threadLogIds.length; index += 100) {
+        const idChunk = threadLogIds.slice(index, index + 100)
+        const { error: deleteByIdsError } = await supabase
+          .from('activity_logs')
+          .delete()
+          .eq('user_id', scopedUserId)
+          .in('id', idChunk)
+        if (deleteByIdsError) {
+          error = deleteByIdsError
+          break
+        }
+      }
+    } else {
+      let deleteQuery = supabase
+        .from('activity_logs')
+        .delete()
+        .eq('user_id', scopedUserId)
+        .eq('event_type', 'Workspace Chat')
+      if (activeWorkspaceChatMemberId) {
+        deleteQuery = deleteQuery.eq('metadata->>chatMemberId', activeWorkspaceChatMemberId)
+      }
+      const { error: fallbackDeleteError } = await deleteQuery
+      error = fallbackDeleteError
     }
-    const { error } = await deleteQuery
+
     if (error) {
       alert(`Gagal clear chat: ${error.message}`)
       return
     }
-    setActivityLogs(prev => prev.filter(item => {
-      if (item?.type !== 'Workspace Chat') return true
-      if (!activeWorkspaceChatMemberId) return false
-      return item?.metadata?.chatMemberId !== activeWorkspaceChatMemberId
-    }))
+
+    const removedIds = new Set([
+      ...activityLogs.filter(item => matchesWorkspaceChatThreadLog(item)).map(item => String(item.id || '')),
+      ...threadLogIds.map(id => String(id))
+    ])
+    setActivityLogs(prev => prev.filter(item => !removedIds.has(String(item.id || ''))))
+    setWorkspaceChatActionMessageId('')
+    setWorkspaceChatReplyTarget(null)
+    setWorkspaceChatOwnerMenuOpen(false)
   }
 
   const updateWorkspaceChatStatus = async (statusValue) => {
@@ -4706,6 +4906,12 @@ function App() {
     setWorkspaceChatLastReadAt(Date.now())
     setWorkspaceChatStatusMenuOpen(false)
   }, [isWorkspaceChatThreadVisible, workspaceChatMessages.length])
+
+  useEffect(() => {
+    setWorkspaceChatActionMessageId('')
+    setWorkspaceChatReplyTarget(null)
+    setWorkspaceChatOwnerMenuOpen(false)
+  }, [activeWorkspaceChatMemberId, workspaceRole, mobileWorkspaceChatView])
 
   useEffect(() => {
     if (!isWorkspaceChatThreadVisible) return
@@ -4795,6 +5001,8 @@ function App() {
       workspaceChatSeenSignatureRef.current = ''
       workspaceChatInactiveNoticeSignatureRef.current = ''
       setWorkspaceChatStatusMenuOpen(false)
+      setWorkspaceChatActionMessageId('')
+      setWorkspaceChatOwnerMenuOpen(false)
       return
     }
 
@@ -9138,6 +9346,7 @@ function App() {
 
             {isPrimaryMobileNavTab('invoiceFollowUp') && canReadArea('invoiceFollowUp') && canShowTab('invoiceFollowUp') && (
               <div
+                data-mobile-nav="invoiceFollowUp"
                 className={`nav-link ${activeTab === 'invoiceFollowUp' ? 'active' : ''}`}
                 onClick={() => setActiveTab('invoiceFollowUp')}
               >
@@ -9561,6 +9770,32 @@ function App() {
                               <X size={16} />
                             </button>
                           </div>
+                        ) : (isMobileTabletView && workspaceRole === 'owner' && mobileWorkspaceChatView === 'detail') ? (
+                          <div className="workspace-chat-list-header-actions">
+                            <button
+                              type="button"
+                              onClick={() => setWorkspaceChatOwnerMenuOpen(prev => !prev)}
+                              className="workspace-chat-list-circle"
+                              title="Menu chat"
+                            >
+                              <MoreHorizontal size={16} />
+                            </button>
+                            {workspaceChatOwnerMenuOpen && (
+                              <div className="absolute right-0 top-12 z-20 w-44 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setWorkspaceChatOwnerMenuOpen(false)
+                                    handleClearWorkspaceChat()
+                                  }}
+                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-semibold border border-red-100 text-red-500 hover:bg-red-50 inline-flex items-center gap-2"
+                                >
+                                  <Trash2 size={14} />
+                                  Kosongkan Chat
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         ) : !isMobileTabletView && (
                           <>
                             <button
@@ -9636,7 +9871,11 @@ function App() {
                   </p>
                 )}
 
-                <div ref={workspaceChatFeedRef} className="workspace-chat-page-feed">
+                <div
+                  ref={workspaceChatFeedRef}
+                  className="workspace-chat-page-feed"
+                  onClick={() => setWorkspaceChatActionMessageId('')}
+                >
                   {workspaceChatMessages.length === 0 ? (
                     <p className="text-sm text-white/75">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
                   ) : workspaceChatItemsWithDateSeparator.map(item => {
@@ -9660,6 +9899,9 @@ function App() {
                       workspaceChatAcknowledgedIds.has(item.id)
                       || (isMine && workspaceChatPeerSeenAt > 0 && new Date(item.createdAt).getTime() <= workspaceChatPeerSeenAt)
                     ) ? 'Read' : 'Sent'
+                    const replyMeta = getWorkspaceChatReplyMeta(item)
+                    const canDeleteMessage = isMine || canManageTeam
+                    const actionMenuOpen = workspaceChatActionMessageId === item.id
                     return (
                       <div key={item.id} className={`workspace-chat-page-message-row ${isMine ? 'mine' : ''}`}>
                         {isMine && (
@@ -9668,9 +9910,65 @@ function App() {
                             <p>{readLabel}</p>
                           </div>
                         )}
-                        <div className={`workspace-chat-page-bubble ${isMine ? 'mine' : 'incoming'} ${isReminderMessage ? 'reminder' : ''} ${isAckVisibleMessage ? 'ack-visible' : ''}`}>
-                          <p className="text-[10px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
+                        <div
+                          className="workspace-chat-page-bubble-wrap relative"
+                          onClick={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => handleWorkspaceChatBubblePointerDown(event, item)}
+                          onPointerUp={(event) => handleWorkspaceChatBubblePointerUp(event, item)}
+                          onPointerLeave={clearWorkspaceChatBubbleGesture}
+                          onPointerCancel={clearWorkspaceChatBubbleGesture}
+                          onContextMenu={(event) => {
+                            event.preventDefault()
+                            setWorkspaceChatActionMessageId(item.id)
+                          }}
+                        >
+                        {actionMenuOpen && (
+                          <div className={`absolute -top-4 z-10 inline-flex items-center gap-1 rounded-full border border-purple-100 bg-white px-1.5 py-1 shadow-lg ${isMine ? 'left-3' : 'right-3'}`}>
+                            <button
+                              type="button"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openWorkspaceChatReply(item)
+                              }}
+                              className="h-7 w-7 rounded-full text-[#6f55bd] hover:bg-purple-50 inline-flex items-center justify-center"
+                              title="Reply"
+                            >
+                              <CornerUpLeft size={13} />
+                            </button>
+                            {canDeleteMessage && (
+                              <button
+                                type="button"
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  deleteWorkspaceChatMessage(item)
+                                }}
+                                className="h-7 w-7 rounded-full text-red-500 hover:bg-red-50 inline-flex items-center justify-center"
+                                title="Hapus"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                          <div className={`workspace-chat-page-bubble w-full ${isMine ? 'mine' : 'incoming'} ${isReminderMessage ? 'reminder' : ''} ${isAckVisibleMessage ? 'ack-visible' : ''}`}>
+                          <p className="text-[9px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
+                          {replyMeta && (
+                            <div className={`mb-1.5 flex items-center gap-2 px-0.5 py-0 text-[10px] leading-snug ${
+                              isMine
+                                ? 'text-white/82'
+                                : 'text-[#6b5aa8]'
+                            }`}>
+                              <span className="inline-block h-5 w-[3px] shrink-0 rounded-full bg-[#8f75d8]" />
+                              <div className="min-w-0">
+                                <p className="truncate text-[11px] leading-tight opacity-90">
+                                  {replyMeta.senderName}: {replyMeta.preview}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
                           {workspaceChatAcknowledgedIds.has(item.id) && (
                             <p className="mt-1 text-[10px] font-bold opacity-90 inline-flex items-center gap-1">
                               <CheckCircle size={12} />
@@ -9680,12 +9978,17 @@ function App() {
                           {canConfirmReminder && (
                             <button
                               type="button"
-                              onClick={() => sendWorkspaceReminderAck(item.id)}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                sendWorkspaceReminderAck(item.id)
+                              }}
                               className="mt-2 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700"
                             >
                               Konfirmasi Dibaca
                             </button>
                           )}
+                        </div>
                         </div>
                         {!isMine && (
                           <div className="workspace-chat-page-meta text-right">
@@ -9713,6 +10016,22 @@ function App() {
                       <button type="button" onClick={() => sendQuickWorkspaceReminder('event')} className="workspace-chat-page-chip">Event Hari Ini</button>
                       <button type="button" onClick={() => sendQuickWorkspaceReminder('gcall')} className="workspace-chat-page-chip">GCall Hari Ini</button>
                       <button type="button" onClick={() => sendQuickWorkspaceReminder('deadline')} className="workspace-chat-page-chip">Deadline Hari Ini</button>
+                    </div>
+                  )}
+                  {workspaceChatReplyTarget && (
+                    <div className="mb-2 flex items-start justify-between gap-2 rounded-2xl border border-white/30 bg-white/16 px-3 py-2 text-white/95 backdrop-blur-sm">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/70">Reply ke {workspaceChatReplyTarget.senderName}</p>
+                        <p className="mt-0.5 truncate text-xs">{workspaceChatReplyTarget.preview}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setWorkspaceChatReplyTarget(null)}
+                        className="h-7 w-7 shrink-0 rounded-full border border-white/25 text-white hover:bg-white/10 inline-flex items-center justify-center"
+                        title="Batal reply"
+                      >
+                        <X size={13} />
+                      </button>
                     </div>
                   )}
                   <div className="workspace-chat-page-composer-row">
@@ -14240,13 +14559,31 @@ function App() {
               </div>
               <div className="workspace-chat-actions flex items-center justify-end gap-2 sm:justify-start">
                 {canManageTeam && activeWorkspaceChatMemberId && (
-                  <button
-                    type="button"
-                    onClick={handleClearWorkspaceChat}
-                    className="h-9 px-3 rounded-xl border border-red-100 text-red-500 hover:bg-red-50 text-xs font-bold"
-                  >
-                    Clear Chat
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceChatOwnerMenuOpen(prev => !prev)}
+                      className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400 hover:bg-purple-50 flex items-center justify-center"
+                      title="Menu chat"
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    {workspaceChatOwnerMenuOpen && (
+                      <div className="absolute right-0 top-11 z-20 w-44 rounded-2xl border border-purple-100 bg-white p-2 shadow-xl dark:bg-slate-900 dark:border-indigo-900">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorkspaceChatOwnerMenuOpen(false)
+                            handleClearWorkspaceChat()
+                          }}
+                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-semibold border border-red-100 text-red-500 hover:bg-red-50 inline-flex items-center gap-2"
+                        >
+                          <Trash2 size={14} />
+                          Kosongkan Chat
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
                 <div className="relative">
                   <button
@@ -14391,7 +14728,11 @@ function App() {
               )}
 
               <div className="workspace-chat-thread min-w-0">
-                <div ref={workspaceChatFeedRef} className="workspace-chat-feed h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3">
+                <div
+                  ref={workspaceChatFeedRef}
+                  className="workspace-chat-feed h-72 overflow-y-auto rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 p-4 space-y-3"
+                  onClick={() => setWorkspaceChatActionMessageId('')}
+                >
                   {workspaceChatMessages.length === 0 ? (
                     <p className="text-xs text-purple-400">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
                   ) : workspaceChatItemsWithDateSeparator.map(item => {
@@ -14423,12 +14764,71 @@ function App() {
                       : isAckVisibleMessage
                         ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
                         : 'bg-white border border-purple-100 text-[#4f4574]'
+                    const replyMeta = getWorkspaceChatReplyMeta(item)
+                    const canDeleteMessage = isMine || canManageTeam
+                    const actionMenuOpen = workspaceChatActionMessageId === item.id
                     return (
                       <div key={item.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`flex items-end gap-1 max-w-[88%] ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-                          <div className={`max-w-[78%] rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
-                            <p className="text-[10px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
+                          <div
+                            className="workspace-chat-bubble-wrap relative max-w-[78%]"
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => handleWorkspaceChatBubblePointerDown(event, item)}
+                            onPointerUp={(event) => handleWorkspaceChatBubblePointerUp(event, item)}
+                            onPointerLeave={clearWorkspaceChatBubbleGesture}
+                            onPointerCancel={clearWorkspaceChatBubbleGesture}
+                            onContextMenu={(event) => {
+                              event.preventDefault()
+                              setWorkspaceChatActionMessageId(item.id)
+                            }}
+                          >
+                          {actionMenuOpen && (
+                            <div className={`absolute -top-4 z-10 inline-flex items-center gap-1 rounded-full border border-purple-100 bg-white px-1.5 py-1 shadow-lg ${isMine ? 'left-3' : 'right-3'}`}>
+                              <button
+                                type="button"
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openWorkspaceChatReply(item)
+                                }}
+                                className="h-7 w-7 rounded-full text-[#6f55bd] hover:bg-purple-50 inline-flex items-center justify-center"
+                                title="Reply"
+                              >
+                                <CornerUpLeft size={13} />
+                              </button>
+                              {canDeleteMessage && (
+                                <button
+                                  type="button"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    deleteWorkspaceChatMessage(item)
+                                  }}
+                                  className="h-7 w-7 rounded-full text-red-500 hover:bg-red-50 inline-flex items-center justify-center"
+                                  title="Hapus"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          <div className={`w-full rounded-2xl px-3 py-2 ${isMine ? mineBubbleClass : incomingBubbleClass}`}>
+                            <p className="text-[9px] font-bold opacity-80">{getWorkspaceMessageSenderName(item)}</p>
+                            {replyMeta && (
+                              <div className={`mb-1.5 flex items-center gap-2 px-0.5 py-0 text-[10px] leading-snug ${
+                                isMine
+                                  ? 'text-white/82'
+                                  : 'text-[#6b5aa8]'
+                              }`}>
+                                <span className="inline-block h-5 w-[3px] shrink-0 rounded-full bg-[#8f75d8]" />
+                                <div className="min-w-0">
+                                  <p className="truncate text-[11px] leading-tight opacity-90">
+                                    {replyMeta.senderName}: {replyMeta.preview}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                            <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{formatTextDates(item.detail)}</p>
                             {workspaceChatAcknowledgedIds.has(item.id) && (
                               <p className="mt-1 text-[10px] font-bold opacity-90 inline-flex items-center gap-1">
                                 <CheckCircle size={12} />
@@ -14438,12 +14838,17 @@ function App() {
                             {canConfirmReminder && (
                               <button
                                 type="button"
-                                onClick={() => sendWorkspaceReminderAck(item.id)}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  sendWorkspaceReminderAck(item.id)
+                                }}
                                 className="mt-2 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                               >
                                 Konfirmasi Dibaca
                               </button>
                             )}
+                          </div>
                           </div>
                           <div className={`pb-1 min-w-[36px] leading-tight ${isMine ? 'text-right' : 'text-left'}`}>
                             <p className="text-[10px] font-semibold text-purple-400">{sentTime}</p>
@@ -14472,6 +14877,23 @@ function App() {
                 <p className="mb-2 text-[11px] font-semibold text-purple-400">
                   {workspaceChatPeerTypingLabel}
                 </p>
+              )}
+
+              {workspaceChatReplyTarget && (
+                <div className="flex items-start justify-between gap-2 rounded-2xl border border-purple-100 bg-[#fbfaff] px-3 py-2 text-[#4f4574]">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-purple-400">Reply ke {workspaceChatReplyTarget.senderName}</p>
+                    <p className="mt-0.5 truncate text-xs">{workspaceChatReplyTarget.preview}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceChatReplyTarget(null)}
+                    className="h-7 w-7 shrink-0 rounded-full border border-purple-100 text-purple-500 hover:bg-purple-50 inline-flex items-center justify-center"
+                    title="Batal reply"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
               )}
 
               <textarea
