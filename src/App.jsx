@@ -776,6 +776,8 @@ function App() {
   const workspaceChatFeedRef = useRef(null)
   const invoicePreviewRef = useRef(null)
   const mobilePwaGuideAutoShownRef = useRef(false)
+  const profileSyncBlockedRef = useRef(false)
+  const profileSyncWarnedRef = useRef(false)
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -3887,6 +3889,7 @@ function App() {
 
   useEffect(() => {
     if (!actorUserId || !session?.user) return
+    if (profileSyncBlockedRef.current) return
 
     const email = String(session.user.email || '').trim().toLowerCase()
     const fullName = String(
@@ -3911,6 +3914,17 @@ function App() {
       const { error } = await supabase
         .from('profiles')
         .upsert(payload, { onConflict: 'id' })
+
+      if (!cancelled && error) {
+        if (String(error.code || '') === '42501' || String(error.message || '').includes('403')) {
+          profileSyncBlockedRef.current = true
+          if (!profileSyncWarnedRef.current) {
+            profileSyncWarnedRef.current = true
+            console.warn('Sinkronisasi public.profiles diblokir oleh policy Supabase. App akan lanjut tanpa retry otomatis.')
+          }
+        }
+        return
+      }
 
       if (!cancelled && !error) {
         setWorkspaceProfileNames(prev => ({
@@ -9315,7 +9329,15 @@ function App() {
         .eq('id', actorUserId)
 
       if (profileSyncError) {
-        console.warn('Sinkronisasi public.profiles gagal:', profileSyncError.message)
+        if (String(profileSyncError.code || '') === '42501' || String(profileSyncError.message || '').includes('403')) {
+          profileSyncBlockedRef.current = true
+          if (!profileSyncWarnedRef.current) {
+            profileSyncWarnedRef.current = true
+            console.warn('Sinkronisasi public.profiles diblokir oleh policy Supabase. Update profil tetap disimpan di auth metadata.')
+          }
+        } else {
+          console.warn('Sinkronisasi public.profiles gagal:', profileSyncError.message)
+        }
       }
 
       const { error: authMetadataSyncError } = await supabase.auth.updateUser({
