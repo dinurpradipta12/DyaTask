@@ -26,7 +26,15 @@ jobs:
       - name: Install dependencies
         run: npm ci --progress=false
 
-      - name: Build and publish macOS release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run electron:publish:mac
+      - name: Build macOS artifacts
+        run: npm run electron:dist:mac
+
+      - name: Publish GitHub release with DMG
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/latest-mac.yml
