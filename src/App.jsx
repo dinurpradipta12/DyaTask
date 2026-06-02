@@ -736,10 +736,12 @@ function App() {
   const tutorialProgressLoadedRef = useRef(false)
   const seenAssistantNoteIdsRef = useRef(new Set())
   const workspaceChatSeenSignatureRef = useRef('')
+  const workspaceChatPresenceSignatureRef = useRef('')
   const workspaceChatInactiveNoticeSignatureRef = useRef('')
   const workspaceChatTypingHeartbeatRef = useRef(null)
   const workspaceChatTypingIdleTimerRef = useRef(null)
   const workspaceChatTypingStateRef = useRef(false)
+  const workspaceChatPresenceHeartbeatRef = useRef(null)
   const workspaceChatLongPressTimerRef = useRef(null)
   const workspaceChatTouchStartRef = useRef({ x: 0, y: 0, messageId: '' })
   const workspaceChatFeedRef = useRef(null)
@@ -2263,8 +2265,14 @@ function App() {
   const workspaceChatPeerStatusOption = workspaceChatStatusOptions.find(option => option.value === workspaceChatPeerStatusValue) || workspaceChatStatusOptions[0]
   const workspaceChatPeerStatusLabel = workspaceChatPeerStatusOption.label
   const workspaceChatPeerStatusTone = workspaceChatPeerStatusOption.tone
+  const workspaceChatPeerStatusDotClass = workspaceChatPeerStatusValue === 'active'
+    ? 'bg-emerald-400'
+    : workspaceChatPeerStatusValue === 'busy'
+      ? 'bg-red-400'
+      : 'bg-slate-400'
   const workspaceChatStatusSectionLabel = 'Status Saya'
   const rawWorkspaceChatLogs = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat')
+  const workspaceChatPresenceLogs = activityLogs.filter(item => item?.metadata?.kind === 'workspace_chat_presence')
   const workspaceChatLastSeenLog = workspaceChatPeerUserId
     ? activityLogs.find(item => (
       item?.metadata?.kind === 'workspace_chat_seen'
@@ -2274,9 +2282,68 @@ function App() {
       )
     ))
     : null
+  const workspaceChatPeerPresenceLog = workspaceChatPeerUserId
+    ? workspaceChatPresenceLogs.reduce((latest, item) => {
+        if (item?.metadata?.senderUserId !== workspaceChatPeerUserId) return latest
+        const presenceChatMemberId = item?.metadata?.chatMemberId || ''
+        const presenceChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+        const matchesMember = (
+          (presenceChatMemberId && presenceChatMemberId === activeWorkspaceChatMemberId)
+          || (presenceChatMemberUserId && activeWorkspaceChatMember?.memberUserId && presenceChatMemberUserId === activeWorkspaceChatMember.memberUserId)
+          || (!presenceChatMemberId && !presenceChatMemberUserId && activeWorkspaceChatMember?.id === workspaceAssistantChatMembers[0]?.id)
+        )
+        if (!matchesMember) return latest
+        const createdAt = new Date(item.createdAt).getTime()
+        return createdAt > latest.createdAt ? { createdAt, item } : latest
+      }, { createdAt: 0, item: null }).item
+    : null
   const workspaceChatLastOpenedLabel = workspaceChatLastSeenLog
     ? formatLongDateTime(workspaceChatLastSeenLog.createdAt)
     : 'Belum pernah dibuka'
+  const workspaceChatLastSeenSourceTime = (() => {
+    const seenTime = workspaceChatLastSeenLog ? new Date(workspaceChatLastSeenLog.createdAt).getTime() : 0
+    const presenceTime = workspaceChatPeerPresenceLog ? new Date(workspaceChatPeerPresenceLog.createdAt).getTime() : 0
+    return Math.max(seenTime, presenceTime)
+  })()
+  const workspaceChatLastSeenSentence = workspaceChatLastSeenSourceTime
+    ? (() => {
+        const date = new Date(workspaceChatLastSeenSourceTime)
+        const dateLabel = date.toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        }).toLowerCase()
+        const timeLabel = date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        }).toLowerCase()
+        const isSameDay = date.toDateString() === headerNow.toDateString()
+        return isSameDay
+          ? `Last Seen ${timeLabel}`
+          : `Last Seen ${dateLabel} pukul ${timeLabel}`
+      })()
+    : 'Last Seen belum pernah dibuka'
+  const workspaceChatPeerPresenceAgeMs = workspaceChatPeerPresenceLog
+    ? (headerNow.getTime() - new Date(workspaceChatPeerPresenceLog.createdAt).getTime())
+    : Number.POSITIVE_INFINITY
+  const workspaceChatPresenceText = workspaceChatPeerStatusValue === 'busy'
+    ? 'Sibuk'
+    : workspaceChatPeerStatusValue === 'inactive'
+      ? 'Tidak Aktif'
+      : workspaceChatPeerPresenceLog?.metadata?.inThread && workspaceChatPeerPresenceAgeMs < 45000
+        ? 'Online'
+        : workspaceChatPeerPresenceLog && workspaceChatPeerPresenceLog?.metadata?.inThread === false && workspaceChatPeerPresenceAgeMs < 60000
+          ? 'Tidak di obrolan'
+          : workspaceChatLastSeenSentence
+  const getWorkspacePresenceToneClass = (text) => {
+    const normalized = String(text || '').toLowerCase()
+    if (normalized.includes('sedang mengetik')) return 'typing'
+    if (normalized === 'online') return 'online'
+    if (normalized === 'sibuk') return 'busy'
+    if (normalized === 'tidak aktif') return 'inactive'
+    return 'default'
+  }
   const workspaceChatLastOpenedText = workspaceChatLastSeenLog
     ? `${workspaceChatPeerStatusLabel} • terakhir dibuka ${workspaceChatLastOpenedLabel}`
     : `${workspaceChatPeerStatusLabel} • belum pernah dibuka`
@@ -2323,9 +2390,92 @@ function App() {
       return seenAt > latest ? seenAt : latest
     }, 0)
   }
+  const getWorkspaceThreadPresenceText = (member) => {
+    if (!member?.memberUserId) return 'Last Seen belum pernah dibuka'
+    const memberStatusValue = getWorkspaceChatPresenceOption(member.memberUserId).value
+    const latestTypingLog = activityLogs.reduce((latest, item) => {
+      if (item?.metadata?.kind !== 'workspace_chat_typing') return latest
+      if (item?.metadata?.senderUserId !== member.memberUserId) return latest
+      const typingChatMemberId = item?.metadata?.chatMemberId || ''
+      const typingChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      const matchesMember = (
+        (typingChatMemberId && typingChatMemberId === member.id)
+        || (typingChatMemberUserId && typingChatMemberUserId === member.memberUserId)
+        || (!typingChatMemberId && !typingChatMemberUserId && member.id === workspaceAssistantChatMembers[0]?.id)
+      )
+      if (!matchesMember) return latest
+      const createdAt = new Date(item.createdAt).getTime()
+      return createdAt > latest.createdAt ? { createdAt, item } : latest
+    }, { createdAt: 0, item: null }).item
+    const latestPresenceLog = workspaceChatPresenceLogs.reduce((latest, item) => {
+      if (item?.metadata?.senderUserId !== member.memberUserId) return latest
+      const presenceChatMemberId = item?.metadata?.chatMemberId || ''
+      const presenceChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      const matchesMember = (
+        (presenceChatMemberId && presenceChatMemberId === member.id)
+        || (presenceChatMemberUserId && presenceChatMemberUserId === member.memberUserId)
+        || (!presenceChatMemberId && !presenceChatMemberUserId && member.id === workspaceAssistantChatMembers[0]?.id)
+      )
+      if (!matchesMember) return latest
+      const createdAt = new Date(item.createdAt).getTime()
+      return createdAt > latest.createdAt ? { createdAt, item } : latest
+    }, { createdAt: 0, item: null }).item
+
+    const latestSeenLog = activityLogs.reduce((latest, item) => {
+      if (item?.metadata?.kind !== 'workspace_chat_seen') return latest
+      if (item?.metadata?.senderUserId !== member.memberUserId) return latest
+      const seenChatMemberId = item?.metadata?.chatMemberId || ''
+      const seenChatMemberUserId = item?.metadata?.chatMemberUserId || ''
+      const matchesMember = (
+        (seenChatMemberId && seenChatMemberId === member.id)
+        || (seenChatMemberUserId && seenChatMemberUserId === member.memberUserId)
+        || (!seenChatMemberId && !seenChatMemberUserId && member.id === workspaceAssistantChatMembers[0]?.id)
+      )
+      if (!matchesMember) return latest
+      const createdAt = new Date(item.createdAt).getTime()
+      return createdAt > latest.createdAt ? { createdAt, item } : latest
+    }, { createdAt: 0, item: null }).item
+
+    const presenceAgeMs = latestPresenceLog
+      ? (headerNow.getTime() - new Date(latestPresenceLog.createdAt).getTime())
+      : Number.POSITIVE_INFINITY
+    const typingAgeMs = latestTypingLog
+      ? (headerNow.getTime() - new Date(latestTypingLog.createdAt).getTime())
+      : Number.POSITIVE_INFINITY
+
+    if (latestTypingLog?.metadata?.typing && typingAgeMs < 6000) return 'Sedang mengetik'
+
+    if (memberStatusValue === 'busy') return 'Sibuk'
+    if (memberStatusValue === 'inactive') return 'Tidak Aktif'
+
+    if (latestPresenceLog?.metadata?.inThread && presenceAgeMs < 90000) return 'Online'
+    if (latestPresenceLog && latestPresenceLog?.metadata?.inThread === false && presenceAgeMs < 60000) return 'Tidak di obrolan'
+
+    const sourceTime = Math.max(
+      latestSeenLog ? new Date(latestSeenLog.createdAt).getTime() : 0,
+      latestPresenceLog ? new Date(latestPresenceLog.createdAt).getTime() : 0
+    )
+    if (!sourceTime) return 'Last Seen belum pernah dibuka'
+
+    const date = new Date(sourceTime)
+    const timeLabel = date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).toLowerCase()
+    if (date.toDateString() === headerNow.toDateString()) return `Last Seen ${timeLabel}`
+
+    const dateLabel = date.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    }).toLowerCase()
+    return `Last Seen ${dateLabel} pukul ${timeLabel}`
+  }
   const workspaceChatMemberSummaries = workspaceAssistantChatMembers.map(member => {
     const memberName = resolveWorkspaceMemberName(member)
     const memberPresence = getWorkspaceChatPresenceOption(member.memberUserId)
+    const memberPresenceText = getWorkspaceThreadPresenceText(member)
     const matchedMemberMessages = rawWorkspaceChatLogs.filter(item => matchesWorkspaceChatMember(item, member))
     const memberMessages = (matchedMemberMessages.length
       ? matchedMemberMessages
@@ -2333,24 +2483,25 @@ function App() {
           const senderUserId = item?.metadata?.senderUserId || ''
           return senderUserId === member.memberUserId || senderUserId === workspaceContext?.ownerUserId
         }))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => getWorkspaceChatSortTime(b) - getWorkspaceChatSortTime(a))
     const lastMessage = memberMessages[0] || null
     const threadSeenAt = getWorkspaceThreadSeenAt(member)
     const unreadCount = memberMessages.filter(item => (
       item?.metadata?.senderUserId
       && item.metadata.senderUserId !== actorUserId
-      && new Date(item.createdAt).getTime() > threadSeenAt
+      && getWorkspaceChatSortTime(item) > threadSeenAt
     )).length
     return {
       member,
       memberName,
       memberPresence,
+      memberPresenceText,
       lastMessage,
       unreadCount
     }
   }).sort((a, b) => {
-    const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0
-    const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0
+    const aTime = a.lastMessage ? getWorkspaceChatSortTime(a.lastMessage) : 0
+    const bTime = b.lastMessage ? getWorkspaceChatSortTime(b.lastMessage) : 0
     return bTime - aTime
   })
   const getWorkspaceMessageSenderName = (item) => {
@@ -2384,6 +2535,14 @@ function App() {
     if (chatMember) return resolveWorkspaceMemberName(chatMember)
     return formatDisplayName(item?.metadata?.senderEmail || headerUserName || activeWorkspaceChatMemberName, 'Pengguna')
   }
+  function getWorkspaceChatSortTime (item) {
+    const clientCreatedAt = item?.metadata?.clientCreatedAt || ''
+    const clientTime = clientCreatedAt ? new Date(clientCreatedAt).getTime() : 0
+    if (Number.isFinite(clientTime) && clientTime > 0) return clientTime
+    const createdAtTime = new Date(item?.createdAt || 0).getTime()
+    return Number.isFinite(createdAtTime) ? createdAtTime : 0
+  }
+
   const summarizeWorkspaceChatMessage = (value) => {
     const text = String(value || '').replace(/\s+/g, ' ').trim()
     if (!text) return 'Pesan'
@@ -2405,6 +2564,7 @@ function App() {
     const rawId = String(item.id)
     if (!rawId.startsWith('local-')) return rawId
 
+    const targetClientMessageId = String(item?.metadata?.clientMessageId || '').trim()
     const targetDetail = String(item.detail || '').trim()
     const targetSenderUserId = item?.metadata?.senderUserId || ''
     const targetSenderRole = item?.metadata?.senderRole || ''
@@ -2415,6 +2575,7 @@ function App() {
     const persistedMatch = activityLogs.find(log => {
       if (!log?.id || String(log.id).startsWith('local-')) return false
       if (log?.metadata?.kind !== 'workspace_chat') return false
+      if (targetClientMessageId && String(log?.metadata?.clientMessageId || '').trim() === targetClientMessageId) return true
       if (String(log.detail || '').trim() !== targetDetail) return false
       if ((log?.metadata?.senderUserId || '') !== targetSenderUserId) return false
       if ((log?.metadata?.senderRole || '') !== targetSenderRole) return false
@@ -2447,7 +2608,7 @@ function App() {
   }
   function matchesWorkspaceChatThreadLog (item, member = activeWorkspaceChatMember) {
     const kind = item?.metadata?.kind || ''
-    if (!['workspace_chat', 'workspace_chat_ack', 'workspace_chat_seen', 'workspace_chat_typing'].includes(kind)) return false
+    if (!['workspace_chat', 'workspace_chat_ack', 'workspace_chat_seen', 'workspace_chat_typing', 'workspace_chat_presence'].includes(kind)) return false
     if (!member) return true
 
     const messageChatMemberId = item?.metadata?.chatMemberId || ''
@@ -2516,7 +2677,7 @@ function App() {
         }
         return true
       }))
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .sort((a, b) => getWorkspaceChatSortTime(a) - getWorkspaceChatSortTime(b))
     .slice(-300)
   const workspaceChatAcknowledgements = activityLogs
     .filter(item => {
@@ -4033,6 +4194,36 @@ function App() {
     if (!scopedUserId) return
     let cancelled = false
 
+    const dedupeActivityLogItems = (items) => {
+      const byIdentity = new Map()
+      items.forEach((item) => {
+        if (!item) return
+        const clientMessageId = String(item?.metadata?.clientMessageId || '').trim()
+        const identityKey = clientMessageId
+          ? `client:${clientMessageId}`
+          : `id:${String(item.id || '')}`
+        const existing = byIdentity.get(identityKey)
+        if (!existing) {
+          byIdentity.set(identityKey, item)
+          return
+        }
+        const existingIsLocal = String(existing.id || '').startsWith('local-')
+        const currentIsLocal = String(item.id || '').startsWith('local-')
+        if (existingIsLocal && !currentIsLocal) {
+          byIdentity.set(identityKey, item)
+          return
+        }
+        const existingCreatedAt = new Date(existing.createdAt || 0).getTime()
+        const currentCreatedAt = new Date(item.createdAt || 0).getTime()
+        if (currentCreatedAt > existingCreatedAt) {
+          byIdentity.set(identityKey, item)
+        }
+      })
+      return Array.from(byIdentity.values()).sort((a, b) => (
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      ))
+    }
+
     const mapActivityLog = (item) => ({
       id: item.id,
       type: item.event_type || 'Log',
@@ -4059,7 +4250,7 @@ function App() {
         return
       }
 
-      setActivityLogs((data || []).map(mapActivityLog))
+      setActivityLogs(dedupeActivityLogItems((data || []).map(mapActivityLog)))
       setLastSyncTime(new Date())
     }
 
@@ -4106,17 +4297,16 @@ function App() {
           })
           if (payload?.eventType === 'INSERT' && incoming?.id) {
             const next = [mapRow(incoming), ...prev.filter(item => item.id !== incoming.id)]
-            return next.slice(0, 300)
+            return dedupeActivityLogItems(next).slice(0, 300)
           }
           if (payload?.eventType === 'UPDATE' && incoming?.id) {
-            return prev.map(item => item.id === incoming.id ? mapRow(incoming) : item)
+            return dedupeActivityLogItems(prev.map(item => item.id === incoming.id ? mapRow(incoming) : item)).slice(0, 300)
           }
           if (payload?.eventType === 'DELETE' && previous?.id) {
-            return prev.filter(item => item.id !== previous.id)
+            return dedupeActivityLogItems(prev.filter(item => item.id !== previous.id)).slice(0, 300)
           }
           return prev
         })
-        loadActivityLogs()
       })
       .subscribe()
 
@@ -4519,8 +4709,9 @@ function App() {
 
   const createActivityLog = async ({ type, title, detail, tone = 'purple', sourceTable = null, sourceId = null, metadata = {} }) => {
     const createdAt = new Date().toISOString()
+    const clientMessageId = String(metadata?.clientMessageId || '').trim()
     const localLog = {
-      id: `local-${Date.now()}`,
+      id: `local-${clientMessageId || Date.now()}`,
       type,
       title,
       detail,
@@ -4531,7 +4722,13 @@ function App() {
       createdAt
     }
 
-    setActivityLogs(prev => [localLog, ...prev].slice(0, 300))
+    setActivityLogs(prev => {
+      const next = [localLog, ...prev.filter(item => (
+        item.id !== localLog.id
+        && (!clientMessageId || String(item?.metadata?.clientMessageId || '') !== clientMessageId)
+      ))]
+      return next.slice(0, 300)
+    })
 
     if (!scopedUserId) return
 
@@ -4557,6 +4754,8 @@ function App() {
     const message = String(messageText || '').trim()
     if (!message) return
 
+    const clientMessageId = `workspace-chat-${actorUserId || 'anon'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const clientCreatedAt = new Date().toISOString()
     const chatMemberId = metadata.chatMemberId || activeWorkspaceChatMemberId
     const chatMemberUserId = metadata.chatMemberUserId || activeWorkspaceChatMember?.memberUserId || actorUserId
     if (workspaceRole === 'owner' && workspaceAssistantChatMembers.length > 0 && !chatMemberId) {
@@ -4592,6 +4791,8 @@ function App() {
         chatMemberId,
         chatMemberUserId,
         chatMemberLabel: activeWorkspaceChatMemberName,
+        clientMessageId,
+        clientCreatedAt,
         ...(workspaceChatReplyTarget ? {
           replyToMessageId: workspaceChatReplyTarget.id,
           replyToSenderName: workspaceChatReplyTarget.senderName,
@@ -4830,18 +5031,21 @@ function App() {
     ))
 
     let error = null
+    let deletedCount = 0
     if (threadLogIds.length > 0) {
       for (let index = 0; index < threadLogIds.length; index += 100) {
         const idChunk = threadLogIds.slice(index, index + 100)
-        const { error: deleteByIdsError } = await supabase
+        const { data: deletedRows, error: deleteByIdsError } = await supabase
           .from('activity_logs')
           .delete()
           .eq('user_id', scopedUserId)
           .in('id', idChunk)
+          .select('id')
         if (deleteByIdsError) {
           error = deleteByIdsError
           break
         }
+        deletedCount += (deletedRows || []).length
       }
     } else {
       let deleteQuery = supabase
@@ -4852,12 +5056,17 @@ function App() {
       if (activeWorkspaceChatMemberId) {
         deleteQuery = deleteQuery.eq('metadata->>chatMemberId', activeWorkspaceChatMemberId)
       }
-      const { error: fallbackDeleteError } = await deleteQuery
+      const { data: deletedRows, error: fallbackDeleteError } = await deleteQuery.select('id')
       error = fallbackDeleteError
+      deletedCount = (deletedRows || []).length
     }
 
     if (error) {
       alert(`Gagal clear chat: ${error.message}`)
+      return
+    }
+    if (deletedCount === 0 && threadLogIds.length > 0) {
+      alert('Chat belum bisa dihapus dari database. Jalankan SQL migration terbaru untuk activity_logs delete policy dulu.')
       return
     }
 
@@ -4999,6 +5208,7 @@ function App() {
   useEffect(() => {
     if (!isWorkspaceChatThreadVisible) {
       workspaceChatSeenSignatureRef.current = ''
+      workspaceChatPresenceSignatureRef.current = ''
       workspaceChatInactiveNoticeSignatureRef.current = ''
       setWorkspaceChatStatusMenuOpen(false)
       setWorkspaceChatActionMessageId('')
@@ -5050,6 +5260,71 @@ function App() {
     activeWorkspaceChatMemberName,
     workspaceContext?.ownerUserId,
     workspaceChatLatestMessageMarker
+  ])
+
+  useEffect(() => {
+    if (!isWorkspaceChatThreadVisible || !actorUserId || !scopedUserId) return undefined
+
+    const publishPresence = (inThread) => createActivityLog({
+      type: 'Workspace Chat',
+      title: `${inThread ? 'Masuk' : 'Keluar'} room chat: ${workspaceChatTitleName}`,
+      detail: `${headerUserName} ${inThread ? 'sedang berada' : 'tidak lagi berada'} di room chat.`,
+      tone: 'purple',
+      sourceTable: 'activity_logs',
+      sourceId: actorUserId,
+      metadata: {
+        kind: 'workspace_chat_presence',
+        inThread,
+        senderRole: workspaceRole,
+        senderUserId: actorUserId,
+        senderName: headerUserName,
+        targetUserId: actorUserId,
+        targetLabel: headerUserName,
+        chatMemberId: activeWorkspaceChatMemberId || '',
+        chatMemberUserId: activeWorkspaceChatMember?.memberUserId || '',
+        chatMemberLabel: activeWorkspaceChatMemberName,
+        workspaceOwnerId: workspaceContext?.ownerUserId || ''
+      }
+    })
+
+    const presenceSignature = [
+      actorUserId || 'self',
+      workspaceRole,
+      activeWorkspaceChatMemberId || 'no-member',
+      activeWorkspaceChatMember?.memberUserId || 'no-member-user'
+    ].join(':')
+
+    if (workspaceChatPresenceSignatureRef.current !== presenceSignature) {
+      workspaceChatPresenceSignatureRef.current = presenceSignature
+      publishPresence(true)
+    }
+
+    if (workspaceChatPresenceHeartbeatRef.current) {
+      clearInterval(workspaceChatPresenceHeartbeatRef.current)
+    }
+    workspaceChatPresenceHeartbeatRef.current = setInterval(() => {
+      publishPresence(true)
+    }, 25000)
+
+    return () => {
+      if (workspaceChatPresenceHeartbeatRef.current) {
+        clearInterval(workspaceChatPresenceHeartbeatRef.current)
+        workspaceChatPresenceHeartbeatRef.current = null
+      }
+      publishPresence(false)
+      workspaceChatPresenceSignatureRef.current = ''
+    }
+  }, [
+    isWorkspaceChatThreadVisible,
+    actorUserId,
+    scopedUserId,
+    workspaceRole,
+    workspaceChatTitleName,
+    headerUserName,
+    activeWorkspaceChatMemberId,
+    activeWorkspaceChatMember?.memberUserId,
+    activeWorkspaceChatMemberName,
+    workspaceContext?.ownerUserId
   ])
 
   useEffect(() => {
@@ -9663,7 +9938,7 @@ function App() {
                     <div className="workspace-chat-list-feed">
                       {workspaceChatMemberSummaries.length === 0 ? (
                         <div className="workspace-chat-list-empty">Belum ada assistant aktif.</div>
-                      ) : workspaceChatMemberSummaries.map(({ member, memberName, memberPresence, lastMessage, unreadCount }) => (
+                      ) : workspaceChatMemberSummaries.map(({ member, memberName, memberPresence, memberPresenceText, lastMessage, unreadCount }) => (
                         <button
                           key={member.id}
                           type="button"
@@ -9677,9 +9952,9 @@ function App() {
                           <div className="workspace-chat-list-content">
                             <div className="workspace-chat-list-row">
                               <p className="workspace-chat-list-name">{memberName}</p>
-                              <span className="workspace-chat-list-time">
-                                {lastMessage ? new Date(lastMessage.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}
-                              </span>
+                            </div>
+                            <div className="workspace-chat-list-row">
+                              <p className={`workspace-chat-list-presence ${getWorkspacePresenceToneClass(memberPresenceText)}`}>{memberPresenceText}</p>
                             </div>
                             <div className="workspace-chat-list-row">
                               <p className="workspace-chat-list-preview">
@@ -9687,7 +9962,12 @@ function App() {
                               </p>
                             </div>
                           </div>
-                          {unreadCount > 0 && <span className="workspace-chat-list-badge workspace-chat-list-badge-side">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                          <div className="workspace-chat-list-meta">
+                            <span className="workspace-chat-list-time">
+                              {lastMessage ? new Date(lastMessage.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                            {unreadCount > 0 && <span className="workspace-chat-list-badge workspace-chat-list-badge-side">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -9713,15 +9993,29 @@ function App() {
                       </button>
                     )}
                     <div className="workspace-chat-page-title">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/70">Workspace Chat</p>
-                      <h2 className="text-xl font-extrabold text-white">{workspaceChatTitleName}</h2>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/80">
-                        <span className={`workspace-chat-page-status-badge inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-bold ${isMobileTabletView ? workspaceChatPeerStatusTone : 'border-white/20 bg-white/12 text-white'}`}>
-                          <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
-                          {workspaceChatPeerStatusLabel}
-                        </span>
-                        <span className="workspace-chat-page-last-opened">{workspaceChatLastSeenLog ? `Terakhir dibuka ${workspaceChatLastOpenedLabel}` : 'Belum pernah dibuka'}</span>
-                      </div>
+                      {isMobileTabletView ? (
+                        <>
+                          <h2 className="workspace-chat-page-mobile-title text-xl font-extrabold text-white">
+                            <span className={`workspace-chat-page-mobile-status-dot ${workspaceChatPeerStatusDotClass}`} />
+                            {workspaceChatTitleName}
+                          </h2>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/80">
+                            <span className="workspace-chat-page-last-opened">{workspaceChatPresenceText}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/70">Workspace Chat</p>
+                          <h2 className="text-xl font-extrabold text-white">{workspaceChatTitleName}</h2>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-white/80">
+                            <span className={`workspace-chat-page-status-badge inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-bold ${workspaceChatPeerStatusTone}`}>
+                              <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
+                              {workspaceChatPeerStatusLabel}
+                            </span>
+                            <span className="workspace-chat-page-last-opened">{workspaceChatPresenceText}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                     <div className="workspace-chat-page-actions">
                       <div className="relative">
@@ -9861,23 +10155,15 @@ function App() {
                   )}
                 </div>
 
-                {workspaceChatPeerIsTyping && (
-                  <p className={`mb-2 text-[11px] font-semibold ${
-                    isMobileTabletView && (workspaceRole !== 'owner' || mobileWorkspaceChatView === 'detail')
-                      ? 'text-purple-400'
-                      : 'text-white/80'
-                  }`}>
-                    {workspaceChatPeerTypingLabel}
-                  </p>
-                )}
-
                 <div
                   ref={workspaceChatFeedRef}
                   className="workspace-chat-page-feed"
                   onClick={() => setWorkspaceChatActionMessageId('')}
                 >
                   {workspaceChatMessages.length === 0 ? (
-                    <p className="text-sm text-white/75">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
+                    <div className="workspace-chat-page-empty">
+                      <p className="workspace-chat-page-empty-text">Belum ada pesan. Mulai chat untuk koordinasi kerja.</p>
+                    </div>
                   ) : workspaceChatItemsWithDateSeparator.map(item => {
                     if (item.__type === 'date_separator') {
                       const isDetailMobileView = isMobileTabletView
@@ -10066,7 +10352,7 @@ function App() {
                         maxLength={500}
                         placeholder=""
                         className="workspace-chat-page-textarea"
-                        autoFocus
+                        autoFocus={!isMobileTabletView}
                       />
                     </div>
                     <button
@@ -14554,7 +14840,7 @@ function App() {
                     <span className="inline-block h-2 w-2 rounded-full bg-current opacity-80" />
                     {workspaceChatPeerStatusLabel}
                   </span>
-                  <span className="leading-snug">{workspaceChatLastSeenLog ? `Terakhir dibuka ${workspaceChatLastOpenedLabel}` : 'Belum pernah dibuka'}</span>
+                  <span className="leading-snug">{workspaceChatPresenceText}</span>
                 </div>
               </div>
               <div className="workspace-chat-actions flex items-center justify-end gap-2 sm:justify-start">
@@ -14904,7 +15190,7 @@ function App() {
                 maxLength={500}
                 placeholder="Tulis pesan untuk owner/assistant..."
                 className="workspace-chat-textarea w-full h-20 rounded-2xl border border-purple-100 bg-[#fbfaff] dark:bg-slate-800 dark:border-indigo-900 px-4 py-3 text-sm text-[#4f4574] dark:text-purple-100 resize-none focus:outline-none focus:ring-2 focus:ring-purple-300/50"
-                autoFocus
+                autoFocus={!isMobileTabletView}
               />
               <div className="workspace-chat-composer-actions flex items-center justify-between gap-3">
                 <span className="text-[10px] font-semibold text-purple-300">{workspaceChatMessage.trim().length}/500</span>
