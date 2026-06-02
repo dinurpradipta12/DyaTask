@@ -12,7 +12,7 @@
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://127.0.0.1:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "npm run build && electron-builder --config.extraMetadata.version=$(node scripts/print-app-version.cjs)",
     "electron:pack": "npm run build && electron-builder --dir --config.extraMetadata.version=$(node scripts/print-app-version.cjs)",
-    "electron:dist:mac": "npm run build && electron-builder --mac --config.extraMetadata.version=$(node scripts/print-app-version.cjs)",
+    "electron:dist:mac": "npm run build && electron-builder --mac --publish never --config.extraMetadata.version=$(node scripts/print-app-version.cjs)",
     "electron:publish:mac": "npm run build && electron-builder --mac --publish always --config.extraMetadata.version=$(node scripts/print-app-version.cjs)"
   },
   "dependencies": {
