@@ -281,6 +281,8 @@ const readStoredJson = (key, fallback) => {
   }
 }
 
+const MOBILE_PWA_GUIDE_STORAGE_KEY = 'dyatask_mobile_pwa_guide_state'
+
 const readStoredInvoiceGeneratorDefaults = (storageKey = INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY) => {
   const parsed = readStoredJson(storageKey, {})
   return { ...FALLBACK_INVOICE_GENERATOR_DEFAULTS, ...(parsed && typeof parsed === 'object' ? parsed : {}) }
@@ -717,6 +719,9 @@ function App() {
   const [mobileCrmDetailOpen, setMobileCrmDetailOpen] = useState(false)
   const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
   const [installOptionsOpen, setInstallOptionsOpen] = useState(false)
+  const [mobilePwaGuideOpen, setMobilePwaGuideOpen] = useState(false)
+  const [mobilePwaGuidePlatform, setMobilePwaGuidePlatform] = useState('android')
+  const [mobilePwaGuideState, setMobilePwaGuideState] = useState(() => readStoredJson(MOBILE_PWA_GUIDE_STORAGE_KEY, { dismissed: false, reason: '', platform: '' }))
   const [appVersionInfo, setAppVersionInfo] = useState(null)
   const [manualUpdateStatus, setManualUpdateStatus] = useState('')
   const [checkingManualUpdate, setCheckingManualUpdate] = useState(false)
@@ -746,6 +751,7 @@ function App() {
   const workspaceChatTouchStartRef = useRef({ x: 0, y: 0, messageId: '' })
   const workspaceChatFeedRef = useRef(null)
   const invoicePreviewRef = useRef(null)
+  const mobilePwaGuideAutoShownRef = useRef(false)
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -1683,6 +1689,55 @@ function App() {
   const latestDmgReleaseUrl = 'https://github.com/dinurpradipta12/DyaTask/releases/latest'
   const isElectronApp = !!getElectronIpcRenderer()
   const isMacOsDevice = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`)
+  const mobilePwaGuideDetectedPlatform = useMemo(() => {
+    if (typeof navigator === 'undefined') return 'tablet'
+    const ua = navigator.userAgent || ''
+    const platform = navigator.platform || ''
+    const maxTouchPoints = navigator.maxTouchPoints || 0
+    const isIpad = /iPad/i.test(ua) || (platform === 'MacIntel' && maxTouchPoints > 1)
+    const isIphone = /iPhone|iPod/i.test(ua)
+    const isAndroid = /Android/i.test(ua)
+    const isAndroidTablet = isAndroid && !/Mobile/i.test(ua)
+    if (isIphone) return 'iphone'
+    if (isIpad) return 'ipad'
+    if (isAndroidTablet) return 'tablet'
+    if (isAndroid) return 'android'
+    return 'tablet'
+  }, [])
+  const isIosLikeInstallDevice = mobilePwaGuideDetectedPlatform === 'iphone' || mobilePwaGuideDetectedPlatform === 'ipad'
+  const mobilePwaGuideTabs = [
+    { key: 'android', label: 'Android' },
+    { key: 'iphone', label: 'iPhone' },
+    { key: 'ipad', label: 'iPad' },
+    { key: 'tablet', label: 'Tablet' }
+  ]
+  const mobilePwaGuideSteps = {
+    android: [
+      { icon: Smartphone, title: 'Buka di browser utama', detail: 'Gunakan Chrome atau browser Android utama Anda.' },
+      { icon: MoreHorizontal, title: 'Buka menu browser', detail: 'Tekan ikon tiga titik di kanan atas browser.' },
+      { icon: Download, title: 'Pilih Install App', detail: 'Gunakan Install App atau Add to Home Screen jika prompt belum muncul otomatis.' },
+      { icon: CheckCircle, title: 'Simpan ke layar utama', detail: 'Setelah terpasang, buka DyaTask langsung dari home screen.' }
+    ],
+    iphone: [
+      { icon: Smartphone, title: 'Buka lewat Safari', detail: 'Instal PWA iPhone paling stabil lewat Safari, bukan browser dalam aplikasi lain.' },
+      { icon: Share2, title: 'Tekan tombol Share', detail: 'Gunakan ikon share di toolbar Safari bagian bawah.' },
+      { icon: Plus, title: 'Pilih Add to Home Screen', detail: 'Cari opsi Add to Home Screen pada daftar aksi Safari.' },
+      { icon: CheckCircle, title: 'Tap Add', detail: 'Ikon DyaTask akan muncul di layar utama iPhone Anda.' }
+    ],
+    ipad: [
+      { icon: Smartphone, title: 'Buka lewat Safari iPad', detail: 'Safari iPad mendukung Add to Home Screen untuk DyaTask.' },
+      { icon: Share2, title: 'Tekan Share', detail: 'Gunakan tombol share di toolbar Safari.' },
+      { icon: Plus, title: 'Pilih Add to Home Screen', detail: 'Tambahkan DyaTask agar terbuka penuh seperti aplikasi.' },
+      { icon: CheckCircle, title: 'Selesai dipasang', detail: 'Setelah ditambahkan, buka dari layar utama iPad.' }
+    ],
+    tablet: [
+      { icon: Smartphone, title: 'Buka di browser tablet', detail: 'Gunakan browser utama tablet Anda untuk hasil install terbaik.' },
+      { icon: MoreHorizontal, title: 'Buka menu browser', detail: 'Cari menu tiga titik atau menu share pada browser tablet Anda.' },
+      { icon: Download, title: 'Pilih Install App', detail: 'Gunakan Install App atau Add to Home Screen jika tersedia.' },
+      { icon: CheckCircle, title: 'Buka dari home screen', detail: 'Setelah berhasil, DyaTask akan tampil seperti aplikasi penuh.' }
+    ]
+  }
+  const activeMobilePwaGuideSteps = mobilePwaGuideSteps[mobilePwaGuidePlatform] || mobilePwaGuideSteps.android
   const electronAppVersion = appVersionInfo?.version && appVersionInfo.version !== '0.0.0' ? appVersionInfo.version : ''
   const currentAppVersion = electronAppVersion || import.meta.env.VITE_APP_VERSION || '0.1.0'
   const updateStatusLabel = deployUpdateInfo ? 'App perlu di update' : 'App up to date'
@@ -5471,6 +5526,42 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const persistMobilePwaGuideState = (nextState) => {
+    setMobilePwaGuideState(nextState)
+    localStorage.setItem(MOBILE_PWA_GUIDE_STORAGE_KEY, JSON.stringify(nextState))
+  }
+
+  useEffect(() => {
+    if (!isPwaStandalone) return
+    persistMobilePwaGuideState({
+      dismissed: true,
+      reason: 'installed',
+      platform: mobilePwaGuideDetectedPlatform
+    })
+    setMobilePwaGuideOpen(false)
+  }, [isPwaStandalone, mobilePwaGuideDetectedPlatform])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (mobilePwaGuideAutoShownRef.current) return
+    if (!isMobileTabletView || isElectronApp || isPwaStandalone) return
+    if (mobilePwaGuideState?.dismissed && ['installed', 'unsupported'].includes(mobilePwaGuideState.reason)) return
+
+    const timer = window.setTimeout(() => {
+      mobilePwaGuideAutoShownRef.current = true
+      setMobilePwaGuidePlatform(mobilePwaGuideDetectedPlatform)
+      setMobilePwaGuideOpen(true)
+    }, 1200)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    isMobileTabletView,
+    isElectronApp,
+    isPwaStandalone,
+    mobilePwaGuideState,
+    mobilePwaGuideDetectedPlatform
+  ])
+
   useEffect(() => {
     const ipcRenderer = getElectronIpcRenderer()
     if (!ipcRenderer) return undefined
@@ -5725,6 +5816,28 @@ function App() {
     setInstallOptionsOpen(true)
   }
 
+  const handleDismissMobilePwaGuide = () => {
+    setMobilePwaGuideOpen(false)
+  }
+
+  const handleMarkMobilePwaGuideInstalled = () => {
+    persistMobilePwaGuideState({
+      dismissed: true,
+      reason: 'installed',
+      platform: mobilePwaGuidePlatform
+    })
+    setMobilePwaGuideOpen(false)
+  }
+
+  const handleMarkMobilePwaGuideUnsupported = () => {
+    persistMobilePwaGuideState({
+      dismissed: true,
+      reason: 'unsupported',
+      platform: mobilePwaGuidePlatform
+    })
+    setMobilePwaGuideOpen(false)
+  }
+
   const handleInstallPwa = async () => {
     if (!pwaInstallPrompt) {
       showWorkspaceInviteNotice({
@@ -5737,7 +5850,10 @@ function App() {
     const promptEvent = pwaInstallPrompt
     setPwaInstallPrompt(null)
     await promptEvent.prompt()
-    await promptEvent.userChoice
+    const choice = await promptEvent.userChoice
+    if (choice?.outcome === 'accepted') {
+      handleMarkMobilePwaGuideInstalled()
+    }
     setInstallOptionsOpen(false)
   }
 
@@ -14759,10 +14875,25 @@ function App() {
               <User size={18} />
               <span>Profil</span>
             </button>
-            <button type="button" className="mobile-more-item" onClick={() => { toggleTheme(); setShowMobileMoreMenu(false) }}>
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-              <span>{theme === 'dark' ? 'Tema Terang' : 'Tema Gelap'}</span>
-            </button>
+            {isMobileTabletView ? (
+              <button
+                type="button"
+                className="mobile-more-item"
+                onClick={() => {
+                  setShowMobileMoreMenu(false)
+                  setMobilePwaGuidePlatform(mobilePwaGuideDetectedPlatform)
+                  setMobilePwaGuideOpen(true)
+                }}
+              >
+                <Smartphone size={18} />
+                <span>Tutorial Install App</span>
+              </button>
+            ) : (
+              <button type="button" className="mobile-more-item" onClick={() => { toggleTheme(); setShowMobileMoreMenu(false) }}>
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                <span>{theme === 'dark' ? 'Tema Terang' : 'Tema Gelap'}</span>
+              </button>
+            )}
             {!isAssistantWorkspace && (
               <button type="button" className="mobile-more-item danger" onClick={() => { handleSignOut(); setShowMobileMoreMenu(false) }}>
                 <ExternalLink size={18} />
@@ -15463,6 +15594,142 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {mobilePwaGuideOpen && isMobileTabletView && !isPwaStandalone && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#20182f]/45 p-3 backdrop-blur-sm md:p-4" onClick={handleDismissMobilePwaGuide}>
+          <div className="w-full max-w-md -translate-y-4 rounded-[1.8rem] border border-purple-100 bg-white p-5 shadow-2xl transition-transform dark:border-indigo-900 dark:bg-slate-950 md:translate-y-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-purple-400">Install DyaTask</p>
+                <h3 className="mt-1 text-lg font-extrabold text-[#4f4574] dark:text-white">Pasang aplikasi di HP atau tablet</h3>
+                <p className="mt-1 text-xs leading-5 text-purple-400 dark:text-purple-300">
+                  Ikuti langkah singkat sesuai perangkat Anda supaya DyaTask bisa dibuka seperti aplikasi penuh.
+                </p>
+              </div>
+              <button type="button" onClick={handleDismissMobilePwaGuide} className="h-9 w-9 rounded-xl border border-purple-100 text-purple-400 dark:border-indigo-800">
+                <X size={16} className="mx-auto" />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-[1.5rem] border border-purple-100 bg-[linear-gradient(135deg,#f4efff,#fff)] p-4 dark:border-indigo-900 dark:bg-[linear-gradient(135deg,#211638,#111827)]">
+              <div className="flex items-center gap-4">
+                <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-[1.4rem] border border-purple-100 bg-white shadow-sm dark:border-indigo-900 dark:bg-slate-900">
+                  <img src={dyataskMiniLogo} alt="DyaTask" className="h-12 w-12 object-contain" />
+                  <div className="absolute -right-2 -top-2 flex h-9 w-9 items-center justify-center rounded-2xl bg-[#8f75d8] text-white shadow-lg">
+                    <Smartphone size={16} />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-center gap-2 text-[#6f55bd]">
+                    <Share2 size={14} />
+                    <span className="text-xs font-bold">Buka menu browser / share</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[#6f55bd]">
+                    <Plus size={14} />
+                    <span className="text-xs font-bold">Pilih Add to Home Screen</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-emerald-600">
+                    <CheckCircle size={14} />
+                    <span className="text-xs font-bold">Buka DyaTask dari layar utama</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 gap-2">
+              {mobilePwaGuideTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setMobilePwaGuidePlatform(tab.key)}
+                  className={`rounded-xl px-2 py-2 text-[11px] font-bold ${
+                    mobilePwaGuidePlatform === tab.key
+                      ? 'bg-[#8f75d8] text-white'
+                      : 'border border-purple-100 text-[#6f55bd] dark:border-indigo-800'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-[1.4rem] border border-purple-100 bg-purple-50/60 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-extrabold text-[#4f4574] dark:text-white">
+                    Tutorial {mobilePwaGuideTabs.find(tab => tab.key === mobilePwaGuidePlatform)?.label}
+                  </p>
+                  <p className="text-[11px] text-purple-400 dark:text-purple-300">
+                    {isIosLikeInstallDevice && (mobilePwaGuidePlatform === 'iphone' || mobilePwaGuidePlatform === 'ipad')
+                      ? 'Gunakan Safari untuk hasil paling stabil.'
+                      : pwaInstallPrompt
+                        ? 'Prompt install sudah siap jika browser mendukung.'
+                        : 'Jika prompt belum muncul, gunakan menu browser secara manual.'}
+                  </p>
+                </div>
+                {pwaInstallPrompt && !['iphone', 'ipad'].includes(mobilePwaGuidePlatform) && (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">Install siap</span>
+                )}
+              </div>
+              <div className="space-y-2.5">
+                {activeMobilePwaGuideSteps.map((step, index) => {
+                  const StepIcon = step.icon
+                  return (
+                    <div key={`${mobilePwaGuidePlatform}-${index}`} className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white text-[#8f75d8] shadow-sm dark:bg-slate-900">
+                        <StepIcon size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-[#4f4574] dark:text-white">{index + 1}. {step.title}</p>
+                        <p className="mt-0.5 text-[11px] leading-5 text-slate-500 dark:text-slate-300">{step.detail}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              {pwaInstallPrompt && !['iphone', 'ipad'].includes(mobilePwaGuidePlatform) ? (
+                <button
+                  type="button"
+                  onClick={handleInstallPwa}
+                  className="rounded-2xl bg-[#8f75d8] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-purple-500/15"
+                >
+                  Install Sekarang
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDismissMobilePwaGuide}
+                  className="rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm font-bold text-[#6f55bd] dark:border-indigo-800 dark:bg-slate-900"
+                >
+                  Saya Paham
+                </button>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleMarkMobilePwaGuideInstalled}
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700 inline-flex items-center justify-center gap-1.5"
+                >
+                  <Check size={14} />
+                  Sudah terinstal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMarkMobilePwaGuideUnsupported}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-bold text-slate-600 inline-flex items-center justify-center gap-1.5"
+                >
+                  <Check size={14} />
+                  Tidak support
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
