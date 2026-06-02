@@ -720,6 +720,7 @@ function App() {
   const [deployUpdateInfo, setDeployUpdateInfo] = useState(null)
   const [installOptionsOpen, setInstallOptionsOpen] = useState(false)
   const [mobilePwaGuideOpen, setMobilePwaGuideOpen] = useState(false)
+  const [mobilePwaGuideForceOpen, setMobilePwaGuideForceOpen] = useState(false)
   const [mobilePwaGuidePlatform, setMobilePwaGuidePlatform] = useState('android')
   const [mobilePwaGuideState, setMobilePwaGuideState] = useState(() => readStoredJson(MOBILE_PWA_GUIDE_STORAGE_KEY, { dismissed: false, reason: '', platform: '' }))
   const [appVersionInfo, setAppVersionInfo] = useState(null)
@@ -5817,10 +5818,12 @@ function App() {
   }
 
   const handleDismissMobilePwaGuide = () => {
+    setMobilePwaGuideForceOpen(false)
     setMobilePwaGuideOpen(false)
   }
 
   const handleMarkMobilePwaGuideInstalled = () => {
+    setMobilePwaGuideForceOpen(false)
     persistMobilePwaGuideState({
       dismissed: true,
       reason: 'installed',
@@ -5830,6 +5833,7 @@ function App() {
   }
 
   const handleMarkMobilePwaGuideUnsupported = () => {
+    setMobilePwaGuideForceOpen(false)
     persistMobilePwaGuideState({
       dismissed: true,
       reason: 'unsupported',
@@ -14879,12 +14883,13 @@ function App() {
               <button
                 type="button"
                 className="mobile-more-item"
-                onClick={() => {
-                  setShowMobileMoreMenu(false)
-                  setMobilePwaGuidePlatform(mobilePwaGuideDetectedPlatform)
-                  setMobilePwaGuideOpen(true)
-                }}
-              >
+                  onClick={() => {
+                    setShowMobileMoreMenu(false)
+                    setMobilePwaGuidePlatform(mobilePwaGuideDetectedPlatform)
+                    setMobilePwaGuideForceOpen(true)
+                    setMobilePwaGuideOpen(true)
+                  }}
+                >
                 <Smartphone size={18} />
                 <span>Tutorial Install App</span>
               </button>
@@ -15597,7 +15602,7 @@ function App() {
         </div>
       )}
 
-      {mobilePwaGuideOpen && isMobileTabletView && !isPwaStandalone && (
+      {mobilePwaGuideOpen && isMobileTabletView && (mobilePwaGuideForceOpen || !isPwaStandalone) && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#20182f]/45 p-3 backdrop-blur-sm md:p-4" onClick={handleDismissMobilePwaGuide}>
           <div className="w-full max-w-md -translate-y-4 rounded-[1.8rem] border border-purple-100 bg-white p-5 shadow-2xl transition-transform dark:border-indigo-900 dark:bg-slate-950 md:translate-y-0" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">
