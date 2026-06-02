@@ -53,6 +53,7 @@ import {
   Users,
   UserPlus,
   MessageSquare,
+  Star,
   SendHorizontal,
   CalendarClock,
   BadgeDollarSign,
@@ -678,6 +679,19 @@ function App() {
   const [developerMonitoringError, setDeveloperMonitoringError] = useState('')
   const [developerMonitoringUpdatedAt, setDeveloperMonitoringUpdatedAt] = useState('')
   const [developerMonitoringSearch, setDeveloperMonitoringSearch] = useState('')
+  const [developerFeedbackRows, setDeveloperFeedbackRows] = useState([])
+  const [developerFeedbackLoading, setDeveloperFeedbackLoading] = useState(false)
+  const [developerFeedbackError, setDeveloperFeedbackError] = useState('')
+  const [developerFeedbackUpdatedAt, setDeveloperFeedbackUpdatedAt] = useState('')
+  const [developerFeedbackSearch, setDeveloperFeedbackSearch] = useState('')
+  const [showUserFeedbackModal, setShowUserFeedbackModal] = useState(false)
+  const [userFeedbackName, setUserFeedbackName] = useState('')
+  const [userFeedbackRating, setUserFeedbackRating] = useState(0)
+  const [userFeedbackMessage, setUserFeedbackMessage] = useState('')
+  const [userFeedbackSubmitting, setUserFeedbackSubmitting] = useState(false)
+  const [userFeedbackSubmitError, setUserFeedbackSubmitError] = useState('')
+  const [userFeedbackSubmitSuccess, setUserFeedbackSubmitSuccess] = useState('')
+  const [hasSubmittedUserFeedback, setHasSubmittedUserFeedback] = useState(false)
   const [workspaceInviteUsername, setWorkspaceInviteUsername] = useState('')
   const [workspaceInviteRole, setWorkspaceInviteRole] = useState('assistant')
   const [workspaceInviteToken, setWorkspaceInviteToken] = useState('')
@@ -813,6 +827,7 @@ function App() {
   const scopedStorageKey = (baseKey) => scopedUserId ? `${baseKey}_${scopedUserId}` : `${baseKey}_guest`
   const contentPlannerFormStorageKey = scopedStorageKey('dyatask_show_content_planner_form')
   const notificationHistoryStorageKey = scopedStorageKey('dyatask_notification_history')
+  const userFeedbackSubmittedStorageKey = scopedStorageKey('dyatask_feedback_submitted')
   const bookingAvailabilityStorageKey = scopedStorageKey('dyatask_booking_availability')
   const bookingShareTokenStorageKey = scopedStorageKey('dyatask_booking_share_token')
   const reservationSessionPriceStorageKey = scopedStorageKey('dyatask_reservation_session_price')
@@ -1031,7 +1046,7 @@ function App() {
   useEffect(() => {
     if (
       workspaceRole !== 'owner'
-      && !['pageControl', 'tutorial', 'userMonitoring', 'workspaceChat'].includes(activeTab)
+      && !['pageControl', 'tutorial', 'userMonitoring', 'userFeedback', 'workspaceChat'].includes(activeTab)
       && !canReadArea(activeTab)
     ) {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
@@ -1046,7 +1061,7 @@ function App() {
   }, [activeTab, enabledPages, visiblePrimaryTabs])
 
   useEffect(() => {
-    if (activeTab === 'userMonitoring' && !isAppDeveloper) {
+    if (['userMonitoring', 'userFeedback'].includes(activeTab) && !isAppDeveloper) {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
     }
   }, [activeTab, isAppDeveloper, visiblePrimaryTabs])
@@ -1776,6 +1791,28 @@ function App() {
   const developerMonitoringInviteCount = developerMonitoringInviteRows.length
   const developerMonitoringActiveInviteCount = developerMonitoringInviteRows.filter(row => String(row.status || '').toLowerCase() === 'active').length
   const developerMonitoringPendingInviteCount = developerMonitoringInviteRows.filter(row => String(row.status || '').toLowerCase() === 'pending').length
+  const developerFeedbackSearchValue = developerFeedbackSearch.trim().toLowerCase()
+  const matchesDeveloperFeedbackSearch = (row) => {
+    if (!developerFeedbackSearchValue) return true
+    const haystack = [
+      row?.full_name,
+      row?.email,
+      row?.feedback,
+      row?.workspace_role,
+      row?.platform,
+      row?.rating
+    ].map(value => String(value || '').toLowerCase()).join(' | ')
+    return haystack.includes(developerFeedbackSearchValue)
+  }
+  const developerFeedbackFilteredRows = developerFeedbackRows.filter(matchesDeveloperFeedbackSearch)
+  const developerFeedbackAverageRating = developerFeedbackRows.length
+    ? (developerFeedbackRows.reduce((sum, row) => sum + Number(row.rating || 0), 0) / developerFeedbackRows.length).toFixed(1)
+    : '0.0'
+  const developerFeedbackFiveStarCount = developerFeedbackRows.filter(row => Number(row.rating || 0) === 5).length
+  const developerFeedbackTodayCount = developerFeedbackRows.filter(row => {
+    const createdAt = String(row.created_at || '')
+    return createdAt.startsWith(todayString)
+  }).length
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
   const activeOrderPageMode = activeTab === 'designOrders' ? 'design' : activeTab === 'generalOrders' ? 'general' : 'spreadsheet'
   const isDesignOrderPage = activeTab === 'designOrders'
@@ -3811,6 +3848,17 @@ function App() {
 
     refreshDeveloperMonitoring()
   }, [activeTab, isAppDeveloper])
+
+  useEffect(() => {
+    if (!isAppDeveloper || activeTab !== 'userFeedback') return
+
+    refreshDeveloperFeedback()
+  }, [activeTab, isAppDeveloper])
+
+  useEffect(() => {
+    const stored = localStorage.getItem(userFeedbackSubmittedStorageKey)
+    setHasSubmittedUserFeedback(stored === 'true')
+  }, [userFeedbackSubmittedStorageKey])
 
   // Monitor Supabase Connection Status & Real-time Sync Events
   useEffect(() => {
@@ -8899,6 +8947,11 @@ function App() {
     setDeveloperMonitoringError('')
     setDeveloperMonitoringUpdatedAt('')
     setDeveloperMonitoringSearch('')
+    setDeveloperFeedbackRows([])
+    setDeveloperFeedbackLoading(false)
+    setDeveloperFeedbackError('')
+    setDeveloperFeedbackUpdatedAt('')
+    setDeveloperFeedbackSearch('')
   }
 
   const refreshDeveloperMonitoring = async () => {
@@ -8918,6 +8971,105 @@ function App() {
     setDeveloperMonitoringRows(Array.isArray(data) ? data : [])
     setDeveloperMonitoringUpdatedAt(new Date().toISOString())
     setDeveloperMonitoringLoading(false)
+  }
+
+  const refreshDeveloperFeedback = async () => {
+    if (!isAppDeveloper) return
+
+    setDeveloperFeedbackLoading(true)
+    setDeveloperFeedbackError('')
+
+    const { data, error } = await supabase
+      .from('app_user_feedback')
+      .select('id, user_id, owner_user_id, workspace_role, full_name, email, rating, feedback, platform, created_at')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      setDeveloperFeedbackRows([])
+      setDeveloperFeedbackError(error.message)
+      setDeveloperFeedbackLoading(false)
+      return
+    }
+
+    setDeveloperFeedbackRows(Array.isArray(data) ? data : [])
+    setDeveloperFeedbackUpdatedAt(new Date().toISOString())
+    setDeveloperFeedbackLoading(false)
+  }
+
+  const openUserFeedbackModal = () => {
+    setUserFeedbackSubmitError('')
+    setUserFeedbackSubmitSuccess('')
+    setUserFeedbackName(headerUserName || '')
+    setShowUserFeedbackModal(true)
+  }
+
+  const closeUserFeedbackModal = () => {
+    if (userFeedbackSubmitting) return
+    setShowUserFeedbackModal(false)
+    setUserFeedbackSubmitError('')
+    setUserFeedbackSubmitSuccess('')
+  }
+
+  const handleSubmitUserFeedback = async (e) => {
+    e.preventDefault()
+    if (!actorUserId) {
+      setUserFeedbackSubmitError('Anda harus login untuk mengirim feedback.')
+      return
+    }
+    if (!userFeedbackName.trim()) {
+      setUserFeedbackSubmitError('Isi nama terlebih dahulu.')
+      return
+    }
+    if (!userFeedbackRating) {
+      setUserFeedbackSubmitError('Pilih rating bintang terlebih dahulu.')
+      return
+    }
+    if (!userFeedbackMessage.trim()) {
+      setUserFeedbackSubmitError('Tuliskan feedback singkat setelah memakai aplikasi.')
+      return
+    }
+
+    setUserFeedbackSubmitting(true)
+    setUserFeedbackSubmitError('')
+    setUserFeedbackSubmitSuccess('')
+
+    const devicePlatform = mobilePwaGuideDetectedPlatform || (isMobileTabletView ? 'mobile' : 'desktop')
+    const payload = {
+      user_id: actorUserId,
+      owner_user_id: workspaceContext?.ownerUserId || actorUserId,
+      workspace_role: workspaceRole,
+      full_name: userFeedbackName.trim(),
+      email: session?.user?.email || '',
+      rating: userFeedbackRating,
+      feedback: userFeedbackMessage.trim(),
+      platform: devicePlatform
+    }
+
+    const { error } = await supabase
+      .from('app_user_feedback')
+      .insert(payload)
+
+    if (error) {
+      setUserFeedbackSubmitError(error.message)
+      setUserFeedbackSubmitting(false)
+      return
+    }
+
+    setUserFeedbackSubmitSuccess('Terima kasih. Feedback Anda sudah terkirim.')
+    setUserFeedbackName(headerUserName || '')
+    setUserFeedbackMessage('')
+    setUserFeedbackRating(0)
+    setUserFeedbackSubmitting(false)
+    setHasSubmittedUserFeedback(true)
+    localStorage.setItem(userFeedbackSubmittedStorageKey, 'true')
+    setTimeout(() => {
+      setShowUserFeedbackModal(false)
+      setUserFeedbackSubmitSuccess('')
+    }, 900)
+
+    if (isAppDeveloper) {
+      refreshDeveloperFeedback()
+    }
   }
 
   // Update user profile to Supabase
@@ -9840,6 +9992,15 @@ function App() {
                 >
                   <ShieldCheck size={20} />
                   {!sidebarCollapsed && <span>User Monitoring</span>}
+                  {!sidebarCollapsed && <span className="ml-auto rounded-full bg-yellow-200/30 px-2 py-0.5 text-[10px] font-extrabold text-yellow-50">DEV</span>}
+                </div>
+                <div
+                  data-mobile-secondary="true"
+                  className={`nav-link ${activeTab === 'userFeedback' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('userFeedback')}
+                >
+                  <Star size={20} />
+                  {!sidebarCollapsed && <span>User Feedback</span>}
                   {!sidebarCollapsed && <span className="ml-auto rounded-full bg-yellow-200/30 px-2 py-0.5 text-[10px] font-extrabold text-yellow-50">DEV</span>}
                 </div>
               </div>
@@ -14263,6 +14424,128 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'userFeedback' && isAppDeveloper && (
+            <div className="mobile-page space-y-6">
+              <section className="glass-panel overflow-hidden">
+                <div className="relative p-6 md:p-8 bg-[radial-gradient(circle_at_14%_20%,rgba(255,229,76,0.22),transparent_22%),radial-gradient(circle_at_84%_18%,rgba(143,117,216,0.24),transparent_24%),linear-gradient(135deg,#251a38,#433067_52%,#1f162d)] text-white">
+                  <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                    <div className="max-w-3xl">
+                      <p className="text-[11px] uppercase tracking-[0.22em] font-extrabold text-[#fff08a]">Developer Only</p>
+                      <h3 className="mt-3 text-3xl md:text-4xl font-extrabold leading-tight text-white">User Feedback</h3>
+                      <p className="mt-3 text-sm md:text-base text-white/85 leading-7">
+                        Lihat rating dan masukan langsung dari user yang memakai aplikasi ini.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white/14 border border-white/25 px-3 py-1.5 text-xs font-bold text-white">{developerFeedbackRows.length} Feedback</span>
+                      <span className="rounded-full bg-white/14 border border-white/25 px-3 py-1.5 text-xs font-bold text-white">Avg {developerFeedbackAverageRating}</span>
+                      <button
+                        type="button"
+                        onClick={refreshDeveloperFeedback}
+                        className="inline-flex items-center gap-2 rounded-full bg-white text-[#4f4574] px-4 py-2 text-xs font-extrabold shadow-lg shadow-black/10"
+                      >
+                        <RefreshCw size={13} className={developerFeedbackLoading ? 'animate-spin' : ''} />
+                        {developerFeedbackLoading ? 'Memuat...' : 'Refresh'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Total Feedback</p>
+                  <p className="mt-2 text-3xl font-extrabold text-[#4f4574]">{developerFeedbackRows.length}</p>
+                  <p className="mt-1 text-xs text-purple-400">Semua masukan yang terkirim.</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Rating Rata-rata</p>
+                  <p className="mt-2 text-3xl font-extrabold text-amber-600">{developerFeedbackAverageRating}</p>
+                  <p className="mt-1 text-xs text-purple-400">Skor gabungan 1 sampai 5.</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Bintang 5</p>
+                  <p className="mt-2 text-3xl font-extrabold text-emerald-600">{developerFeedbackFiveStarCount}</p>
+                  <p className="mt-1 text-xs text-purple-400">User yang sangat puas.</p>
+                </div>
+                <div className="glass-panel p-5">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-purple-400 font-bold">Hari Ini</p>
+                  <p className="mt-2 text-3xl font-extrabold text-[#4f4574]">{developerFeedbackTodayCount}</p>
+                  <p className="mt-1 text-xs text-purple-400">Feedback yang masuk hari ini.</p>
+                </div>
+              </section>
+
+              <section className="glass-panel p-5 md:p-6 space-y-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-purple-400 font-bold">Cari feedback</p>
+                    <h4 className="text-xl font-extrabold text-[#4f4574]">Filter nama, email, platform, atau isi feedback</h4>
+                  </div>
+                  <div className="w-full md:w-[360px]">
+                    <input
+                      type="text"
+                      value={developerFeedbackSearch}
+                      onChange={(e) => setDeveloperFeedbackSearch(e.target.value)}
+                      placeholder="Cari feedback user..."
+                      className="w-full rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-[#4f4574] focus:outline-none focus:ring-2 focus:ring-purple-200"
+                    />
+                  </div>
+                </div>
+
+                {developerFeedbackError && (
+                  <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    {developerFeedbackError}
+                  </div>
+                )}
+                {developerFeedbackUpdatedAt && !developerFeedbackError && (
+                  <p className="text-[11px] text-purple-400">Terakhir dimuat: {formatLongDateTime(developerFeedbackUpdatedAt)}</p>
+                )}
+
+                <div className="space-y-3">
+                  {developerFeedbackLoading && developerFeedbackFilteredRows.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-5 text-center text-sm text-purple-400">
+                      Memuat feedback user...
+                    </div>
+                  ) : developerFeedbackFilteredRows.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-purple-200 bg-white p-5 text-center text-sm text-purple-400">
+                      Belum ada feedback yang cocok dengan filter.
+                    </div>
+                  ) : developerFeedbackFilteredRows.map((row) => (
+                    <article key={row.id} className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-[#4f4574] truncate">{formatDisplayName(row.full_name || row.email || 'Pengguna', 'Pengguna')}</p>
+                          <p className="mt-1 text-xs text-purple-400 truncate">{row.email || '-'}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-amber-500">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Star key={`${row.id}-${star}`} size={14} fill={star <= Number(row.rating || 0) ? 'currentColor' : 'none'} />
+                            ))}
+                          </div>
+                          <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-bold text-purple-600">
+                            {String(row.platform || 'app').toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-3 rounded-2xl border border-purple-50 bg-[#fbfaff] px-4 py-3 text-sm leading-7 text-[#4f4574]">
+                        {row.feedback}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-purple-400">
+                        <span className="rounded-full border border-purple-100 bg-white px-3 py-1 font-semibold">
+                          {String(row.workspace_role || 'owner').toUpperCase()}
+                        </span>
+                        <span className="rounded-full border border-purple-100 bg-white px-3 py-1 font-semibold">
+                          {formatLongDateTime(row.created_at)}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+
           {activeTab === 'pageControl' && (
             <div className="mobile-page space-y-6">
               <div className="glass-panel p-6">
@@ -14777,7 +15060,7 @@ function App() {
       {activeTab !== 'workspaceChat' && !workspaceChatModalOpen && (
         <button
           type="button"
-          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
+          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'userFeedback', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
           onClick={() => setShowMobileMoreMenu(prev => !prev)}
           aria-label="Buka menu lainnya"
         >
@@ -14864,6 +15147,10 @@ function App() {
                   <ShieldCheck size={18} />
                   <span>User Monitoring</span>
                 </button>
+                <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('userFeedback'); setShowMobileMoreMenu(false) }}>
+                  <Star size={18} />
+                  <span>User Feedback</span>
+                </button>
               </>
             )}
             {workspaceRole === 'owner' && (
@@ -14907,6 +15194,24 @@ function App() {
             )}
           </div>
         </>
+      )}
+
+      {isMobileTabletView && floatingMenuEnabled && !isWorkspaceChatOpen && !hasSubmittedUserFeedback && (
+        <button
+          type="button"
+          onClick={() => {
+            if (showUserFeedbackModal) {
+              closeUserFeedbackModal()
+              return
+            }
+            setShowMobileMoreMenu(false)
+            openUserFeedbackModal()
+          }}
+          aria-label={showUserFeedbackModal ? 'Tutup feedback pengguna' : 'Buka feedback pengguna'}
+          className="mobile-feedback-trigger fixed z-[81] inline-flex items-center justify-center"
+        >
+          {showUserFeedbackModal ? <X size={18} /> : <Star size={18} />}
+        </button>
       )}
 
       {isMobileTabletView && workspaceContext?.ownerUserId && (
@@ -15374,6 +15679,111 @@ function App() {
             </form>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showUserFeedbackModal && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-[#20182f]/45 p-4 backdrop-blur-sm" onClick={closeUserFeedbackModal}>
+          <div className="w-full max-w-lg rounded-[1.8rem] border border-purple-100 bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-purple-400">User Feedback</p>
+                <h3 className="mt-1 text-2xl font-extrabold text-[#4f4574]">Bagaimana pengalaman Anda?</h3>
+                <p className="mt-2 text-sm leading-6 text-purple-400">
+                  Beri rating dan masukan singkat setelah menggunakan aplikasi ini.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeUserFeedbackModal}
+                className="h-11 w-11 shrink-0 rounded-2xl border border-purple-100 text-purple-400 transition-colors hover:bg-purple-50"
+                aria-label="Tutup feedback"
+              >
+                <X size={18} className="mx-auto" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitUserFeedback} className="mt-6 space-y-5">
+              <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-5">
+                <label className="block text-[11px] font-bold uppercase tracking-[0.16em] text-purple-400">
+                  Nama
+                </label>
+                <input
+                  type="text"
+                  value={userFeedbackName}
+                  onChange={(e) => setUserFeedbackName(e.target.value)}
+                  placeholder="Tulis nama Anda"
+                  className="mt-3 w-full rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-[#4f4574] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                />
+              </div>
+
+              <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-purple-400">Rating Bintang</p>
+                <div className="mt-3 flex items-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const active = star <= userFeedbackRating
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setUserFeedbackRating(star)}
+                        className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl border transition-all ${
+                          active
+                            ? 'border-amber-200 bg-amber-50 text-amber-500 shadow-sm'
+                            : 'border-purple-100 bg-white text-purple-200 hover:border-purple-200 hover:text-purple-400'
+                        }`}
+                        aria-label={`Pilih rating ${star}`}
+                      >
+                        <Star size={20} fill={active ? 'currentColor' : 'none'} />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-purple-100 bg-[#fbfaff] p-5">
+                <label className="block text-[11px] font-bold uppercase tracking-[0.16em] text-purple-400">
+                  Feedback Setelah Menggunakan App
+                </label>
+                <textarea
+                  value={userFeedbackMessage}
+                  onChange={(e) => setUserFeedbackMessage(e.target.value)}
+                  placeholder="Tulis pengalaman, saran perbaikan, atau hal yang paling membantu."
+                  rows={5}
+                  className="mt-3 w-full rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-[#4f4574] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                />
+              </div>
+
+              {userFeedbackSubmitError && (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {userFeedbackSubmitError}
+                </div>
+              )}
+              {userFeedbackSubmitSuccess && (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {userFeedbackSubmitSuccess}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="submit"
+                  disabled={userFeedbackSubmitting}
+                  className="flex-1 rounded-2xl bg-[#8f75d8] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-purple-500/15 transition-all hover:bg-[#8069c8] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {userFeedbackSubmitting ? 'Mengirim...' : 'Kirim Feedback'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeUserFeedbackModal}
+                  disabled={userFeedbackSubmitting}
+                  className="rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm font-bold text-[#6f55bd] transition-all hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Tutup
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -16273,6 +16683,27 @@ function App() {
       )}
 
       {/* 🚀 FLOATING WIDGET BUTTON ON MACBOOK PREVIEW */}
+      {floatingMenuEnabled && !isMobileTabletView && !isMobileWorkspaceChatView && !workspaceChatModalOpen && !hasSubmittedUserFeedback && (
+        <button
+          type="button"
+          onClick={() => {
+            if (showUserFeedbackModal) {
+              closeUserFeedbackModal()
+              return
+            }
+            setFloatingQuickAdd(false)
+            setNotificationBannerVisible(false)
+            setShowNotificationList(false)
+            setShowNotificationHistory(false)
+            openUserFeedbackModal()
+          }}
+          aria-label={showUserFeedbackModal ? 'Tutup feedback pengguna' : 'Buka feedback pengguna'}
+          className="fixed bottom-[9rem] right-16 z-40 flex h-16 w-16 items-center justify-center rounded-[1.35rem] border border-purple-100 bg-white/95 text-[#6f55bd] shadow-[0_18px_38px_rgba(92,70,148,0.16)] backdrop-blur-xl transition-all active:scale-95"
+        >
+          {showUserFeedbackModal ? <X size={22} /> : <Star size={24} />}
+        </button>
+      )}
+
       {floatingMenuEnabled && !isMobileWorkspaceChatView && !workspaceChatModalOpen && (
         <button 
           type="button"
