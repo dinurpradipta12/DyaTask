@@ -747,7 +747,7 @@
   transform: translateX(-6px);
 }
 
-@media (max-width: 968px) {
+@media (max-width: 900px), (hover: none) and (pointer: coarse) and (max-width: 1180px) {
   .sidebar {
     height: auto;
     position: relative;
@@ -1151,4 +1151,3 @@ main {
   animation-duration: 0s !important;
   animation-delay: 0s !important;
 }
-
