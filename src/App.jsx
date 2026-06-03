@@ -1951,6 +1951,7 @@ function App() {
   const activeMobilePwaGuideSteps = mobilePwaGuideSteps[mobilePwaGuidePlatform] || mobilePwaGuideSteps.android
   const electronAppVersion = appVersionInfo?.version && appVersionInfo.version !== '0.0.0' ? appVersionInfo.version : ''
   const currentAppVersion = electronAppVersion || import.meta.env.VITE_APP_VERSION || '0.1.0'
+  const latestAvailableVersion = deployUpdateInfo?.version || electronDownloadedUpdateVersion || currentAppVersion
   const updateStatusLabel = electronUpdateState === 'downloaded'
     ? 'Update siap dipasang'
     : deployUpdateInfo
@@ -15180,10 +15181,14 @@ function App() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-slate-950/30 p-3">
-                      <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Version</p>
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Versi Terpasang</p>
                       <p className="mt-1 text-sm font-extrabold text-[#4f4574] dark:text-white">v{currentAppVersion}</p>
+                    </div>
+                    <div className="rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-slate-950/30 p-3">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Versi Terbaru</p>
+                      <p className="mt-1 text-sm font-extrabold text-[#4f4574] dark:text-white">v{latestAvailableVersion}</p>
                     </div>
                     <div className="rounded-xl border border-purple-100 dark:border-indigo-900 bg-white/70 dark:bg-slate-950/30 p-3">
                       <p className="text-[10px] uppercase tracking-wider font-bold text-purple-400">Update</p>
