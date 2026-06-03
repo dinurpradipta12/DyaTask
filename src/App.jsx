@@ -77,6 +77,7 @@ const TEAM_PERMISSION_DEFAULTS = {
   tasks: true,
   calendar: true,
   orders: true,
+  socialMediaOrders: true,
   designOrders: true,
   generalOrders: true,
   mentoringSchedule: true,
@@ -96,6 +97,7 @@ const TEAM_PERMISSION_LABELS = {
   tasks: 'Tasks & Project',
   calendar: 'Reservasi & Jadwal',
   orders: 'Order Spreadsheet',
+  socialMediaOrders: 'Order Jasa Social Media',
   designOrders: 'Pages Design Order',
   generalOrders: 'Pages Orderan (General)',
   mentoringSchedule: 'Pages Mentoring/Speaker',
@@ -113,6 +115,7 @@ const TEAM_PERMISSION_LABELS = {
 const normalizeTeamPermissions = (rawPermissions = {}) => {
   const normalized = { ...TEAM_PERMISSION_DEFAULTS, ...(rawPermissions || {}) }
   if (normalized.calendar == null && rawPermissions?.reservations != null) normalized.calendar = !!rawPermissions.reservations
+  if (normalized.socialMediaOrders == null && rawPermissions?.orders != null) normalized.socialMediaOrders = !!rawPermissions.orders
   if (normalized.designOrders == null && rawPermissions?.orders != null) normalized.designOrders = !!rawPermissions.orders
   if (normalized.generalOrders == null && rawPermissions?.orders != null) normalized.generalOrders = !!rawPermissions.orders
   if (normalized.contentPlanner == null && rawPermissions?.tasks != null) normalized.contentPlanner = !!rawPermissions.tasks
@@ -129,6 +132,49 @@ const WORKSPACE_ROLE_LABELS = {
 }
 
 const SPREADSHEET_ORDER_TYPES = ['Dashboard', 'Automation', 'Reporting', 'Template', 'Fixing']
+const SOCIAL_MEDIA_ORDER_TYPES = [
+  'Content Handle',
+  'Social Media Management',
+  'Social Media Consultant',
+  'Social Media Campaign',
+  'Team Management',
+  'Mentoring',
+  'Content Production',
+  'Ads Optimization',
+  'Community Management'
+]
+const SOCIAL_MEDIA_TIMELINE_TEMPLATE = [
+  {
+    title: 'Brief & Objective',
+    note: 'Kumpulkan objective campaign, target audience, KPI, akses akun, dan ekspektasi output mingguan/bulanan.',
+    progressPercent: 10
+  },
+  {
+    title: 'Audit & Strategy Plan',
+    note: 'Review akun existing, kompetitor, content pillar, tone of voice, dan susun strategi eksekusi.',
+    progressPercent: 25
+  },
+  {
+    title: 'Content Calendar Approval',
+    note: 'Ajukan content plan, angle posting, format konten, dan jadwal approval ke client.',
+    progressPercent: 40
+  },
+  {
+    title: 'Production & Scheduling',
+    note: 'Produksi asset, caption, revisi final, lalu jadwalkan publishing sesuai kalender konten.',
+    progressPercent: 65
+  },
+  {
+    title: 'Publishing & Community Handling',
+    note: 'Monitor performa posting, tangani komentar/DM jika termasuk scope, dan catat insight harian.',
+    progressPercent: 80
+  },
+  {
+    title: 'Reporting & Evaluation',
+    note: 'Susun laporan performa, insight, evaluasi KPI, dan rekomendasi next action untuk periode berikutnya.',
+    progressPercent: 100
+  }
+]
 const DESIGN_ORDER_TYPES = ['Logo Brand', 'Visual Identity', 'UI/UX App', 'Social Media Kit', 'Pitch Deck Design', 'Design Revision']
 const GENERAL_ORDER_TYPES = ['Admin Support', 'Research', 'Data Entry', 'Customer Service', 'Personal Assistant', 'Project Coordination']
 const PAGE_CONTROL_CONFIG_KEY = '__page_control_enabled_pages'
@@ -139,6 +185,7 @@ const PAGE_TOGGLE_DEFAULTS = {
   tasks: true,
   calendar: true,
   orders: true,
+  socialMediaOrders: true,
   designOrders: true,
   generalOrders: true,
   mentoringSchedule: true,
@@ -863,6 +910,7 @@ function App() {
       tasks: 'tasks',
       calendar: 'calendar',
       orders: 'orders',
+      socialMediaOrders: 'socialMediaOrders',
       designOrders: 'designOrders',
       generalOrders: 'generalOrders',
       mentoringSchedule: 'mentoringSchedule',
@@ -887,7 +935,7 @@ function App() {
   }
   const pageControlDirty = JSON.stringify({ ...PAGE_TOGGLE_DEFAULTS, ...(pageControlDraft || {}) }) !== JSON.stringify({ ...PAGE_TOGGLE_DEFAULTS, ...(enabledPages || {}) })
 
-  const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
+  const visiblePrimaryTabs = ['dashboard', 'tasks', 'calendar', 'orders', 'socialMediaOrders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'crm', 'finance', 'reports']
     .filter(tab => canShowTab(tab) && canReadArea(tab))
   const sidebarCollapsed = isMobileTabletView || !isSidebarHovered
 
@@ -923,7 +971,7 @@ function App() {
     if (!isMobileTabletView || activeTab !== 'tasks') {
       setMobileTaskFolderOpen(false)
     }
-    if (!isMobileTabletView || activeTab !== 'orders') {
+    if (!isMobileTabletView || !['orders', 'socialMediaOrders', 'designOrders', 'generalOrders'].includes(activeTab)) {
       setMobileOrderDetailOpen(false)
     }
     if (!isMobileTabletView || activeTab !== 'crm') {
@@ -945,6 +993,10 @@ function App() {
     }
     if (activeTab === 'generalOrders') {
       setNewOrderType(GENERAL_ORDER_TYPES[0])
+      return
+    }
+    if (activeTab === 'socialMediaOrders') {
+      setNewOrderType(SOCIAL_MEDIA_ORDER_TYPES[0])
       return
     }
     if (activeTab === 'orders') {
@@ -1903,22 +1955,33 @@ function App() {
     return createdAt.startsWith(todayString)
   }).length
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
-  const activeOrderPageMode = activeTab === 'designOrders' ? 'design' : activeTab === 'generalOrders' ? 'general' : 'spreadsheet'
+  const activeOrderPageMode = activeTab === 'designOrders'
+    ? 'design'
+    : activeTab === 'generalOrders'
+      ? 'general'
+      : activeTab === 'socialMediaOrders'
+        ? 'socialMedia'
+        : 'spreadsheet'
+  const isSocialMediaOrderPage = activeTab === 'socialMediaOrders'
   const isDesignOrderPage = activeTab === 'designOrders'
   const isGeneralOrderPage = activeTab === 'generalOrders'
-  const orderTypeOptions = isDesignOrderPage
+  const orderTypeOptions = isSocialMediaOrderPage
+    ? SOCIAL_MEDIA_ORDER_TYPES
+    : isDesignOrderPage
     ? DESIGN_ORDER_TYPES
     : isGeneralOrderPage
       ? GENERAL_ORDER_TYPES
       : SPREADSHEET_ORDER_TYPES
   const orderTypeMatchers = {
     spreadsheet: (value) => SPREADSHEET_ORDER_TYPES.includes(value) || /dashboard|automation|reporting|template|fixing/i.test(value),
+    socialMedia: (value) => SOCIAL_MEDIA_ORDER_TYPES.includes(value) || /content handle|social media|consultant|campaign|team management|mentoring|content production|ads optimization|community management/i.test(value),
     design: (value) => DESIGN_ORDER_TYPES.includes(value) || /design|ui|ux|branding|logo|poster|konten|feed|thumbnail|creative|identity/i.test(value),
-    general: (value) => GENERAL_ORDER_TYPES.includes(value) || (!DESIGN_ORDER_TYPES.includes(value) && !SPREADSHEET_ORDER_TYPES.includes(value))
+    general: (value) => GENERAL_ORDER_TYPES.includes(value) || (!DESIGN_ORDER_TYPES.includes(value) && !SPREADSHEET_ORDER_TYPES.includes(value) && !SOCIAL_MEDIA_ORDER_TYPES.includes(value))
   }
   const filteredSpreadsheetOrders = spreadsheetOrders.filter(order => {
     const orderTypeValue = String(order.orderType || '')
     if (activeOrderPageMode === 'spreadsheet') return orderTypeMatchers.spreadsheet(orderTypeValue)
+    if (activeOrderPageMode === 'socialMedia') return orderTypeMatchers.socialMedia(orderTypeValue)
     if (activeOrderPageMode === 'design') return orderTypeMatchers.design(orderTypeValue)
     if (activeOrderPageMode === 'general') return orderTypeMatchers.general(orderTypeValue)
     return true
@@ -1963,6 +2026,13 @@ function App() {
     cicilan: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'cicilan').length,
     lunas: spreadsheetOrders.filter(order => String(order.paymentStatus || '') === 'lunas').length
   }
+  const defaultOrderTypeForCurrentPage = isSocialMediaOrderPage
+    ? SOCIAL_MEDIA_ORDER_TYPES[0]
+    : isDesignOrderPage
+      ? DESIGN_ORDER_TYPES[0]
+      : isGeneralOrderPage
+        ? GENERAL_ORDER_TYPES[0]
+        : SPREADSHEET_ORDER_TYPES[0]
   const invoiceStorageKey = scopedUserId ? `dyatask_invoices_${scopedUserId}` : 'dyatask_invoices_guest'
   const crmClientsStorageKey = scopedUserId ? `dyatask_crm_clients_${scopedUserId}` : 'dyatask_crm_clients_guest'
   const crmActivitiesStorageKey = scopedUserId ? `dyatask_crm_activities_${scopedUserId}` : 'dyatask_crm_activities_guest'
@@ -7395,7 +7465,7 @@ function App() {
     setEditingOrderId(order.id)
     setNewOrderCustomer(order.customerName || '')
     setNewOrderName(order.orderName || '')
-    setNewOrderType(order.orderType || 'Dashboard')
+    setNewOrderType(order.orderType || defaultOrderTypeForCurrentPage)
     setNewOrderBudget(String(order.budget ?? ''))
     setNewOrderDueDate(order.dueDate || todayString)
     setNewOrderStatus(order.status || 'new')
@@ -7407,7 +7477,7 @@ function App() {
     setEditingOrderId(null)
     setNewOrderCustomer('')
     setNewOrderName('')
-    setNewOrderType('Dashboard')
+    setNewOrderType(defaultOrderTypeForCurrentPage)
     setNewOrderBudget('')
     setNewOrderDueDate(todayString)
     setNewOrderStatus('new')
@@ -7452,6 +7522,55 @@ function App() {
     }])
     setTimelineInputTitle('')
     setTimelineInputNote('')
+  }
+
+  const handleApplySocialMediaTimelineTemplate = async () => {
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin menambah timeline order.')
+      return
+    }
+    if (!actorUserId || !selectedSpreadsheetOrder) return
+
+    const existingTitles = new Set(
+      selectedOrderTimeline.map(item => String(item.title || '').trim().toLowerCase()).filter(Boolean)
+    )
+    const templateItems = SOCIAL_MEDIA_TIMELINE_TEMPLATE.filter(item => !existingTitles.has(String(item.title || '').trim().toLowerCase()))
+
+    if (!templateItems.length) {
+      alert('Template timeline social media sudah terpasang semua di project ini.')
+      return
+    }
+
+    const payload = templateItems.map(item => ({
+      order_id: selectedSpreadsheetOrder.id,
+      title: item.title,
+      note: item.note,
+      progress_percent: Number(item.progressPercent || 0),
+      updated_by: session?.user?.email || actorUserId || 'system'
+    }))
+
+    const { data, error } = await supabase
+      .from('spreadsheet_order_timeline')
+      .insert(payload)
+      .select()
+
+    if (error) {
+      alert('Gagal menerapkan template timeline social media: ' + error.message)
+      return
+    }
+
+    setOrderTimelineItems(prev => [
+      ...prev,
+      ...(data || []).map(item => ({
+        id: item.id,
+        orderId: item.order_id,
+        title: item.title,
+        note: item.note || '',
+        progressPercent: Number(item.progress_percent || 0),
+        createdAt: item.created_at,
+        updatedBy: item.updated_by || 'system'
+      }))
+    ])
   }
 
   const handleDeleteSpreadsheetOrder = async (order) => {
@@ -10081,6 +10200,16 @@ function App() {
               </div>
             )}
 
+            {isPrimaryMobileNavTab('socialMediaOrders') && canReadArea('socialMediaOrders') && canShowTab('socialMediaOrders') && (
+              <div
+                className={`nav-link ${activeTab === 'socialMediaOrders' ? 'active' : ''}`}
+                onClick={() => setActiveTab('socialMediaOrders')}
+              >
+                <MessageSquare size={20} />
+                {!sidebarCollapsed && <span>Order Jasa Social Media</span>}
+              </div>
+            )}
+
             {isPrimaryMobileNavTab('designOrders') && canReadArea('designOrders') && canShowTab('designOrders') && (
               <div
                 className={`nav-link ${activeTab === 'designOrders' ? 'active' : ''}`}
@@ -11797,20 +11926,28 @@ function App() {
           )}
 
           {/* TAB CONTENT: 3. ORDER WORKSPACES */}
-          {['orders', 'designOrders', 'generalOrders'].includes(activeTab) && (
+          {['orders', 'socialMediaOrders', 'designOrders', 'generalOrders'].includes(activeTab) && (
             <div className="mobile-page mobile-page-orders">
               <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
                 <aside className={`glass-panel p-5 ${isMobileTabletView && mobileOrderDetailOpen ? 'hidden' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-bold text-[#4f4574]">
-                        {activeTab === 'designOrders' ? 'Design Order Projects' : activeTab === 'generalOrders' ? 'Orderan General Projects' : 'Order Spreadsheet Projects'}
+                        {activeTab === 'designOrders'
+                          ? 'Design Order Projects'
+                          : activeTab === 'generalOrders'
+                            ? 'Orderan General Projects'
+                            : activeTab === 'socialMediaOrders'
+                              ? 'Social Media Service Projects'
+                              : 'Order Spreadsheet Projects'}
                       </h3>
                       <p className="text-xs text-[#8f75d8] mt-1">
                         {activeTab === 'designOrders'
                           ? 'Semua project desain dengan progress timeline per project.'
                           : activeTab === 'generalOrders'
                             ? 'Semua jenis orderan umum dengan tracking progress.'
+                            : activeTab === 'socialMediaOrders'
+                              ? 'Kelola jasa content handle, management, consultant, campaign, mentoring, dan timeline pengerjaannya.'
                             : 'Tracking order custom spreadsheet per klien.'}
                       </p>
                     </div>
@@ -11834,14 +11971,14 @@ function App() {
                       <input
                         value={newOrderCustomer}
                         onChange={(e) => setNewOrderCustomer(e.target.value)}
-                        placeholder={isDesignOrderPage ? 'Nama brand / client' : isGeneralOrderPage ? 'Nama client / divisi' : 'Nama customer'}
+                        placeholder={isDesignOrderPage ? 'Nama brand / client' : isGeneralOrderPage ? 'Nama client / divisi' : isSocialMediaOrderPage ? 'Nama client / brand social media' : 'Nama customer'}
                         className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs"
                         required
                       />
                       <input
                         value={newOrderName}
                         onChange={(e) => setNewOrderName(e.target.value)}
-                        placeholder={isDesignOrderPage ? 'Nama project desain' : isGeneralOrderPage ? 'Nama kebutuhan order umum' : 'Nama orderan'}
+                        placeholder={isDesignOrderPage ? 'Nama project desain' : isGeneralOrderPage ? 'Nama kebutuhan order umum' : isSocialMediaOrderPage ? 'Nama paket / scope jasa social media' : 'Nama orderan'}
                         className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs"
                         required
                       />
@@ -11871,6 +12008,8 @@ function App() {
                           ? 'Tips: pakai Timeline untuk milestone: brief, concept, first draft, revision, final delivery.'
                           : isGeneralOrderPage
                             ? 'Tips: pakai Timeline untuk checkpoint proses: request, execution, review, handover.'
+                            : isSocialMediaOrderPage
+                              ? 'Tips: pakai Timeline untuk briefing, planning konten, approval, produksi, publishing, review, dan reporting.'
                             : 'Gunakan timeline untuk update progress detail ke klien.'}
                       </p>
                       <div className="grid grid-cols-2 gap-2">
@@ -11879,13 +12018,13 @@ function App() {
                           min="0"
                           value={newOrderBudget}
                           onChange={(e) => setNewOrderBudget(e.target.value)}
-                          placeholder={isDesignOrderPage ? 'Fee desain' : isGeneralOrderPage ? 'Fee layanan' : 'Budget'}
+                          placeholder={isDesignOrderPage ? 'Fee desain' : isGeneralOrderPage ? 'Fee layanan' : isSocialMediaOrderPage ? 'Fee jasa social media' : 'Budget'}
                           className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs"
                         />
                         <input type="date" value={newOrderDueDate} onChange={(e) => setNewOrderDueDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
                       </div>
                       <button type="submit" className="w-full py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
-                        {editingOrderId ? 'Update Project' : isDesignOrderPage ? 'Tambah Project Desain' : isGeneralOrderPage ? 'Tambah Order General' : 'Tambah Order'}
+                        {editingOrderId ? 'Update Project' : isDesignOrderPage ? 'Tambah Project Desain' : isGeneralOrderPage ? 'Tambah Order General' : isSocialMediaOrderPage ? 'Tambah Order Social Media' : 'Tambah Order'}
                       </button>
                       {editingOrderId && (
                         <button
@@ -12031,6 +12170,35 @@ function App() {
                           </button>
                         </div>
                       </div>
+
+                      {isSocialMediaOrderPage && (
+                        <div className="mt-4 rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold">Template Workflow Social Media</p>
+                              <p className="text-xs text-slate-500 mt-1">Tambahkan milestone standar untuk brief, strategi, content plan, produksi, publishing, dan reporting.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleApplySocialMediaTimelineTemplate}
+                              className="px-4 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold inline-flex items-center gap-1.5"
+                            >
+                              <Plus size={12} />
+                              Terapkan Template
+                            </button>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {SOCIAL_MEDIA_TIMELINE_TEMPLATE.map(item => (
+                              <span
+                                key={item.title}
+                                className="inline-flex px-2.5 py-1 rounded-full border border-purple-200 bg-white text-[10px] font-bold text-[#8f75d8]"
+                              >
+                                {item.title}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <form onSubmit={handleAddOrderTimeline} className="mt-4 rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
                         <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold mb-2">Tambah Update Timeline</p>
@@ -14846,6 +15014,7 @@ function App() {
                     ['tasks', 'Tugas & Project'],
                     ['calendar', 'Reservasi & Jadwal'],
                     ['orders', 'Order Spreadsheet'],
+                    ['socialMediaOrders', 'Order Jasa Social Media'],
                     ['designOrders', 'Pages Design Order'],
                     ['generalOrders', 'Pages Orderan (General)'],
                     ['mentoringSchedule', 'Pages Mentoring/Speaker Event Schedule'],
@@ -15369,7 +15538,7 @@ function App() {
       {activeTab !== 'workspaceChat' && !workspaceChatModalOpen && (
         <button
           type="button"
-          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'userFeedback', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
+          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'userFeedback', 'socialMediaOrders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
           onClick={() => setShowMobileMoreMenu(prev => !prev)}
           aria-label="Buka menu lainnya"
         >
@@ -15414,9 +15583,10 @@ function App() {
                 <span>Pengaturan macOS</span>
               </button>
             )}
-            {['designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].map((tabKey) => {
+            {['socialMediaOrders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].map((tabKey) => {
               if (!canReadArea(tabKey) || !canShowTab(tabKey)) return null
               const mobileMenuLabel = {
+                socialMediaOrders: 'Order Jasa Social Media',
                 designOrders: 'Pages Design Order',
                 generalOrders: 'Pages Orderan (General)',
                 mentoringSchedule: 'Pages Mentoring/Speaker',
@@ -15426,6 +15596,7 @@ function App() {
                 reports: 'Reports'
               }[tabKey]
               const mobileMenuIcon = {
+                socialMediaOrders: <MessageSquare size={18} />,
                 designOrders: <Palette size={18} />,
                 generalOrders: <Clipboard size={18} />,
                 mentoringSchedule: <Mic2 size={18} />,
