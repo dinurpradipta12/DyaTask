@@ -780,10 +780,16 @@ function App() {
   const [workspaceChatActionMessageId, setWorkspaceChatActionMessageId] = useState('')
   const [workspaceChatOwnerMenuOpen, setWorkspaceChatOwnerMenuOpen] = useState(false)
   const [pageControlDraft, setPageControlDraft] = useState(PAGE_TOGGLE_DEFAULTS)
-  const [isMobileTabletView, setIsMobileTabletView] = useState(() => {
+  const detectMobileTabletViewport = () => {
     if (typeof window === 'undefined') return false
-    return window.innerWidth <= 1024
-  })
+    const width = window.innerWidth
+    const hasCoarsePointer = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(hover: none) and (pointer: coarse)').matches
+      : false
+    return width <= 900 || (hasCoarsePointer && width <= 1180)
+  }
+
+  const [isMobileTabletView, setIsMobileTabletView] = useState(() => detectMobileTabletViewport())
   const [mobileTaskFolderOpen, setMobileTaskFolderOpen] = useState(false)
   const [mobileOrderDetailOpen, setMobileOrderDetailOpen] = useState(false)
   const [mobileCrmDetailOpen, setMobileCrmDetailOpen] = useState(false)
@@ -796,6 +802,8 @@ function App() {
   const [appVersionInfo, setAppVersionInfo] = useState(null)
   const [manualUpdateStatus, setManualUpdateStatus] = useState('')
   const [checkingManualUpdate, setCheckingManualUpdate] = useState(false)
+  const [electronUpdateState, setElectronUpdateState] = useState('idle')
+  const [electronDownloadedUpdateVersion, setElectronDownloadedUpdateVersion] = useState('')
   const [pwaInstallPrompt, setPwaInstallPrompt] = useState(null)
   const [isPwaStandalone, setIsPwaStandalone] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -953,7 +961,7 @@ function App() {
   }
 
   useEffect(() => {
-    const handleViewportResize = () => setIsMobileTabletView(window.innerWidth <= 1024)
+    const handleViewportResize = () => setIsMobileTabletView(detectMobileTabletViewport())
     window.addEventListener('resize', handleViewportResize)
     return () => {
       window.removeEventListener('resize', handleViewportResize)
@@ -1796,6 +1804,52 @@ function App() {
     }
   }
 
+  const handleDownloadElectronUpdate = async () => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (!ipcRenderer?.invoke) return
+    setCheckingManualUpdate(true)
+    setManualUpdateStatus('Menyiapkan download update app...')
+    try {
+      const result = await ipcRenderer.invoke('download-available-update')
+      if (result?.ok) {
+        if (result?.alreadyDownloaded) {
+          setElectronUpdateState('downloaded')
+          setElectronDownloadedUpdateVersion(result.version || '')
+          setManualUpdateStatus(`Update app versi ${result.version || 'baru'} sudah siap dipasang.`)
+        } else {
+          setElectronUpdateState('downloading')
+          setManualUpdateStatus(`Mengunduh update app versi ${result?.version || 'baru'}...`)
+        }
+      } else {
+        setElectronUpdateState('error')
+        setManualUpdateStatus(result?.message || 'Gagal mengunduh update app.')
+      }
+    } catch (error) {
+      setElectronUpdateState('error')
+      setManualUpdateStatus(error.message || 'Gagal mengunduh update app.')
+    } finally {
+      setCheckingManualUpdate(false)
+    }
+  }
+
+  const handleInstallElectronUpdate = async () => {
+    const ipcRenderer = getElectronIpcRenderer()
+    if (!ipcRenderer?.invoke) return
+    setCheckingManualUpdate(true)
+    setManualUpdateStatus('Menutup app untuk memasang update...')
+    try {
+      const result = await ipcRenderer.invoke('install-downloaded-update')
+      if (!result?.ok) {
+        setManualUpdateStatus(result?.message || 'Update belum siap dipasang.')
+      }
+    } catch (error) {
+      setElectronUpdateState('error')
+      setManualUpdateStatus(error.message || 'Gagal memasang update app.')
+    } finally {
+      setCheckingManualUpdate(false)
+    }
+  }
+
   const buildTimeSlots = (dateStr) => {
     const dayIndex = new Date(`${dateStr}T00:00:00`).getDay()
     const dayConfig = bookingAvailability.daySchedules?.[dayIndex]
@@ -1897,7 +1951,16 @@ function App() {
   const activeMobilePwaGuideSteps = mobilePwaGuideSteps[mobilePwaGuidePlatform] || mobilePwaGuideSteps.android
   const electronAppVersion = appVersionInfo?.version && appVersionInfo.version !== '0.0.0' ? appVersionInfo.version : ''
   const currentAppVersion = electronAppVersion || import.meta.env.VITE_APP_VERSION || '0.1.0'
-  const updateStatusLabel = deployUpdateInfo ? 'App perlu di update' : 'App up to date'
+  const updateStatusLabel = electronUpdateState === 'downloaded'
+    ? 'Update siap dipasang'
+    : deployUpdateInfo
+      ? 'App perlu di update'
+      : 'App up to date'
+  const electronPrimaryUpdateAction = electronUpdateState === 'downloaded'
+    ? 'install'
+    : deployUpdateInfo
+      ? 'download'
+      : 'check'
   const tutorialProgressById = tutorialProgress.reduce((map, item) => {
     if (item?.courseId) map[item.courseId] = item
     return map
@@ -5813,18 +5876,35 @@ function App() {
     loadElectronVersionInfo()
 
     const handleUpdateStatus = (_event, payload = {}) => {
-      if (payload.status === 'checking') setManualUpdateStatus('Memeriksa update DMG terbaru...')
-      if (payload.status === 'available') {
-        setDeployUpdateInfo(prev => prev || { version: payload.version || 'baru', buildId: `dmg-${payload.version || Date.now()}`, buildTime: new Date().toISOString() })
-        setManualUpdateStatus(`Update DMG versi ${payload.version || 'baru'} tersedia. Download akan dimulai setelah dikonfirmasi.`)
+      if (payload.status === 'checking') {
+        setElectronUpdateState('checking')
+        setManualUpdateStatus('Memeriksa update app terbaru...')
       }
-      if (payload.status === 'downloading') setManualUpdateStatus(`Mengunduh update DMG ${payload.percent || 0}%...`)
-      if (payload.status === 'downloaded') setManualUpdateStatus(`Update DMG versi ${payload.version || 'baru'} sudah siap diinstal.`)
+      if (payload.status === 'available') {
+        setElectronUpdateState('available')
+        setElectronDownloadedUpdateVersion('')
+        setDeployUpdateInfo(prev => prev || { version: payload.version || 'baru', buildId: `dmg-${payload.version || Date.now()}`, buildTime: new Date().toISOString() })
+        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} tersedia. Unduh update langsung dari app.`)
+      }
+      if (payload.status === 'downloading') {
+        setElectronUpdateState('downloading')
+        setManualUpdateStatus(`Mengunduh update app ${payload.percent || 0}%...`)
+      }
+      if (payload.status === 'downloaded') {
+        setElectronUpdateState('downloaded')
+        setElectronDownloadedUpdateVersion(payload.version || '')
+        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} sudah siap dipasang.`)
+      }
       if (payload.status === 'not-available') {
+        setElectronUpdateState('idle')
+        setElectronDownloadedUpdateVersion('')
         setDeployUpdateInfo(null)
         setManualUpdateStatus(`App up to date (${payload.version || currentAppVersion}).`)
       }
-      if (payload.status === 'error') setManualUpdateStatus(payload.message || 'Gagal memeriksa update DMG.')
+      if (payload.status === 'error') {
+        setElectronUpdateState('error')
+        setManualUpdateStatus(payload.message || 'Gagal memeriksa update app.')
+      }
     }
 
     ipcRenderer.on?.('app-update-status', handleUpdateStatus)
@@ -15089,10 +15169,14 @@ function App() {
                         <RefreshCw size={15} className="text-purple-500" />
                         Versi & Update App
                       </h4>
-                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">Cek versi PWA/web dan DMG macOS secara manual jika notifikasi otomatis belum muncul.</p>
+                      <p className="text-[11px] text-purple-400 dark:text-purple-300 mt-0.5">
+                        {isElectronApp
+                          ? 'Cek, unduh, lalu pasang update app langsung dari aplikasi. DMG hanya dipakai sebagai cadangan.'
+                          : 'Cek versi PWA/web dan DMG macOS secara manual jika notifikasi otomatis belum muncul.'}
+                      </p>
                     </div>
                     <span className="rounded-full bg-purple-50 dark:bg-indigo-950/50 px-3 py-1.5 text-[10px] font-bold text-purple-600 dark:text-purple-300">
-                      {isElectronApp ? 'DMG macOS' : isPwaStandalone ? 'PWA Installed' : 'Web/PWA'}
+                      {isElectronApp ? 'Auto Update macOS' : isPwaStandalone ? 'PWA Installed' : 'Web/PWA'}
                     </span>
                   </div>
 
@@ -15114,31 +15198,82 @@ function App() {
                   )}
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCheckManualUpdate}
-                      disabled={checkingManualUpdate}
-                      className="rounded-xl bg-[#8f75d8] px-3 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
-                    >
-                      <RefreshCw size={13} className={checkingManualUpdate ? 'animate-spin' : ''} />
-                      {checkingManualUpdate ? 'Mengecek...' : 'Cek Update'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => window.location.reload()}
-                      className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
-                    >
-                      <RefreshCw size={13} />
-                      Reload PWA
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadDmg}
-                      className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
-                    >
-                      <Download size={13} />
-                      DMG Terbaru
-                    </button>
+                    {isElectronApp ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={
+                            electronPrimaryUpdateAction === 'install'
+                              ? handleInstallElectronUpdate
+                              : electronPrimaryUpdateAction === 'download'
+                                ? handleDownloadElectronUpdate
+                                : handleCheckManualUpdate
+                          }
+                          disabled={checkingManualUpdate}
+                          className="rounded-xl bg-[#8f75d8] px-3 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
+                        >
+                          {electronPrimaryUpdateAction === 'install' ? (
+                            <CheckCircle size={13} />
+                          ) : electronPrimaryUpdateAction === 'download' ? (
+                            <Download size={13} />
+                          ) : (
+                            <RefreshCw size={13} className={checkingManualUpdate ? 'animate-spin' : ''} />
+                          )}
+                          {checkingManualUpdate
+                            ? 'Memproses...'
+                            : electronPrimaryUpdateAction === 'install'
+                              ? `Install Update${electronDownloadedUpdateVersion ? ` v${electronDownloadedUpdateVersion}` : ''}`
+                              : electronPrimaryUpdateAction === 'download'
+                                ? 'Unduh Update'
+                                : 'Cek Update'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadDmg}
+                          className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Download size={13} />
+                          Download DMG Cadangan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCheckManualUpdate}
+                          disabled={checkingManualUpdate}
+                          className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
+                        >
+                          <RefreshCw size={13} className={checkingManualUpdate ? 'animate-spin' : ''} />
+                          Sinkron Status
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleCheckManualUpdate}
+                          disabled={checkingManualUpdate}
+                          className="rounded-xl bg-[#8f75d8] px-3 py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
+                        >
+                          <RefreshCw size={13} className={checkingManualUpdate ? 'animate-spin' : ''} />
+                          {checkingManualUpdate ? 'Mengecek...' : 'Cek Update'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => window.location.reload()}
+                          className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
+                        >
+                          <RefreshCw size={13} />
+                          Reload PWA
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadDmg}
+                          className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 text-xs font-bold text-purple-600 hover:bg-purple-50 dark:border-indigo-900 dark:bg-slate-950/30 dark:text-purple-300 inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Download size={13} />
+                          DMG Terbaru
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 

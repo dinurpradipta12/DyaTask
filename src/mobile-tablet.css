@@ -18,7 +18,7 @@
   }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 900px), (hover: none) and (pointer: coarse) and (max-width: 1180px) {
   .layout-grid,
   .layout-grid.sidebar-collapsed {
     grid-template-columns: 92px minmax(0, 1fr);
@@ -98,7 +98,7 @@
   }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 900px), (hover: none) and (pointer: coarse) and (max-width: 1180px) {
   .layout-grid,
   .layout-grid.sidebar-collapsed {
     display: block;
