@@ -6,6 +6,9 @@ const fs = require('fs');
 let mainWindow;
 let tray;
 let isQuitting = false;
+let latestUpdateInfo = null;
+let downloadedUpdateVersion = '';
+let isUpdateDownloading = false;
 const APP_NAME = 'Dyatask Manager - Superapp for Freelancer';
 const UPDATE_FEED_URL = 'https://github.com/dinurpradipta12/DyaTask/releases/latest';
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest';
@@ -105,6 +108,9 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info) => {
+    latestUpdateInfo = info || null;
+    downloadedUpdateVersion = '';
+    isUpdateDownloading = false;
     sendUpdateStatus({ status: 'available', version: info.version });
     dialog.showMessageBox(mainWindow, {
       type: 'info',
@@ -120,6 +126,9 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    latestUpdateInfo = info || latestUpdateInfo;
+    downloadedUpdateVersion = info?.version || '';
+    isUpdateDownloading = false;
     sendUpdateStatus({ status: 'downloaded', version: info.version });
     dialog.showMessageBox(mainWindow, {
       type: 'info',
@@ -136,18 +145,24 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (error) => {
     console.error('Auto update error:', error);
+    isUpdateDownloading = false;
     sendUpdateStatus({ status: 'error', message: error.message || 'Gagal memeriksa update.' });
   });
 
   autoUpdater.on('checking-for-update', () => {
+    isUpdateDownloading = false;
     sendUpdateStatus({ status: 'checking' });
   });
 
   autoUpdater.on('update-not-available', (info) => {
+    latestUpdateInfo = null;
+    downloadedUpdateVersion = '';
+    isUpdateDownloading = false;
     sendUpdateStatus({ status: 'not-available', version: info.version || app.getVersion() });
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    isUpdateDownloading = true;
     sendUpdateStatus({
       status: 'downloading',
       percent: Math.round(progress.percent || 0)
@@ -284,6 +299,7 @@ ipcMain.on('focus-main-window', () => {
 ipcMain.handle('get-app-version-info', async () => ({
   isElectron: true,
   isPackaged: app.isPackaged,
+  supportsAutoUpdate: app.isPackaged,
   platform: process.platform,
   version: app.getVersion(),
   name: APP_NAME,
@@ -313,6 +329,54 @@ ipcMain.handle('check-for-updates-manual', async () => {
       message: error.message || 'Gagal memeriksa update.'
     };
   }
+});
+
+ipcMain.handle('download-available-update', async () => {
+  if (!app.isPackaged) {
+    return { ok: false, message: 'Download update hanya aktif setelah app dibuild menjadi DMG.' };
+  }
+
+  try {
+    if (!latestUpdateInfo) {
+      const result = await autoUpdater.checkForUpdates();
+      latestUpdateInfo = result?.updateInfo || latestUpdateInfo;
+    }
+
+    if (downloadedUpdateVersion) {
+      return { ok: true, alreadyDownloaded: true, version: downloadedUpdateVersion };
+    }
+
+    isUpdateDownloading = true;
+    await autoUpdater.downloadUpdate();
+    return {
+      ok: true,
+      started: true,
+      version: latestUpdateInfo?.version || app.getVersion()
+    };
+  } catch (error) {
+    isUpdateDownloading = false;
+    sendUpdateStatus({ status: 'error', message: error.message || 'Gagal mengunduh update.' });
+    return {
+      ok: false,
+      message: error.message || 'Gagal mengunduh update.'
+    };
+  }
+});
+
+ipcMain.handle('install-downloaded-update', async () => {
+  if (!app.isPackaged) {
+    return { ok: false, message: 'Install update hanya aktif setelah app dibuild menjadi DMG.' };
+  }
+
+  if (!downloadedUpdateVersion) {
+    return { ok: false, message: 'Update belum selesai diunduh.' };
+  }
+
+  setImmediate(() => {
+    autoUpdater.quitAndInstall();
+  });
+
+  return { ok: true, version: downloadedUpdateVersion };
 });
 
 ipcMain.handle('open-latest-dmg-release', async (_event, customUrl) => {
