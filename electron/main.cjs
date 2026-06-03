@@ -67,6 +67,20 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, validatedURL) => {
+    console.error('Renderer failed to load:', { code, description, validatedURL });
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Renderer process gone:', details);
+  });
+
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) {
+      console.error('Renderer console:', { level, message, line, sourceId });
+    }
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
@@ -103,6 +117,12 @@ function showNativeNotification({ title, body, silent = false } = {}) {
 
 function setupAutoUpdater() {
   if (!app.isPackaged) return;
+
+  const updaterConfigPath = path.join(process.resourcesPath, 'app-update.yml');
+  if (!fs.existsSync(updaterConfigPath)) {
+    console.warn('Auto update skipped: app-update.yml not found at startup.', updaterConfigPath);
+    return;
+  }
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
