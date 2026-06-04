@@ -204,6 +204,7 @@ const INVOICE_GENERATOR_DEFAULTS_STORAGE_KEY = 'dyatask_invoice_generator_defaul
 const LOGIN_VISUAL_SETTINGS_KEY = 'login_visual'
 const TUTORIAL_COURSES_SETTINGS_KEY = 'tutorial_courses'
 const USER_BROADCAST_SETTINGS_KEY = 'user_broadcast_message'
+const PUBLIC_BOOKING_CONFIG_KEY_PREFIX = 'public_booking_config_'
 const LOGIN_VISUAL_BUCKET = 'app-assets'
 const LOGIN_VISUAL_OBJECT_PATH = 'login/login-visual'
 const FALLBACK_INVOICE_GENERATOR_DEFAULTS = {
@@ -399,6 +400,56 @@ function App() {
     return `${displayTime} - ${displayTitle}`
   }
 
+  const buildPublicBookingConfigKey = (token) => `${PUBLIC_BOOKING_CONFIG_KEY_PREFIX}${String(token || '').trim()}`
+
+  function parseBookingTimeRange(timeText) {
+    const raw = (timeText || '').trim()
+    const match = raw.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/)
+    if (match) {
+      return { start: match[1], end: match[2] }
+    }
+
+    const single = raw.match(/(\d{1,2}:\d{2})/)
+    if (!single) return null
+
+    const [hoursStr, minutesStr] = single[1].split(':')
+    const hours = Number(hoursStr)
+    const minutes = Number(minutesStr)
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+
+    const endDate = new Date(2000, 0, 1, hours, minutes + 60)
+    const endHours = String(endDate.getHours()).padStart(2, '0')
+    const endMinutes = String(endDate.getMinutes()).padStart(2, '0')
+    return { start: single[1], end: `${endHours}:${endMinutes}` }
+  }
+
+  const normalizeWhatsAppNumber = (value) => {
+    const digits = String(value || '').replace(/\D/g, '')
+    if (!digits) return ''
+    if (digits.startsWith('62')) return digits
+    if (digits.startsWith('0')) return `62${digits.slice(1)}`
+    if (digits.startsWith('8')) return `62${digits}`
+    if (digits.startsWith('00')) return digits.slice(2)
+    return digits
+  }
+
+  const buildWhatsAppLink = (value, text = '') => {
+    const normalized = normalizeWhatsAppNumber(value)
+    if (!normalized) return ''
+    return text
+      ? `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/${normalized}`
+  }
+
+  const normalizeBookingSlotValue = (value) => {
+    const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/)
+    if (!match) return ''
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return ''
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  }
+
   const todayDate = new Date()
   const todayString = formatDateLocal(todayDate)
   const [session, setSession] = useState(null)
@@ -571,13 +622,13 @@ function App() {
   const [shareToken, setShareToken] = useState('')
   const [bookingAvailability, setBookingAvailability] = useState(() => {
     const defaultDaySchedules = {
-      0: { enabled: false, startHour: '09:00', endHour: '17:00' },
-      1: { enabled: true, startHour: '09:00', endHour: '17:00' },
-      2: { enabled: true, startHour: '09:00', endHour: '17:00' },
-      3: { enabled: true, startHour: '09:00', endHour: '17:00' },
-      4: { enabled: true, startHour: '09:00', endHour: '17:00' },
-      5: { enabled: true, startHour: '09:00', endHour: '17:00' },
-      6: { enabled: false, startHour: '09:00', endHour: '17:00' }
+      0: { enabled: false, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] },
+      1: { enabled: true, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] },
+      2: { enabled: true, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] },
+      3: { enabled: true, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] },
+      4: { enabled: true, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] },
+      5: { enabled: true, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] },
+      6: { enabled: false, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] }
     }
 
     try {
@@ -595,7 +646,9 @@ function App() {
                   ? currentDay.enabled
                   : (saved.enabledDays || [1, 2, 3, 4, 5]).includes(dayIndex),
                 startHour: currentDay.startHour || saved.startHour || '09:00',
-                endHour: currentDay.endHour || saved.endHour || '17:00'
+                endHour: currentDay.endHour || saved.endHour || '17:00',
+                mode: currentDay.mode === 'custom' ? 'custom' : 'range',
+                customSlots: Array.isArray(currentDay.customSlots) ? currentDay.customSlots : []
               }
             ]
           })
@@ -606,7 +659,9 @@ function App() {
             {
               enabled: (saved.enabledDays || [1, 2, 3, 4, 5]).includes(dayIndex),
               startHour: saved.startHour || '09:00',
-              endHour: saved.endHour || '17:00'
+              endHour: saved.endHour || '17:00',
+              mode: 'range',
+              customSlots: []
             }
           ])
         )
@@ -1855,6 +1910,13 @@ function App() {
     const dayConfig = bookingAvailability.daySchedules?.[dayIndex]
     if (!dayConfig?.enabled) return []
 
+    if (dayConfig.mode === 'custom') {
+      return [...new Set((dayConfig.customSlots || [])
+        .map(normalizeBookingSlotValue)
+        .filter(Boolean))]
+        .sort()
+    }
+
     const [startHour, startMinute] = (dayConfig.startHour || '09:00').split(':').map(Number)
     const [endHour, endMinute] = (dayConfig.endHour || '17:00').split(':').map(Number)
     const startTotal = startHour * 60 + startMinute
@@ -1873,23 +1935,58 @@ function App() {
   }
 
   const bookingTimeSlots = buildTimeSlots(bookingDate)
+  const bookingSlotDurationMinutes = Math.max(15, Number(bookingAvailability.slotMinutes || 30))
 
-  const extractStartTime = (timeValue) => {
-    const text = (timeValue || '').trim()
-    const rangeMatch = text.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/)
-    if (rangeMatch) return rangeMatch[1]
-    const singleMatch = text.match(/(\d{1,2}:\d{2})/)
-    return singleMatch ? singleMatch[1] : ''
+  const timeTextToMinutes = (value) => {
+    const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/)
+    if (!match) return null
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+    return (hours * 60) + minutes
   }
 
-  const bookedTimeSetForSelectedDate = new Set(
-    appointments
+  const selectedDateBlockedRanges = [
+    ...appointments
       .filter(app => app.date === bookingDate)
-      .map(app => extractStartTime(app.time))
-      .filter(Boolean)
+      .map(app => {
+        const range = parseBookingTimeRange(app.time)
+        if (!range) return null
+        const start = timeTextToMinutes(range.start)
+        const end = timeTextToMinutes(range.end)
+        if (start == null || end == null) return null
+        return { start, end }
+      }),
+    ...googleCalendarEvents
+      .filter(event => event.date === bookingDate)
+      .map(event => {
+        if (String(event.time || '').trim().toLowerCase() === 'all day') {
+          return { start: 0, end: 24 * 60 }
+        }
+        const range = parseBookingTimeRange(event.time)
+        if (!range) return null
+        const start = timeTextToMinutes(range.start)
+        const end = timeTextToMinutes(range.end)
+        if (start == null || end == null) return null
+        return { start, end }
+      })
+  ].filter(Boolean)
+
+  const blockedTimeSlotSetForSelectedDate = new Set(
+    bookingTimeSlots.filter(slot => {
+      const slotStart = timeTextToMinutes(slot)
+      if (slotStart == null) return true
+      const slotEnd = slotStart + bookingSlotDurationMinutes
+      return selectedDateBlockedRanges.some(range => slotStart < range.end && slotEnd > range.start)
+    })
   )
 
-  const availableTimeSlotsForSelectedDate = bookingTimeSlots.filter(slot => !bookedTimeSetForSelectedDate.has(slot))
+  const availableTimeSlotsForSelectedDate = bookingTimeSlots.filter(slot => {
+    const slotStart = timeTextToMinutes(slot)
+    if (slotStart == null) return false
+    const slotEnd = slotStart + bookingSlotDurationMinutes
+    return !selectedDateBlockedRanges.some(range => slotStart < range.end && slotEnd > range.start)
+  })
 
   const isDateAllowed = (dateStr) => {
     const dateObj = new Date(`${dateStr}T00:00:00`)
@@ -3263,27 +3360,6 @@ function App() {
     setSelectedProjectName(allProjectFolders[0]?.name || '')
   }, [allProjectFolders, selectedProjectName])
 
-  const parseBookingTimeRange = (timeText) => {
-    const raw = (timeText || '').trim()
-    const match = raw.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/)
-    if (match) {
-      return { start: match[1], end: match[2] }
-    }
-
-    const single = raw.match(/(\d{1,2}:\d{2})/)
-    if (!single) return null
-
-    const [hoursStr, minutesStr] = single[1].split(':')
-    const hours = Number(hoursStr)
-    const minutes = Number(minutesStr)
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
-
-    const endDate = new Date(2000, 0, 1, hours, minutes + 60)
-    const endHours = String(endDate.getHours()).padStart(2, '0')
-    const endMinutes = String(endDate.getMinutes()).padStart(2, '0')
-    return { start: single[1], end: `${endHours}:${endMinutes}` }
-  }
-
   const syncBookingToGoogleCalendar = async (booking) => {
     const cfg = integrationConfigs.google_calendar || {}
     const clientId = (cfg.client_id || '').trim()
@@ -4248,6 +4324,94 @@ function App() {
   }, [publicShareBaseUrl, publicShareBaseUrlStorageKey])
 
   useEffect(() => {
+    if (!shareToken || !scopedUserId || isPublicBookingMode) return
+
+    const persistPublicBookingConfig = async () => {
+      const { error } = await supabase
+        .from('app_global_settings')
+        .upsert({
+          key: buildPublicBookingConfigKey(shareToken),
+          value: {
+            shareToken,
+            ownerUserId: scopedUserId,
+            availability: bookingAvailability,
+            reservationPrice: reservationSessionPrice,
+            notes: publicBookingNotes,
+            updatedAt: new Date().toISOString()
+          },
+          updated_by: actorUserId || scopedUserId,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' })
+
+      if (error) {
+        console.warn('Gagal sinkron konfigurasi booking publik:', error.message)
+      }
+    }
+
+    persistPublicBookingConfig()
+  }, [
+    actorUserId,
+    bookingAvailability,
+    isPublicBookingMode,
+    publicBookingNotes,
+    reservationSessionPrice,
+    scopedUserId,
+    shareToken
+  ])
+
+  useEffect(() => {
+    if (!publicBookingToken) return
+
+    let cancelled = false
+    const settingsKey = buildPublicBookingConfigKey(publicBookingToken)
+
+    const applyPublicBookingConfig = async () => {
+      const { data, error } = await supabase
+        .from('app_global_settings')
+        .select('value')
+        .eq('key', settingsKey)
+        .maybeSingle()
+
+      if (cancelled) return
+      if (error) {
+        console.warn('Gagal memuat konfigurasi booking publik:', error.message)
+        return
+      }
+
+      const value = data?.value && typeof data.value === 'object' ? data.value : {}
+      if (value.availability && typeof value.availability === 'object') {
+        setBookingAvailability(prev => ({
+          ...prev,
+          ...value.availability
+        }))
+      }
+      if (typeof value.notes === 'string') {
+        setPublicBookingNotes(value.notes)
+      }
+      if (Number.isFinite(Number(value.reservationPrice))) {
+        setReservationSessionPrice(Math.max(0, Number(value.reservationPrice)))
+      }
+    }
+
+    applyPublicBookingConfig()
+
+    const channel = supabase
+      .channel(`app_global_settings_${settingsKey}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'app_global_settings',
+        filter: `key=eq.${settingsKey}`
+      }, applyPublicBookingConfig)
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [publicBookingToken])
+
+  useEffect(() => {
     if (!session) return
 
     const onStorageBookingEvent = (event) => {
@@ -4749,6 +4913,8 @@ function App() {
           date: a.date,
           status: a.status,
           email: a.email,
+          whatsapp: a.whatsapp || '',
+          formDetails: a.form_details || {},
           createdAt: a.created_at
         })));
       }
@@ -4796,6 +4962,8 @@ function App() {
             date: inserted.date,
             status: inserted.status,
             email: inserted.email,
+            whatsapp: inserted.whatsapp || '',
+            formDetails: inserted.form_details || {},
             createdAt: inserted.created_at || new Date().toISOString()
           }, ...prev]
         })
@@ -6812,6 +6980,10 @@ function App() {
       return
     }
     if (!bookingClient.trim() || !bookingTitle.trim()) return
+    if (isPublicBookingMode && !bookingWhatsapp.trim()) {
+      alert('Nomor WhatsApp wajib diisi untuk reservasi 1:1.')
+      return
+    }
     if (!isDateAllowed(bookingDate)) {
       alert('Tanggal tersebut di luar hari reservasi yang diizinkan.')
       return
@@ -6828,6 +7000,16 @@ function App() {
       date: bookingDate,
       status: 'confirmed',
       email: bookingEmail || 'guest@dyatask.com',
+      whatsapp: bookingWhatsapp.trim() || null,
+      form_details: {
+        source: isPublicBookingMode ? 'public-1on1-form' : 'manual-booking',
+        clientName: bookingClient.trim(),
+        email: (bookingEmail || '').trim(),
+        whatsapp: bookingWhatsapp.trim(),
+        title: bookingTitle.trim(),
+        date: bookingDate,
+        time: bookingTime
+      },
       user_id: scopedUserId
     }
 
@@ -6836,7 +7018,9 @@ function App() {
       p_title: newBookingObj.title,
       p_email: newBookingObj.email,
       p_date: newBookingObj.date,
-      p_time: newBookingObj.time
+      p_time: newBookingObj.time,
+      p_whatsapp: newBookingObj.whatsapp,
+      p_form_details: newBookingObj.form_details
     }
 
     const { data, error } = isPublicBookingMode && !session
@@ -6862,6 +7046,8 @@ function App() {
         date: createdRow.date,
         status: createdRow.status,
         email: createdRow.email,
+        whatsapp: createdRow.whatsapp,
+        formDetails: createdRow.form_details || {},
         createdAt: createdRow.created_at || new Date().toISOString()
       }
       setAppointments([createdBooking, ...appointments])
@@ -6892,6 +7078,7 @@ function App() {
     setBookingClient('')
     setBookingTitle('')
     setBookingEmail('')
+    setBookingWhatsapp('')
     setShowQuickBookingModal(false)
 
     // Log sync
@@ -9770,7 +9957,7 @@ function App() {
         <div className="absolute -top-28 left-20 w-80 h-80 rounded-full bg-[#8f75d8]/20 blur-3xl"></div>
         <div className="absolute bottom-8 -right-24 w-[26rem] h-[26rem] rounded-full bg-[#bca8ff]/25 blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 w-[34rem] h-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/38 blur-3xl"></div>
-        <div className="relative w-full max-w-6xl rounded-[2.25rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/45 p-4 lg:p-5">
+        <div className="relative w-full max-w-7xl rounded-[2.25rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/45 p-4 lg:p-5">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-4 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/35">
               <img
@@ -9781,13 +9968,34 @@ function App() {
               <h1 className="text-3xl font-semibold mb-1 text-[#40375f]">1on1 Consultation</h1>
               <p className="text-sm text-purple-400 mb-6">Nayanika Projects</p>
               <form onSubmit={handleAddBooking} className="space-y-3">
-                <input type="text" placeholder="Nama lengkap" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
-                <input type="email" placeholder="Email aktif" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
-                <input type="text" placeholder="Nomor WhatsApp" value={bookingWhatsapp} onChange={(e) => setBookingWhatsapp(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
-                <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                <p className="text-[11px] font-semibold text-purple-400">Kolom bertanda <span className="text-red-500">*</span> wajib diisi</p>
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
+                    Nama lengkap <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" placeholder="Nama lengkap" value={bookingClient} onChange={(e) => setBookingClient(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
+                    Email aktif
+                  </label>
+                  <input type="email" placeholder="Email aktif" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
+                    Nomor WhatsApp <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" placeholder="Nomor WhatsApp" value={bookingWhatsapp} onChange={(e) => setBookingWhatsapp(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
+                    Topik konsultasi <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                </div>
                 <div className="pt-4 border-t border-purple-100">
-                  <p className="text-xs text-purple-400 mb-2">Tanggal terpilih: <span className="text-[#40375f] font-semibold">{publicSelectedDateLabel}</span></p>
-                  <p className="text-xs text-purple-400 mb-4">Waktu terpilih: <span className="text-[#40375f] font-semibold">{bookingTime || '-'}</span></p>
+                  <p className="text-xs text-purple-400 mb-2">Tanggal terpilih <span className="text-red-500">*</span>: <span className="text-[#40375f] font-semibold">{publicSelectedDateLabel}</span></p>
+                  <p className="text-xs text-purple-400 mb-4">Waktu terpilih <span className="text-red-500">*</span>: <span className="text-[#40375f] font-semibold">{bookingTime || '-'}</span></p>
                   <button type="submit" disabled={!bookingTime || !availableTimeSlotsForSelectedDate.length} className="w-full py-3 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-lg shadow-purple-300/40">
                     Kirim Reservasi
                   </button>
@@ -9799,7 +10007,7 @@ function App() {
               </div>
             </div>
 
-            <div className="lg:col-span-5 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/30">
+            <div className="lg:col-span-8 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/30">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-xl font-semibold text-[#40375f]">Pick a date</h2>
                 <div className="flex items-center gap-2">
@@ -9836,38 +10044,53 @@ function App() {
                   )
                 })}
               </div>
-              <div className="mt-6 rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-purple-500 shadow-sm">
-                Time zone: {timezoneLabel}
+              <div className="mt-6 border-t border-purple-100 pt-5">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[#40375f]">{publicSelectedDateLabel}</h3>
+                    <p className="text-xs text-purple-400 mt-1">Pilih jam yang masih tersedia</p>
+                  </div>
+                  <div className="rounded-2xl border border-purple-100 bg-white px-4 py-3 text-sm text-purple-500 shadow-sm">
+                    Time zone: {timezoneLabel}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+                  {bookingTimeSlots.map(slot => {
+                    const isBlocked = blockedTimeSlotSetForSelectedDate.has(slot)
+                    const isSelected = bookingTime === slot && !isBlocked
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        disabled={isBlocked}
+                        onClick={() => setBookingTime(slot)}
+                        className={`w-full px-5 py-3 rounded-2xl border text-sm font-semibold transition-all ${
+                          isSelected
+                            ? 'border-[#8f75d8] bg-[#8f75d8] text-white shadow-md shadow-purple-300/40'
+                            : isBlocked
+                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 cursor-not-allowed opacity-70 line-through'
+                              : 'border-purple-100 bg-white hover:bg-purple-50 text-purple-600'
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    )
+                  })}
+                  {!bookingTimeSlots.length && (
+                    <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-2xl px-4 py-3 col-span-full">
+                      Belum ada jam reservasi yang diaktifkan untuk hari ini.
+                    </div>
+                  )}
+                  {!!bookingTimeSlots.length && !availableTimeSlotsForSelectedDate.length && (
+                    <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-2xl px-4 py-3 col-span-full">
+                      Semua slot di tanggal ini sudah terisi atau bentrok dengan jadwal lain.
+                    </div>
+                  )}
+                </div>
               </div>
               <p className="mt-2 text-[11px] text-purple-400">
                 Waktu dan jam reservasi akan otomatis disesuaikan dengan zona waktu masing-masing pengguna.
               </p>
-            </div>
-
-            <div className="lg:col-span-3 p-6 lg:p-7 rounded-[1.75rem] border border-white/70 bg-white shadow-lg shadow-purple-100/35">
-              <h3 className="text-lg font-semibold mb-1 text-[#40375f]">{publicSelectedDateLabel}</h3>
-              <p className="text-xs text-purple-400 mb-4">Pilih jam yang masih tersedia</p>
-              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
-                {availableTimeSlotsForSelectedDate.map(slot => (
-                  <button
-                    key={slot}
-                    type="button"
-                    onClick={() => setBookingTime(slot)}
-                    className={`w-full py-3 rounded-md border text-sm font-semibold transition-all ${
-                      bookingTime === slot
-                        ? 'border-[#8f75d8] bg-[#8f75d8] text-white shadow-md shadow-purple-300/40'
-                        : 'border-purple-100 bg-white hover:bg-purple-50 text-purple-600'
-                    }`}
-                  >
-                    {slot}
-                  </button>
-                ))}
-                {!availableTimeSlotsForSelectedDate.length && (
-                  <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-2xl px-3 py-2">
-                    Tidak ada slot tersisa di tanggal ini.
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -14101,10 +14324,34 @@ function App() {
             </div>
           )}
 
-          {/* Calendar Item Action Modal */}
-          {calendarActionItem && (
+      {/* Calendar Item Action Modal */}
+      {calendarActionItem && (
             <div className="fixed inset-0 bg-slate-500/25 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setCalendarActionItem(null)}>
               <div className="w-full max-w-sm rounded-[2rem] bg-white dark:bg-slate-900 p-6 shadow-2xl border border-purple-100/80 dark:border-indigo-900/50" onClick={(e) => e.stopPropagation()}>
+                {(() => {
+                  const appointmentFormDetails = calendarActionItem.itemType === 'appointment'
+                    ? (calendarActionItem.formDetails || {})
+                    : {}
+                  const appointmentWhatsApp = calendarActionItem.itemType === 'appointment'
+                    ? (calendarActionItem.whatsapp || appointmentFormDetails.whatsapp || '')
+                    : ''
+                  const appointmentWhatsAppLink = buildWhatsAppLink(
+                    appointmentWhatsApp,
+                    `Halo ${calendarActionItem.clientName || 'kak'}, saya ingin follow up reservasi 1:1 "${calendarActionItem.title || '-'}" pada ${formatLongDate(calendarActionItem.date)} ${calendarActionItem.time || ''} WIB.`
+                  )
+                  const reservationDetailRows = calendarActionItem.itemType === 'appointment'
+                    ? [
+                        { label: 'Nama', value: calendarActionItem.clientName || appointmentFormDetails.clientName || '-' },
+                        { label: 'Email', value: calendarActionItem.email || appointmentFormDetails.email || '-' },
+                        { label: 'WhatsApp', value: appointmentWhatsApp || '-', isWhatsApp: true },
+                        { label: 'Topik 1:1', value: calendarActionItem.title || appointmentFormDetails.title || '-' },
+                        { label: 'Tanggal', value: formatLongDate(calendarActionItem.date) },
+                        { label: 'Waktu', value: calendarActionItem.time ? `${calendarActionItem.time} WIB` : '-' }
+                      ]
+                    : []
+
+                  return (
+                    <>
                 <div className="flex items-start gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-[#8f75d8]/15 text-[#8f75d8] flex items-center justify-center shrink-0">
                     {calendarActionItem.itemType === 'appointment' ? <Calendar size={18} /> : <CheckSquare size={18} />}
@@ -14121,6 +14368,31 @@ function App() {
                     </p>
                   </div>
                 </div>
+
+                {calendarActionItem.itemType === 'appointment' && (
+                  <div className="mt-5 rounded-2xl border border-purple-100 bg-[#fbfaff] p-4">
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-[#8f75d8] font-bold">Detail Form 1:1</p>
+                    <div className="mt-3 space-y-2">
+                      {reservationDetailRows.map((row) => (
+                        <div key={row.label} className="flex items-start justify-between gap-3 text-xs">
+                          <span className="shrink-0 font-bold text-[#8f75d8]">{row.label}</span>
+                          {row.isWhatsApp && appointmentWhatsAppLink ? (
+                            <a
+                              href={appointmentWhatsAppLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-right text-emerald-600 hover:text-emerald-700 hover:underline break-words font-semibold"
+                            >
+                              {row.value}
+                            </a>
+                          ) : (
+                            <span className="text-right text-[#4f4574] break-words">{row.value}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-6 grid grid-cols-2 gap-3">
                   <button
@@ -14140,6 +14412,18 @@ function App() {
                     Hapus
                   </button>
                 </div>
+
+                {calendarActionItem.itemType === 'appointment' && appointmentWhatsAppLink && (
+                  <a
+                    href={appointmentWhatsAppLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 w-full py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold inline-flex items-center justify-center gap-2"
+                  >
+                    <MessageSquare size={14} />
+                    Chat WhatsApp
+                  </a>
+                )}
 
                 {calendarActionItem.itemType === 'task' && (
                   <button
@@ -14162,6 +14446,9 @@ function App() {
                 >
                   Cancel
                 </button>
+                    </>
+                  )
+                })()}
               </div>
             </div>
           )}
@@ -15451,7 +15738,7 @@ function App() {
                         </div>
                       </div>
                       {(() => {
-                        const selectedDayConfig = bookingAvailability.daySchedules?.[selectedAvailabilityDay] || { enabled: false, startHour: '09:00', endHour: '17:00' }
+                        const selectedDayConfig = bookingAvailability.daySchedules?.[selectedAvailabilityDay] || { enabled: false, startHour: '09:00', endHour: '17:00', mode: 'range', customSlots: [] }
 
                         return (
                           <>
@@ -15490,43 +15777,107 @@ function App() {
                           Aktifkan hari ini
                         </label>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <input
-                          type="time"
-                          value={selectedDayConfig.startHour || '09:00'}
-                          onChange={(e) => setBookingAvailability(prev => ({
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setBookingAvailability(prev => ({
                             ...prev,
                             daySchedules: {
                               ...prev.daySchedules,
                               [selectedAvailabilityDay]: {
                                 ...(prev.daySchedules?.[selectedAvailabilityDay] || {}),
-                                startHour: e.target.value
+                                mode: 'range'
                               }
                             }
                           }))}
-                          className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
-                        />
-                        <input
-                          type="time"
-                          value={selectedDayConfig.endHour || '17:00'}
-                          onChange={(e) => setBookingAvailability(prev => ({
+                          className={`px-3 py-2 rounded-lg border text-xs font-bold ${selectedDayConfig.mode !== 'custom' ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white dark:bg-indigo-950/30 text-purple-600 dark:text-purple-300 border-purple-100 dark:border-indigo-900'}`}
+                        >
+                          Rentang otomatis
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBookingAvailability(prev => ({
                             ...prev,
                             daySchedules: {
                               ...prev.daySchedules,
                               [selectedAvailabilityDay]: {
                                 ...(prev.daySchedules?.[selectedAvailabilityDay] || {}),
-                                endHour: e.target.value
+                                mode: 'custom'
                               }
                             }
                           }))}
-                          className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
-                        />
-                        <select value={bookingAvailability.slotMinutes} onChange={(e) => setBookingAvailability(prev => ({ ...prev, slotMinutes: Number(e.target.value) }))} className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs">
-                          <option value={15}>15m</option>
-                          <option value={30}>30m</option>
-                          <option value={60}>60m</option>
-                        </select>
+                          className={`px-3 py-2 rounded-lg border text-xs font-bold ${selectedDayConfig.mode === 'custom' ? 'bg-[#8f75d8] text-white border-[#8f75d8]' : 'bg-white dark:bg-indigo-950/30 text-purple-600 dark:text-purple-300 border-purple-100 dark:border-indigo-900'}`}
+                        >
+                          Jam khusus
+                        </button>
                       </div>
+                      {selectedDayConfig.mode === 'custom' ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={(selectedDayConfig.customSlots || []).join(', ')}
+                            onChange={(e) => {
+                              const nextSlots = String(e.target.value || '')
+                                .split(/[,\n]/)
+                                .map(normalizeBookingSlotValue)
+                                .filter(Boolean)
+                              setBookingAvailability(prev => ({
+                                ...prev,
+                                daySchedules: {
+                                  ...prev.daySchedules,
+                                  [selectedAvailabilityDay]: {
+                                    ...(prev.daySchedules?.[selectedAvailabilityDay] || {}),
+                                    customSlots: [...new Set(nextSlots)].sort()
+                                  }
+                                }
+                              }))
+                            }}
+                            rows={3}
+                            placeholder="Contoh: 11:00, 15:00, 19:00"
+                            className="w-full px-3 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs resize-none"
+                          />
+                          <p className="text-[10px] text-purple-400 dark:text-purple-300">
+                            Isi jam yang benar-benar tersedia saja. Pisahkan dengan koma, misalnya 11:00, 15:00, 19:00.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            type="time"
+                            value={selectedDayConfig.startHour || '09:00'}
+                            onChange={(e) => setBookingAvailability(prev => ({
+                              ...prev,
+                              daySchedules: {
+                                ...prev.daySchedules,
+                                [selectedAvailabilityDay]: {
+                                  ...(prev.daySchedules?.[selectedAvailabilityDay] || {}),
+                                  startHour: e.target.value
+                                }
+                              }
+                            }))}
+                            className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
+                          />
+                          <input
+                            type="time"
+                            value={selectedDayConfig.endHour || '17:00'}
+                            onChange={(e) => setBookingAvailability(prev => ({
+                              ...prev,
+                              daySchedules: {
+                                ...prev.daySchedules,
+                                [selectedAvailabilityDay]: {
+                                  ...(prev.daySchedules?.[selectedAvailabilityDay] || {}),
+                                  endHour: e.target.value
+                                }
+                              }
+                            }))}
+                            className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs"
+                          />
+                          <select value={bookingAvailability.slotMinutes} onChange={(e) => setBookingAvailability(prev => ({ ...prev, slotMinutes: Number(e.target.value) }))} className="px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-xs">
+                            <option value={15}>15m</option>
+                            <option value={30}>30m</option>
+                            <option value={60}>60m</option>
+                          </select>
+                        </div>
+                      )}
                           </>
                         )
                       })()}
