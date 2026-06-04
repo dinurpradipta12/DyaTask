@@ -1868,9 +1868,9 @@ function App() {
       const result = await ipcRenderer.invoke('download-available-update')
       if (result?.ok) {
         if (result?.alreadyDownloaded) {
-          setElectronUpdateState('downloaded')
+          setElectronUpdateState('installing')
           setElectronDownloadedUpdateVersion(result.version || '')
-          setManualUpdateStatus(`Update app versi ${result.version || 'baru'} sudah siap dipasang.`)
+          setManualUpdateStatus(`Update app versi ${result.version || 'baru'} sedang dipasang. App akan restart otomatis.`)
         } else {
           setElectronUpdateState('downloading')
           setManualUpdateStatus(`Mengunduh update app versi ${result?.version || 'baru'}...`)
@@ -2049,8 +2049,12 @@ function App() {
   const electronAppVersion = appVersionInfo?.version && appVersionInfo.version !== '0.0.0' ? appVersionInfo.version : ''
   const currentAppVersion = electronAppVersion || import.meta.env.VITE_APP_VERSION || '0.1.0'
   const latestAvailableVersion = deployUpdateInfo?.version || electronDownloadedUpdateVersion || currentAppVersion
-  const updateStatusLabel = electronUpdateState === 'downloaded'
+  const updateStatusLabel = electronUpdateState === 'installing'
+    ? 'Memasang update'
+    : electronUpdateState === 'downloaded'
     ? 'Update siap dipasang'
+    : electronUpdateState === 'downloading'
+      ? 'Mengunduh update'
     : deployUpdateInfo
       ? 'App perlu di update'
       : 'App up to date'
@@ -6053,7 +6057,7 @@ function App() {
         setElectronUpdateState('available')
         setElectronDownloadedUpdateVersion('')
         setDeployUpdateInfo(prev => prev || { version: payload.version || 'baru', buildId: `dmg-${payload.version || Date.now()}`, buildTime: new Date().toISOString() })
-        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} tersedia. Unduh update langsung dari app.`)
+        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} tersedia. Klik Unduh Update untuk memasang versi terbaru.`)
       }
       if (payload.status === 'downloading') {
         setElectronUpdateState('downloading')
@@ -6062,7 +6066,12 @@ function App() {
       if (payload.status === 'downloaded') {
         setElectronUpdateState('downloaded')
         setElectronDownloadedUpdateVersion(payload.version || '')
-        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} sudah siap dipasang.`)
+        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} selesai diunduh. Memasang update...`)
+      }
+      if (payload.status === 'installing') {
+        setElectronUpdateState('installing')
+        setElectronDownloadedUpdateVersion(payload.version || '')
+        setManualUpdateStatus(`Update app versi ${payload.version || 'baru'} sedang dipasang. App akan restart otomatis.`)
       }
       if (payload.status === 'not-available') {
         setElectronUpdateState('idle')
@@ -17176,14 +17185,15 @@ function App() {
         </div>
       )}
 
-      {deployUpdateInfo && (
+      {(deployUpdateInfo || (isElectronApp && ['available', 'downloading', 'downloaded', 'installing', 'error'].includes(electronUpdateState))) && (
         <div className={`fixed right-8 top-24 z-[70] w-[min(380px,calc(100vw-2rem))] rounded-[1.75rem] border p-4 shadow-2xl backdrop-blur-xl ${
           theme === 'dark'
             ? 'bg-slate-950/92 border-indigo-800/70 text-white'
             : 'bg-white/95 border-purple-100 text-slate-900'
         }`}>
           {(() => {
-            const latestVersion = deployUpdateInfo.version || 'terbaru'
+            const latestVersion = deployUpdateInfo?.version || electronDownloadedUpdateVersion || 'terbaru'
+            const isElectronUpdateBanner = isElectronApp && ['available', 'downloading', 'downloaded', 'installing', 'error'].includes(electronUpdateState)
             return (
           <div className="flex items-start gap-3">
             <div className="w-11 h-11 rounded-2xl bg-[#8f75d8]/15 flex items-center justify-center shrink-0">
@@ -17198,6 +17208,11 @@ function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (isElectronUpdateBanner) {
+                      setManualUpdateStatus('')
+                      if (electronUpdateState === 'error') setElectronUpdateState('idle')
+                      return
+                    }
                     const key = getDeployVersionKey(deployUpdateInfo)
                     dismissedDeployVersionRef.current = key
                     localStorage.setItem('dyatask_dismissed_deploy_version', key)
@@ -17209,23 +17224,65 @@ function App() {
                 </button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-300 mt-2 leading-relaxed">
-                Aplikasi sudah tersedia dalam versi terbaru yang sudah ditingkatkan. Reload aplikasi untuk memakai pembaruan.
+                {isElectronUpdateBanner
+                  ? electronUpdateState === 'available'
+                    ? 'Versi baru sudah tersedia untuk app DMG terpasang. Unduh dari dalam app, lalu update akan dipasang otomatis setelah selesai.'
+                    : electronUpdateState === 'downloading'
+                      ? 'Update app sedang diunduh. Setelah selesai, app akan memasang update otomatis.'
+                      : electronUpdateState === 'installing'
+                        ? 'Update sudah selesai diunduh. App akan restart sebentar untuk memasang versi terbaru.'
+                        : electronUpdateState === 'error'
+                          ? 'Update app gagal diproses. Kamu masih bisa pakai download DMG sebagai cadangan.'
+                          : 'Update app sudah selesai diunduh dan akan dipasang otomatis.'
+                  : 'Aplikasi sudah tersedia dalam versi terbaru yang sudah ditingkatkan. Reload aplikasi untuk memakai pembaruan.'}
               </p>
               <div className="mt-3 rounded-2xl bg-purple-50/70 dark:bg-indigo-950/35 border border-purple-100 dark:border-indigo-800/60 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-300">
                 <p><span className="font-bold text-slate-700 dark:text-white">Versi saat ini:</span> v{currentAppVersion}</p>
                 <p><span className="font-bold text-slate-700 dark:text-white">Versi terbaru:</span> v{latestVersion}</p>
               </div>
               <div className="mt-4 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  className="flex-1 py-2.5 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-lg shadow-purple-500/15 transition-all"
-                >
-                  Reload Aplikasi
-                </button>
+                {isElectronUpdateBanner ? (
+                  <button
+                    type="button"
+                    onClick={
+                      electronUpdateState === 'available'
+                        ? handleDownloadElectronUpdate
+                        : electronUpdateState === 'error'
+                          ? handleCheckManualUpdate
+                        : electronUpdateState === 'downloaded'
+                          ? handleInstallElectronUpdate
+                          : undefined
+                    }
+                    disabled={checkingManualUpdate || electronUpdateState === 'downloading' || electronUpdateState === 'installing'}
+                    className="flex-1 py-2.5 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] disabled:opacity-60 text-white text-xs font-bold shadow-lg shadow-purple-500/15 transition-all"
+                  >
+                    {electronUpdateState === 'available'
+                      ? 'Unduh Update'
+                      : electronUpdateState === 'downloading'
+                        ? 'Mengunduh...'
+                        : electronUpdateState === 'installing'
+                          ? 'Memasang Update...'
+                          : electronUpdateState === 'error'
+                            ? 'Cek Lagi'
+                            : 'Install Update'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="flex-1 py-2.5 rounded-2xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold shadow-lg shadow-purple-500/15 transition-all"
+                  >
+                    Reload Aplikasi
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
+                    if (isElectronUpdateBanner) {
+                      setManualUpdateStatus('')
+                      if (electronUpdateState === 'error') setElectronUpdateState('idle')
+                      return
+                    }
                     const key = getDeployVersionKey(deployUpdateInfo)
                     dismissedDeployVersionRef.current = key
                     localStorage.setItem('dyatask_dismissed_deploy_version', key)
@@ -17233,7 +17290,7 @@ function App() {
                   }}
                   className="px-4 py-2.5 rounded-2xl bg-purple-50 hover:bg-purple-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-[#8f75d8] text-xs font-bold transition-colors"
                 >
-                  Nanti
+                  {isElectronUpdateBanner ? 'Tutup' : 'Nanti'}
                 </button>
               </div>
             </div>

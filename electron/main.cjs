@@ -9,6 +9,7 @@ let isQuitting = false;
 let latestUpdateInfo = null;
 let downloadedUpdateVersion = '';
 let isUpdateDownloading = false;
+let installAfterDownloadRequested = false;
 const APP_NAME = 'Dyatask Manager - Superapp for Freelancer';
 const UPDATE_FEED_URL = 'https://github.com/dinurpradipta12/DyaTask/releases/latest';
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/dinurpradipta12/DyaTask/releases/latest';
@@ -131,18 +132,8 @@ function setupAutoUpdater() {
     latestUpdateInfo = info || null;
     downloadedUpdateVersion = '';
     isUpdateDownloading = false;
+    installAfterDownloadRequested = false;
     sendUpdateStatus({ status: 'available', version: info.version });
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update DyaTask tersedia',
-      message: `Versi ${info.version} tersedia.`,
-      detail: 'Download update sekarang? App akan meminta restart setelah download selesai.',
-      buttons: ['Download', 'Nanti'],
-      defaultId: 0,
-      cancelId: 1
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.downloadUpdate();
-    });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
@@ -150,17 +141,12 @@ function setupAutoUpdater() {
     downloadedUpdateVersion = info?.version || '';
     isUpdateDownloading = false;
     sendUpdateStatus({ status: 'downloaded', version: info.version });
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update siap diinstal',
-      message: `DyaTask ${info.version} sudah selesai diunduh.`,
-      detail: 'Restart app sekarang untuk memasang update.',
-      buttons: ['Restart & Install', 'Nanti'],
-      defaultId: 0,
-      cancelId: 1
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall();
-    });
+    if (installAfterDownloadRequested) {
+      sendUpdateStatus({ status: 'installing', version: info.version });
+      setTimeout(() => {
+        autoUpdater.quitAndInstall();
+      }, 1500);
+    }
   });
 
   autoUpdater.on('error', (error) => {
@@ -363,10 +349,16 @@ ipcMain.handle('download-available-update', async () => {
     }
 
     if (downloadedUpdateVersion) {
+      installAfterDownloadRequested = true;
+      sendUpdateStatus({ status: 'installing', version: downloadedUpdateVersion });
+      setTimeout(() => {
+        autoUpdater.quitAndInstall();
+      }, 1200);
       return { ok: true, alreadyDownloaded: true, version: downloadedUpdateVersion };
     }
 
     isUpdateDownloading = true;
+    installAfterDownloadRequested = true;
     await autoUpdater.downloadUpdate();
     return {
       ok: true,
