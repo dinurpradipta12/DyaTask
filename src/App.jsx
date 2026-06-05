@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import './App.css'
 import './mobile-tablet.css'
 import dyataskLogo from './logo-dyatask.png'
@@ -81,6 +81,7 @@ const TEAM_PERMISSION_DEFAULTS = {
   designOrders: true,
   generalOrders: true,
   mentoringSchedule: true,
+  mentoringSessions: true,
   contentPlanner: true,
   invoiceFollowUp: true,
   invoiceGenerator: true,
@@ -101,6 +102,7 @@ const TEAM_PERMISSION_LABELS = {
   designOrders: 'Pages Design Order',
   generalOrders: 'Pages Orderan (General)',
   mentoringSchedule: 'Pages Mentoring/Speaker',
+  mentoringSessions: 'Catatan Sesi Mentoring',
   contentPlanner: 'Content Planner',
   invoiceFollowUp: 'Invoice Payment & Follow Up',
   invoiceGenerator: 'Invoice Generator',
@@ -120,6 +122,7 @@ const normalizeTeamPermissions = (rawPermissions = {}) => {
   if (normalized.generalOrders == null && rawPermissions?.orders != null) normalized.generalOrders = !!rawPermissions.orders
   if (normalized.contentPlanner == null && rawPermissions?.tasks != null) normalized.contentPlanner = !!rawPermissions.tasks
   if (normalized.mentoringSchedule == null && rawPermissions?.reservations != null) normalized.mentoringSchedule = !!rawPermissions.reservations
+  if (normalized.mentoringSessions == null && rawPermissions?.reservations != null) normalized.mentoringSessions = !!rawPermissions.reservations
   if (normalized.invoiceFollowUp == null && rawPermissions?.finance != null) normalized.invoiceFollowUp = !!rawPermissions.finance
   if (normalized.invoiceGenerator == null && rawPermissions?.finance != null) normalized.invoiceGenerator = !!rawPermissions.finance
   return normalized
@@ -132,6 +135,7 @@ const WORKSPACE_ROLE_LABELS = {
 }
 
 const SPREADSHEET_ORDER_TYPES = ['Dashboard', 'Automation', 'Reporting', 'Template', 'Fixing']
+const MENTORING_ORDER_TYPES = ['1:1 Mentoring Session']
 const SOCIAL_MEDIA_ORDER_TYPES = [
   'Content Handle',
   'Social Media Management',
@@ -175,6 +179,33 @@ const SOCIAL_MEDIA_TIMELINE_TEMPLATE = [
     progressPercent: 100
   }
 ]
+const MENTORING_TIMELINE_TEMPLATE = [
+  {
+    title: 'Booking Terkonfirmasi',
+    note: 'Reservasi mentoring sudah masuk dan jadwal sesi pertama telah dikonfirmasi ke client.',
+    progressPercent: 10
+  },
+  {
+    title: 'Konteks & Objective Review',
+    note: 'Review background client, target mentoring, challenge utama, dan outcome yang ingin dicapai dari sesi ini.',
+    progressPercent: 25
+  },
+  {
+    title: 'Sesi Mentoring Berlangsung',
+    note: 'Jalankan sesi mentoring, catat insight penting, rekomendasi, dan keputusan yang disepakati bersama client.',
+    progressPercent: 60
+  },
+  {
+    title: 'Follow Up & Action Plan',
+    note: 'Kirim rangkuman hasil mentoring, checklist action plan, dan resource lanjutan yang perlu dijalankan client.',
+    progressPercent: 85
+  },
+  {
+    title: 'Monitoring Outcome',
+    note: 'Pantau hasil pasca sesi, follow up progres implementasi, dan tutup sesi saat objective sudah clear.',
+    progressPercent: 100
+  }
+]
 const DESIGN_ORDER_TYPES = ['Logo Brand', 'Visual Identity', 'UI/UX App', 'Social Media Kit', 'Pitch Deck Design', 'Design Revision']
 const GENERAL_ORDER_TYPES = ['Admin Support', 'Research', 'Data Entry', 'Customer Service', 'Personal Assistant', 'Project Coordination']
 const PAGE_CONTROL_CONFIG_KEY = '__page_control_enabled_pages'
@@ -189,6 +220,7 @@ const PAGE_TOGGLE_DEFAULTS = {
   designOrders: true,
   generalOrders: true,
   mentoringSchedule: true,
+  mentoringSessions: true,
   contentPlanner: true,
   invoiceFollowUp: true,
   invoiceGenerator: true,
@@ -613,6 +645,8 @@ function App() {
   const [bookingTitle, setBookingTitle] = useState('')
   const [bookingEmail, setBookingEmail] = useState('')
   const [bookingWhatsapp, setBookingWhatsapp] = useState('')
+  const [bookingMentoringNeed, setBookingMentoringNeed] = useState('')
+  const [bookingMentoringGoal, setBookingMentoringGoal] = useState('')
   const [bookingTime, setBookingTime] = useState('09:00')
   const [bookingDate, setBookingDate] = useState(todayString)
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(todayString)
@@ -682,8 +716,15 @@ function App() {
   const [publicBookingSummary, setPublicBookingSummary] = useState(null)
   const [publicBookingNotes, setPublicBookingNotes] = useState('Ketentuan reservasi:\n- Harap hadir 10 menit sebelum jadwal.\n- Jadwal dapat dijadwalkan ulang maksimal 1x.\n- Link meeting akan dikirim via email/WhatsApp setelah konfirmasi.')
   const [publicShareBaseUrl, setPublicShareBaseUrl] = useState('')
+  const [publicBookingOwnerUserId, setPublicBookingOwnerUserId] = useState('')
+  const [publicBookingConfigLoaded, setPublicBookingConfigLoaded] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const params = new URLSearchParams(window.location.search)
+    return !(params.get('booking') || params.get('mentoring'))
+  })
   const [spreadsheetOrders, setSpreadsheetOrders] = useState([])
   const [orderTimelineItems, setOrderTimelineItems] = useState([])
+  const [mentoringSessionNotesRows, setMentoringSessionNotesRows] = useState([])
   const [selectedOrderId, setSelectedOrderId] = useState(null)
   const [newOrderCustomer, setNewOrderCustomer] = useState('')
   const [newOrderName, setNewOrderName] = useState('')
@@ -698,6 +739,12 @@ function App() {
   const [timelineInputTitle, setTimelineInputTitle] = useState('')
   const [timelineInputNote, setTimelineInputNote] = useState('')
   const [timelineInputProgress, setTimelineInputProgress] = useState(0)
+  const [mentoringSessionDate, setMentoringSessionDate] = useState(todayString)
+  const [mentoringSessionTopic, setMentoringSessionTopic] = useState('')
+  const [mentoringSessionSummary, setMentoringSessionSummary] = useState('')
+  const [mentoringSessionActionItems, setMentoringSessionActionItems] = useState('')
+  const [mentoringSessionNextStep, setMentoringSessionNextStep] = useState('')
+  const [mentoringSessionProgress, setMentoringSessionProgress] = useState(50)
   const [editingTimelineId, setEditingTimelineId] = useState(null)
   const [editTimelineTitle, setEditTimelineTitle] = useState('')
   const [editTimelineNote, setEditTimelineNote] = useState('')
@@ -888,6 +935,7 @@ function App() {
   const mobilePwaGuideAutoShownRef = useRef(false)
   const profileSyncBlockedRef = useRef(false)
   const profileSyncWarnedRef = useRef(false)
+  const runtimeIdCounterRef = useRef(0)
 
   // macOS system configurations
   const [autoStart, setAutoStart] = useState(true)
@@ -904,6 +952,27 @@ function App() {
   const [integrationFormData, setIntegrationFormData] = useState({})
 
   const activeNotifications = notifications.filter(item => !item.confirmed)
+  const makeRuntimeId = useCallback((prefix = 'runtime') => {
+    runtimeIdCounterRef.current += 1
+    return `${prefix}-${Date.now()}-${runtimeIdCounterRef.current}-${Math.random().toString(36).slice(2, 8)}`
+  }, [])
+  const normalizeNotifications = useCallback((items = []) => {
+    const seenIds = new Set()
+    return (Array.isArray(items) ? items : [])
+      .map((item) => {
+        const baseId = String(item?.id || '').trim()
+        return {
+          ...item,
+          id: baseId || makeRuntimeId('notification'),
+          createdAt: item?.createdAt || Date.now()
+        }
+      })
+      .filter((item) => {
+        if (seenIds.has(item.id)) return false
+        seenIds.add(item.id)
+        return true
+      })
+  }, [makeRuntimeId])
   const isMobileWorkspaceChatView = isMobileTabletView && activeTab === 'workspaceChat'
   const isWorkspaceChatOpen = workspaceChatModalOpen || isMobileWorkspaceChatView
   const isWorkspaceChatThreadVisible = workspaceChatModalOpen || (
@@ -919,6 +988,7 @@ function App() {
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null)
   const searchParams = new URLSearchParams(window.location.search)
   const publicBookingToken = searchParams.get('booking')
+  const publicMentoringToken = searchParams.get('mentoring')
   const publicTrackingToken = searchParams.get('track')
   const inviteTokenFromUrl = searchParams.get('invite') || searchParams.get('invite_token') || ''
   const inviteUsernameFromUrl = searchParams.get('u') || searchParams.get('username') || ''
@@ -977,6 +1047,7 @@ function App() {
       designOrders: 'designOrders',
       generalOrders: 'generalOrders',
       mentoringSchedule: 'mentoringSchedule',
+      mentoringSessions: 'mentoringSessions',
       contentPlanner: 'contentPlanner',
       invoiceFollowUp: 'invoiceFollowUp',
       invoiceGenerator: 'invoiceGenerator',
@@ -1202,7 +1273,7 @@ function App() {
   }, [activeTab, enabledPages, visiblePrimaryTabs])
 
   useEffect(() => {
-    if (['userMonitoring', 'userFeedback'].includes(activeTab) && !isAppDeveloper) {
+    if (['userMonitoring', 'userFeedback', 'mentoringSessions'].includes(activeTab) && !isAppDeveloper) {
       setActiveTab(visiblePrimaryTabs[0] || 'dashboard')
     }
   }, [activeTab, isAppDeveloper, visiblePrimaryTabs])
@@ -1272,7 +1343,10 @@ function App() {
     }
     setWorkspaceChatModalOpen(false)
   }
+  const activePublicSchedulingToken = publicMentoringToken || publicBookingToken
+  const isPublicMentoringMode = !!publicMentoringToken
   const isPublicBookingMode = !!publicBookingToken
+  const isPublicSchedulingMode = !!activePublicSchedulingToken
   const isPublicTrackingMode = !!publicTrackingToken
 
   const saveIntegrationConfig = async () => {
@@ -1934,7 +2008,9 @@ function App() {
     return slots
   }
 
-  const bookingTimeSlots = buildTimeSlots(bookingDate)
+  const bookingTimeSlots = isPublicSchedulingMode && !publicBookingConfigLoaded
+    ? []
+    : buildTimeSlots(bookingDate)
   const bookingSlotDurationMinutes = Math.max(15, Number(bookingAvailability.slotMinutes || 30))
 
   const timeTextToMinutes = (value) => {
@@ -1946,47 +2022,54 @@ function App() {
     return (hours * 60) + minutes
   }
 
-  const selectedDateBlockedRanges = [
-    ...appointments
-      .filter(app => app.date === bookingDate)
-      .map(app => {
-        const range = parseBookingTimeRange(app.time)
-        if (!range) return null
-        const start = timeTextToMinutes(range.start)
-        const end = timeTextToMinutes(range.end)
-        if (start == null || end == null) return null
-        return { start, end }
-      }),
-    ...googleCalendarEvents
-      .filter(event => event.date === bookingDate)
-      .map(event => {
-        if (String(event.time || '').trim().toLowerCase() === 'all day') {
-          return { start: 0, end: 24 * 60 }
-        }
-        const range = parseBookingTimeRange(event.time)
-        if (!range) return null
-        const start = timeTextToMinutes(range.start)
-        const end = timeTextToMinutes(range.end)
-        if (start == null || end == null) return null
-        return { start, end }
-      })
-  ].filter(Boolean)
-
-  const blockedTimeSlotSetForSelectedDate = new Set(
-    bookingTimeSlots.filter(slot => {
-      const slotStart = timeTextToMinutes(slot)
-      if (slotStart == null) return true
-      const slotEnd = slotStart + bookingSlotDurationMinutes
-      return selectedDateBlockedRanges.some(range => slotStart < range.end && slotEnd > range.start)
+  const appointmentBlockedRangesForSelectedDate = appointments
+    .filter(app => app.date === bookingDate)
+    .map(app => {
+      const range = parseBookingTimeRange(app.time)
+      if (!range) return null
+      const start = timeTextToMinutes(range.start)
+      let end = timeTextToMinutes(range.end)
+      if (start == null) return null
+      if (end == null || end <= start) end = start + bookingSlotDurationMinutes
+      return { start, end }
     })
-  )
+    .filter(Boolean)
 
-  const availableTimeSlotsForSelectedDate = bookingTimeSlots.filter(slot => {
+  const googleBlockedRangesForSelectedDate = googleCalendarEvents
+    .filter(event => event.date === bookingDate)
+    .map(event => {
+      if (String(event.time || '').trim().toLowerCase() === 'all day') {
+        return { start: 0, end: 24 * 60 }
+      }
+      const range = parseBookingTimeRange(event.time)
+      if (!range) return null
+      const start = timeTextToMinutes(range.start)
+      let end = timeTextToMinutes(range.end)
+      if (start == null) return null
+      if (end == null || end <= start) end = start + bookingSlotDurationMinutes
+      return { start, end }
+    })
+    .filter(Boolean)
+
+  const blockedTimeSlotReasonMapForSelectedDate = new Map()
+  bookingTimeSlots.forEach(slot => {
     const slotStart = timeTextToMinutes(slot)
-    if (slotStart == null) return false
+    if (slotStart == null) return
     const slotEnd = slotStart + bookingSlotDurationMinutes
-    return !selectedDateBlockedRanges.some(range => slotStart < range.end && slotEnd > range.start)
+
+    const hasAppointmentConflict = appointmentBlockedRangesForSelectedDate.some(range => slotStart < range.end && slotEnd > range.start)
+    const hasGoogleConflict = googleBlockedRangesForSelectedDate.some(range => slotStart < range.end && slotEnd > range.start)
+
+    if (hasAppointmentConflict) {
+      blockedTimeSlotReasonMapForSelectedDate.set(slot, 'Sudah dibooking')
+    } else if (hasGoogleConflict) {
+      blockedTimeSlotReasonMapForSelectedDate.set(slot, 'Bentrok kalender')
+    }
   })
+
+  const blockedTimeSlotSetForSelectedDate = new Set(blockedTimeSlotReasonMapForSelectedDate.keys())
+
+  const availableTimeSlotsForSelectedDate = bookingTimeSlots.filter(slot => !blockedTimeSlotReasonMapForSelectedDate.has(slot))
 
   const isDateAllowed = (dateStr) => {
     const dateObj = new Date(`${dateStr}T00:00:00`)
@@ -2120,6 +2203,7 @@ function App() {
     return createdAt.startsWith(todayString)
   }).length
   const sharedFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?booking=${shareToken}`
+  const sharedMentoringFormLink = `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?mentoring=${shareToken}`
   const activeOrderPageMode = activeTab === 'designOrders'
     ? 'design'
     : activeTab === 'generalOrders'
@@ -2139,7 +2223,7 @@ function App() {
       : SPREADSHEET_ORDER_TYPES
   const orderTypeMatchers = {
     spreadsheet: (value) => SPREADSHEET_ORDER_TYPES.includes(value) || /dashboard|automation|reporting|template|fixing/i.test(value),
-    socialMedia: (value) => SOCIAL_MEDIA_ORDER_TYPES.includes(value) || /content handle|social media|consultant|campaign|team management|mentoring|content production|ads optimization|community management/i.test(value),
+    socialMedia: (value) => SOCIAL_MEDIA_ORDER_TYPES.includes(value) || /content handle|social media|consultant|campaign|team management|content production|ads optimization|community management/i.test(value),
     design: (value) => DESIGN_ORDER_TYPES.includes(value) || /design|ui|ux|branding|logo|poster|konten|feed|thumbnail|creative|identity/i.test(value),
     general: (value) => GENERAL_ORDER_TYPES.includes(value) || (!DESIGN_ORDER_TYPES.includes(value) && !SPREADSHEET_ORDER_TYPES.includes(value) && !SOCIAL_MEDIA_ORDER_TYPES.includes(value))
   }
@@ -2166,6 +2250,194 @@ function App() {
   const selectedOrderPublicLink = selectedSpreadsheetOrder
     ? `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?track=${selectedSpreadsheetOrder.publicToken}`
     : ''
+  const isMentoringLikeOrder = (order = {}) => {
+    const orderType = String(order.orderType || '').trim().toLowerCase()
+    const source = String(order?.meta?.source || order?.meta?.formDetails?.source || '').trim().toLowerCase()
+    const bookingKind = String(order?.meta?.formDetails?.bookingKind || order?.meta?.formDetails?.type || '').trim().toLowerCase()
+    const title = String(order?.meta?.formDetails?.title || order.orderName || '').trim().toLowerCase()
+    const need = String(order?.meta?.formDetails?.mentoringNeed || order?.meta?.formDetails?.mentoring_need || '').trim()
+    const goal = String(order?.meta?.formDetails?.mentoringGoal || order?.meta?.formDetails?.mentoring_goal || '').trim()
+    return MENTORING_ORDER_TYPES.map(item => item.toLowerCase()).includes(orderType)
+      || source.includes('mentoring')
+      || bookingKind.includes('mentoring')
+      || title.includes('mentoring')
+      || Boolean(need || goal)
+  }
+  const mentoringOrders = spreadsheetOrders
+    .filter(order => isMentoringLikeOrder(order))
+    .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
+  const mentoringOrderAppointmentIds = new Set(
+    mentoringOrders
+      .map(order => String(order?.meta?.appointmentId || '').trim())
+      .filter(Boolean)
+  )
+  const mentoringOrdersFromAppointments = appointments
+    .filter(item => {
+      const source = String(item.formDetails?.source || '').trim().toLowerCase()
+      const bookingKind = String(item.formDetails?.bookingKind || item.formDetails?.type || '').trim().toLowerCase()
+      const title = String(item.formDetails?.title || item.title || '').trim().toLowerCase()
+      const hasMentoringFormDetails = Boolean(
+        String(item.formDetails?.mentoringNeed || '').trim()
+        || String(item.formDetails?.mentoringGoal || '').trim()
+        || String(item.formDetails?.mentoring_need || '').trim()
+        || String(item.formDetails?.mentoring_goal || '').trim()
+      )
+      const isMentoringBooking = source.includes('mentoring') || bookingKind.includes('mentoring') || title.includes('mentoring') || hasMentoringFormDetails
+      if (!isMentoringBooking) return false
+      return !mentoringOrderAppointmentIds.has(String(item.id || '').trim())
+    })
+    .map(item => ({
+      id: `appointment-${item.id}`,
+      customerName: item.clientName,
+      orderName: item.title,
+      orderType: '1:1 Mentoring Session',
+      budget: 0,
+      status: item.status || 'confirmed',
+      paymentStatus: 'belum_bayar',
+      dueDate: item.date,
+      publicToken: '',
+      createdAt: item.createdAt || new Date().toISOString(),
+      updatedAt: item.createdAt || new Date().toISOString(),
+      isSyntheticMentoring: true,
+      meta: {
+        source: 'public-1on1-mentoring-form',
+        appointmentId: item.id,
+        formDetails: item.formDetails || {},
+        session: {
+          date: item.date,
+          time: item.time
+        }
+      }
+    }))
+  const mentoringKnownNoteIds = new Set()
+  mentoringOrders.forEach(order => {
+    const noteId = String(order?.meta?.noteId || '').trim()
+    if (noteId) mentoringKnownNoteIds.add(noteId)
+  })
+  const mentoringOrdersFromNotes = mentoringSessionNotesRows
+    .filter(item => {
+      if (!item?.id) return false
+      if (mentoringKnownNoteIds.has(String(item.id))) return false
+      if (item.orderId && mentoringOrders.some(order => order.id === item.orderId)) return false
+      if (item.appointmentId && mentoringOrderAppointmentIds.has(String(item.appointmentId))) return false
+      return true
+    })
+    .map(item => {
+      const details = {
+        ...(item.orderMeta?.formDetails || {}),
+        ...(item.formDetails || {})
+      }
+      return {
+        id: item.orderId || `mentoring-note-${item.id}`,
+        customerName: item.clientName || details.clientName || 'Client mentoring',
+        orderName: item.topic || details.title || '1:1 Mentoring Session',
+        orderType: '1:1 Mentoring Session',
+        budget: 0,
+        status: 'new',
+        paymentStatus: 'belum_bayar',
+        dueDate: item.sessionDate || details.date || '',
+        publicToken: '',
+        createdAt: item.createdAt || new Date().toISOString(),
+        updatedAt: item.createdAt || new Date().toISOString(),
+        isSyntheticMentoring: true,
+        meta: {
+          source: 'mentoring-session-note',
+          noteId: item.id,
+          appointmentId: item.appointmentId || '',
+          formDetails: {
+            ...details,
+            clientName: item.clientName || details.clientName || 'Client mentoring',
+            title: item.topic || details.title || '1:1 Mentoring Session'
+          },
+          session: {
+            date: item.sessionDate || details.date || '',
+            time: details.time || item.orderMeta?.session?.time || ''
+          }
+        }
+      }
+    })
+  const combinedMentoringOrders = [...mentoringOrders, ...mentoringOrdersFromAppointments, ...mentoringOrdersFromNotes]
+    .sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''))
+  const selectedMentoringOrder = combinedMentoringOrders.find(order => order.id === selectedOrderId) || combinedMentoringOrders[0] || null
+  const selectedMentoringTimeline = selectedMentoringOrder
+    ? orderTimelineItems
+      .filter(item => item.orderId === selectedMentoringOrder.id)
+      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
+    : []
+  const selectedMentoringFormDetails = selectedMentoringOrder?.meta?.formDetails || {}
+  const selectedMentoringSessionMeta = selectedMentoringOrder?.meta?.session || {}
+  const selectedMentoringAppointmentId = String(
+    selectedMentoringOrder?.meta?.appointmentId
+    || (String(selectedMentoringOrder?.id || '').startsWith('appointment-')
+      ? String(selectedMentoringOrder.id).replace('appointment-', '')
+      : '')
+  ).trim()
+  const selectedMentoringNoteId = String(selectedMentoringOrder?.meta?.noteId || '').trim()
+  const selectedMentoringSessionLogs = useMemo(() => {
+    const persistedLogs = mentoringSessionNotesRows
+      .filter(item => {
+        if (!selectedMentoringOrder) return false
+        if (item.orderId && item.orderId === selectedMentoringOrder.id) return true
+        if (selectedMentoringAppointmentId && item.appointmentId === selectedMentoringAppointmentId) return true
+        if (selectedMentoringNoteId && item.id === selectedMentoringNoteId) return true
+        return false
+      })
+      .sort((a, b) => {
+        const aKey = String(a?.sessionDate || a?.createdAt || '')
+        const bKey = String(b?.sessionDate || b?.createdAt || '')
+        return bKey.localeCompare(aKey)
+      })
+
+    if (persistedLogs.length > 0) return persistedLogs
+
+    const rawLogs = Array.isArray(selectedMentoringOrder?.meta?.sessionLogs)
+      ? selectedMentoringOrder.meta.sessionLogs
+      : []
+
+    const normalizedLogs = [...rawLogs].sort((a, b) => {
+      const aKey = String(a?.sessionDate || a?.createdAt || '')
+      const bKey = String(b?.sessionDate || b?.createdAt || '')
+      return bKey.localeCompare(aKey)
+    })
+
+    if (normalizedLogs.length > 0) return normalizedLogs
+    if (!selectedMentoringOrder) return []
+
+    const formTitle = String(selectedMentoringFormDetails.title || selectedMentoringOrder.orderName || '').trim()
+    const formNeed = String(selectedMentoringFormDetails.mentoringNeed || '').trim()
+    const formGoal = String(selectedMentoringFormDetails.mentoringGoal || '').trim()
+    if (!formTitle && !formNeed && !formGoal) return []
+
+    return [{
+      id: `mentoring-intake-${selectedMentoringOrder.id}`,
+      sessionDate: selectedMentoringSessionMeta.date || selectedMentoringOrder.dueDate || '',
+      topic: formTitle || 'Form intake mentoring',
+      summary: [
+        formNeed ? `Kondisi awal: ${formNeed}` : '',
+        formGoal ? `Target hasil: ${formGoal}` : '',
+        'Catatan ini dibuat otomatis dari form booking mentoring.'
+      ].filter(Boolean).join('\n'),
+      actionItems: '',
+      nextStep: 'Lakukan review kebutuhan client dan jadwalkan sesi mentoring pertama.',
+      progressPercent: 10,
+      updatedBy: selectedMentoringOrder.customerName || 'Client',
+      createdAt: selectedMentoringOrder.createdAt || new Date().toISOString(),
+      isAutoGenerated: true,
+      persisted: false
+    }]
+  }, [
+    mentoringSessionNotesRows,
+    selectedMentoringOrder,
+    selectedMentoringAppointmentId,
+    selectedMentoringNoteId,
+    selectedMentoringFormDetails.title,
+    selectedMentoringFormDetails.mentoringNeed,
+    selectedMentoringFormDetails.mentoringGoal,
+    selectedMentoringSessionMeta.date
+  ])
+  const selectedMentoringPublicLink = selectedMentoringOrder
+    ? `${normalizedPublicShareBaseUrl || currentAppBaseUrl}?track=${selectedMentoringOrder.publicToken}`
+    : ''
   const paidPaymentStatuses = ['lunas', 'paid']
   const isSpreadsheetOrderPaid = (order) => paidPaymentStatuses.includes(String(order.paymentStatus || '').toLowerCase())
   const currentMonthKey = todayString.slice(0, 7)
@@ -2179,6 +2451,23 @@ function App() {
   const spreadsheetOutstandingAmount = spreadsheetOrders
     .filter(order => !isSpreadsheetOrderPaid(order))
     .reduce((sum, order) => sum + Number(order.budget || 0), 0)
+
+  useEffect(() => {
+    if (!selectedMentoringOrder) return
+    setMentoringSessionDate(selectedMentoringSessionMeta.date || selectedMentoringOrder.dueDate || todayString)
+    setMentoringSessionTopic(selectedMentoringFormDetails.title || selectedMentoringOrder.orderName || '')
+    setMentoringSessionSummary('')
+    setMentoringSessionActionItems('')
+    setMentoringSessionNextStep('')
+    setMentoringSessionProgress(50)
+  }, [
+    selectedMentoringOrder?.id,
+    selectedMentoringOrder?.dueDate,
+    selectedMentoringOrder?.orderName,
+    selectedMentoringFormDetails.title,
+    selectedMentoringSessionMeta.date,
+    todayString
+  ])
   const spreadsheetTotalAmount = spreadsheetOrders.reduce((sum, order) => sum + Number(order.budget || 0), 0)
   const spreadsheetPaidAmount = spreadsheetOrders
     .filter(order => isSpreadsheetOrderPaid(order))
@@ -2617,6 +2906,10 @@ function App() {
     .filter(Boolean)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ') || fallback
+  const mentoringActorName = formatDisplayName(
+    session?.user?.user_metadata?.full_name || session?.user?.email || workspaceContext?.ownerEmail || 'Owner',
+    'Owner'
+  )
   const workspaceMemberSelf = workspaceMembers.find(member => (
     member.memberUserId === actorUserId
     || String(member.memberEmail || '').toLowerCase() === String(session?.user?.email || '').toLowerCase()
@@ -4328,7 +4621,7 @@ function App() {
   }, [publicShareBaseUrl, publicShareBaseUrlStorageKey])
 
   useEffect(() => {
-    if (!shareToken || !scopedUserId || isPublicBookingMode) return
+    if (!shareToken || !scopedUserId || isPublicSchedulingMode) return
 
     const persistPublicBookingConfig = async () => {
       const { error } = await supabase
@@ -4356,7 +4649,7 @@ function App() {
   }, [
     actorUserId,
     bookingAvailability,
-    isPublicBookingMode,
+    isPublicSchedulingMode,
     publicBookingNotes,
     reservationSessionPrice,
     scopedUserId,
@@ -4364,12 +4657,16 @@ function App() {
   ])
 
   useEffect(() => {
-    if (!publicBookingToken) return
+    if (!activePublicSchedulingToken) {
+      setPublicBookingConfigLoaded(true)
+      return
+    }
 
     let cancelled = false
-    const settingsKey = buildPublicBookingConfigKey(publicBookingToken)
+    const settingsKey = buildPublicBookingConfigKey(activePublicSchedulingToken)
 
     const applyPublicBookingConfig = async () => {
+      setPublicBookingConfigLoaded(false)
       const { data, error } = await supabase
         .from('app_global_settings')
         .select('value')
@@ -4379,10 +4676,14 @@ function App() {
       if (cancelled) return
       if (error) {
         console.warn('Gagal memuat konfigurasi booking publik:', error.message)
+        setPublicBookingConfigLoaded(true)
         return
       }
 
       const value = data?.value && typeof data.value === 'object' ? data.value : {}
+      if (typeof value.ownerUserId === 'string') {
+        setPublicBookingOwnerUserId(value.ownerUserId)
+      }
       if (value.availability && typeof value.availability === 'object') {
         setBookingAvailability(prev => ({
           ...prev,
@@ -4395,6 +4696,7 @@ function App() {
       if (Number.isFinite(Number(value.reservationPrice))) {
         setReservationSessionPrice(Math.max(0, Number(value.reservationPrice)))
       }
+      setPublicBookingConfigLoaded(true)
     }
 
     applyPublicBookingConfig()
@@ -4413,7 +4715,7 @@ function App() {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [publicBookingToken])
+  }, [activePublicSchedulingToken])
 
   useEffect(() => {
     if (!session) return
@@ -4436,7 +4738,7 @@ function App() {
 
     window.addEventListener('storage', onStorageBookingEvent)
     return () => window.removeEventListener('storage', onStorageBookingEvent)
-  }, [session])
+  }, [session, scopedUserId])
 
   useEffect(() => {
     if (!scopedUserId) {
@@ -4598,11 +4900,12 @@ function App() {
   }, [scopedUserId, invoiceStorageKey])
 
   useEffect(() => {
+    if (!isPublicSchedulingMode) return
     if (!availableTimeSlotsForSelectedDate.length) return
     if (!availableTimeSlotsForSelectedDate.includes(bookingTime)) {
       setBookingTime(availableTimeSlotsForSelectedDate[0])
     }
-  }, [bookingDate, appointments, bookingAvailability, bookingTime, availableTimeSlotsForSelectedDate])
+  }, [isPublicSchedulingMode, bookingDate, appointments, bookingAvailability, bookingTime, availableTimeSlotsForSelectedDate])
 
   useEffect(() => {
     if (!scopedUserId) return
@@ -4617,7 +4920,7 @@ function App() {
   useEffect(() => {
     if (!scopedUserId) return
     localStorage.setItem(`dyatask_order_payment_status_${scopedUserId}`, JSON.stringify(orderPaymentStatusMap))
-  }, [scopedUserId, orderPaymentStatusMap])
+  }, [scopedUserId, shareToken, orderPaymentStatusMap])
 
   useEffect(() => {
     if (!scopedUserId) return
@@ -4721,6 +5024,30 @@ function App() {
     }
   }, [scopedUserId])
 
+  const workspaceActivityKinds = new Set([
+    'workspace_chat',
+    'workspace_chat_ack',
+    'workspace_chat_seen',
+    'workspace_chat_typing',
+    'workspace_chat_presence',
+    'workspace_chat_status'
+  ])
+  const isWorkspaceActivityLog = (item) => workspaceActivityKinds.has(item?.metadata?.kind)
+  const compactActivityLogs = (items = []) => {
+    const sorted = [...items].sort((a, b) => (
+      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    ))
+    const workspaceItems = sorted.filter(isWorkspaceActivityLog).slice(0, 800)
+    const generalItems = sorted.filter(item => !isWorkspaceActivityLog(item)).slice(0, 300)
+    const merged = new Map()
+    ;[...workspaceItems, ...generalItems].forEach(item => {
+      if (item?.id) merged.set(item.id, item)
+    })
+    return Array.from(merged.values()).sort((a, b) => (
+      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    ))
+  }
+
   useEffect(() => {
     if (!scopedUserId) return
     let cancelled = false
@@ -4768,20 +5095,37 @@ function App() {
     })
 
     const loadActivityLogs = async () => {
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .eq('user_id', scopedUserId)
-        .order('created_at', { ascending: false })
-        .limit(300)
+      const [generalResult, workspaceResult] = await Promise.all([
+        supabase
+          .from('activity_logs')
+          .select('*')
+          .eq('user_id', scopedUserId)
+          .order('created_at', { ascending: false })
+          .limit(300),
+        supabase
+          .from('activity_logs')
+          .select('*')
+          .eq('user_id', scopedUserId)
+          .in('metadata->>kind', Array.from(workspaceActivityKinds))
+          .order('created_at', { ascending: false })
+          .limit(800)
+      ])
 
       if (cancelled) return
-      if (error) {
-        console.warn('Activity logs fallback aktif:', error.message)
+      if (generalResult.error && workspaceResult.error) {
+        console.warn('Activity logs fallback aktif:', generalResult.error.message)
         return
       }
 
-      setActivityLogs(dedupeActivityLogItems((data || []).map(mapActivityLog)))
+      const rows = [
+        ...(generalResult.error ? [] : generalResult.data || []),
+        ...(workspaceResult.error ? [] : workspaceResult.data || [])
+      ]
+      if (workspaceResult.error) {
+        console.warn('Workspace chat history fallback aktif:', workspaceResult.error.message)
+      }
+
+      setActivityLogs(compactActivityLogs(dedupeActivityLogItems(rows.map(mapActivityLog))))
       setLastSyncTime(new Date())
     }
 
@@ -4828,13 +5172,13 @@ function App() {
           })
           if (payload?.eventType === 'INSERT' && incoming?.id) {
             const next = [mapRow(incoming), ...prev.filter(item => item.id !== incoming.id)]
-            return dedupeActivityLogItems(next).slice(0, 300)
+            return compactActivityLogs(dedupeActivityLogItems(next))
           }
           if (payload?.eventType === 'UPDATE' && incoming?.id) {
-            return dedupeActivityLogItems(prev.map(item => item.id === incoming.id ? mapRow(incoming) : item)).slice(0, 300)
+            return compactActivityLogs(dedupeActivityLogItems(prev.map(item => item.id === incoming.id ? mapRow(incoming) : item)))
           }
           if (payload?.eventType === 'DELETE' && previous?.id) {
-            return dedupeActivityLogItems(prev.filter(item => item.id !== previous.id)).slice(0, 300)
+            return compactActivityLogs(dedupeActivityLogItems(prev.filter(item => item.id !== previous.id)))
           }
           return prev
         })
@@ -4922,6 +5266,41 @@ function App() {
           createdAt: a.created_at
         })));
       }
+
+      if (mentoringOwnerCandidateIds.length > 0) {
+        const mergedMentoringAppointments = new Map()
+        for (const ownerId of mentoringOwnerCandidateIds) {
+          const { data: mentoringData, error: mentoringError } = await supabase.rpc('get_public_mentoring_bookings_for_owner', {
+            p_owner_user_id: ownerId,
+            p_share_token: shareToken || null
+          })
+
+          if (!mentoringError && Array.isArray(mentoringData) && mentoringData.length > 0) {
+            mentoringData.forEach((a) => {
+              mergedMentoringAppointments.set(a.id, {
+                id: a.id,
+                clientName: a.client_name,
+                title: a.title,
+                time: a.time || a.booking_time,
+                date: a.date || a.booking_date,
+                status: a.status,
+                email: a.email,
+                whatsapp: a.whatsapp || '',
+                formDetails: a.form_details || {},
+                createdAt: a.created_at
+              })
+            })
+          }
+        }
+
+        if (mergedMentoringAppointments.size > 0) {
+          setAppointments(prev => {
+            const byId = new Map(prev.map(item => [item.id, item]))
+            Array.from(mergedMentoringAppointments.values()).forEach(item => byId.set(item.id, item))
+            return Array.from(byId.values()).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+          })
+        }
+      }
     };
     
     const fetchNotes = async () => {
@@ -4952,7 +5331,9 @@ function App() {
 
     const appointmentsChannel = supabase
       .channel('appointments_realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointments' }, payload => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, payload => {
+        fetchAppointments()
+        if (payload.eventType !== 'INSERT') return
         const inserted = payload.new
         if (!inserted) return
 
@@ -5042,6 +5423,88 @@ function App() {
     fetchGoogleCalendarEventsForMonth({ notifyNew: false })
   }, [calendarYear, calendarMonth, integrationConfigs, integrationConfigsLoaded])
 
+  const mapSpreadsheetOrderRow = (order = {}) => ({
+    id: order.id,
+    customerName: order.customer_name,
+    orderName: order.order_name,
+    orderType: order.order_type,
+    budget: Number(order.budget || 0),
+    status: order.status,
+    paymentStatus: order.payment_status || orderPaymentStatusMap?.[order.id] || 'belum_bayar',
+    dueDate: order.due_date,
+    publicToken: order.public_token,
+    createdAt: order.created_at,
+    updatedAt: order.updated_at,
+    meta: order.meta && typeof order.meta === 'object' ? order.meta : {}
+  })
+
+  const mapMentoringSessionNoteRow = (item = {}) => ({
+    id: item.id,
+    orderId: item.order_id || null,
+    appointmentId: item.appointment_id || null,
+    clientName: item.client_name || '',
+    sessionDate: item.session_date || '',
+    topic: item.topic || '',
+    summary: item.summary || '',
+    actionItems: item.action_items || '',
+    nextStep: item.next_step || '',
+    progressPercent: Number(item.progress_percent || 0),
+    updatedBy: item.updated_by || 'Owner',
+    isAutoGenerated: Boolean(item.is_auto_generated),
+    createdAt: item.created_at || new Date().toISOString(),
+    formDetails: item.form_details && typeof item.form_details === 'object' ? item.form_details : {},
+    orderMeta: item.order_meta && typeof item.order_meta === 'object' ? item.order_meta : {},
+    persisted: true
+  })
+
+  const mentoringOwnerCandidateIds = useMemo(() => {
+    return Array.from(new Set([
+      scopedUserId,
+      actorUserId,
+      workspaceContext?.ownerUserId,
+      publicBookingOwnerUserId
+    ].map(value => String(value || '').trim()).filter(Boolean)))
+  }, [scopedUserId, actorUserId, workspaceContext?.ownerUserId, publicBookingOwnerUserId])
+
+  const fetchReadableMentoringSessionNotes = async () => {
+    if (mentoringOwnerCandidateIds.length === 0) return []
+
+    const rowsById = new Map()
+    const appendRows = (rows = []) => {
+      rows.forEach(row => {
+        if (row?.id) rowsById.set(row.id, mapMentoringSessionNoteRow(row))
+      })
+    }
+
+    const { data: directRows, error: directError } = await supabase
+      .from('mentoring_session_notes')
+      .select('*')
+      .order('session_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (directError) {
+      console.error('Error fetching mentoring session notes:', directError)
+    } else {
+      appendRows(directRows || [])
+    }
+
+    for (const ownerId of mentoringOwnerCandidateIds) {
+      const { data: rpcRows, error: rpcError } = await supabase.rpc('get_public_mentoring_session_notes_for_owner', {
+        p_owner_user_id: ownerId,
+        p_share_token: shareToken || null
+      })
+
+      if (rpcError) {
+        console.warn(`Gagal membaca catatan mentoring via RPC untuk owner ${ownerId}:`, rpcError.message)
+      } else {
+        appendRows(rpcRows || [])
+      }
+    }
+
+    return Array.from(rowsById.values())
+      .sort((a, b) => String(b.sessionDate || b.createdAt || '').localeCompare(String(a.sessionDate || a.createdAt || '')))
+  }
+
   useEffect(() => {
     if (!scopedUserId) return
 
@@ -5056,19 +5519,7 @@ function App() {
         return
       }
 
-      const mapped = (data || []).map(order => ({
-        id: order.id,
-        customerName: order.customer_name,
-        orderName: order.order_name,
-        orderType: order.order_type,
-        budget: Number(order.budget || 0),
-        status: order.status,
-        paymentStatus: order.payment_status || orderPaymentStatusMap?.[order.id] || 'belum_bayar',
-        dueDate: order.due_date,
-        publicToken: order.public_token,
-        createdAt: order.created_at,
-        updatedAt: order.updated_at
-      }))
+      const mapped = (data || []).map(mapSpreadsheetOrderRow)
 
       setSpreadsheetOrders(mapped)
       setSelectedOrderId(prev => prev || mapped[0]?.id || null)
@@ -5096,8 +5547,13 @@ function App() {
       })))
     }
 
+    const fetchMentoringSessionNotes = async () => {
+      setMentoringSessionNotesRows(await fetchReadableMentoringSessionNotes())
+    }
+
     fetchSpreadsheetOrders()
     fetchOrderTimeline()
+    fetchMentoringSessionNotes()
 
     const ordersChannel = supabase
       .channel('spreadsheet_orders_realtime')
@@ -5113,11 +5569,19 @@ function App() {
       })
       .subscribe()
 
+    const mentoringNotesChannel = supabase
+      .channel('mentoring_session_notes_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mentoring_session_notes' }, () => {
+        fetchMentoringSessionNotes()
+      })
+      .subscribe()
+
     return () => {
       supabase.removeChannel(ordersChannel)
       supabase.removeChannel(timelineChannel)
+      supabase.removeChannel(mentoringNotesChannel)
     }
-  }, [scopedUserId, orderPaymentStatusMap])
+  }, [scopedUserId, orderPaymentStatusMap, mentoringOwnerCandidateIds, shareToken])
 
   useEffect(() => {
     if (!scopedUserId || !spreadsheetOrders.length) return
@@ -5224,14 +5688,14 @@ function App() {
 
   useEffect(() => {
     const parsed = readStoredJson(notificationHistoryStorageKey, [])
-    setNotifications(Array.isArray(parsed) ? parsed : [])
+    setNotifications(normalizeNotifications(parsed))
     setShowNotificationList(false)
     setNotificationBannerVisible(false)
-  }, [notificationHistoryStorageKey])
+  }, [notificationHistoryStorageKey, normalizeNotifications])
 
   useEffect(() => {
-    localStorage.setItem(notificationHistoryStorageKey, JSON.stringify(notifications.slice(0, 300)))
-  }, [notifications, notificationHistoryStorageKey])
+    localStorage.setItem(notificationHistoryStorageKey, JSON.stringify(normalizeNotifications(notifications).slice(0, 300)))
+  }, [notifications, notificationHistoryStorageKey, normalizeNotifications])
 
   useEffect(() => {
     if (activeNotifications.length === 0 || !notificationBannerVisible) return
@@ -5246,7 +5710,7 @@ function App() {
     const createdAt = new Date().toISOString()
     const clientMessageId = String(metadata?.clientMessageId || '').trim()
     const localLog = {
-      id: `local-${clientMessageId || Date.now()}`,
+      id: clientMessageId ? `local-${clientMessageId}` : makeRuntimeId('local'),
       type,
       title,
       detail,
@@ -5262,7 +5726,7 @@ function App() {
         item.id !== localLog.id
         && (!clientMessageId || String(item?.metadata?.clientMessageId || '') !== clientMessageId)
       ))]
-      return next.slice(0, 300)
+      return compactActivityLogs(next)
     })
 
     if (!scopedUserId) return
@@ -5945,8 +6409,8 @@ function App() {
 
   const triggerMockNotification = (title, body, source, meta = {}) => {
     setNotificationBannerVisible(true)
-    setNotifications(prev => [{
-      id: Date.now(),
+    setNotifications(prev => normalizeNotifications([{
+      id: makeRuntimeId('notification'),
       title,
       body,
       source,
@@ -5954,7 +6418,7 @@ function App() {
       createdAt: Date.now(),
       confirmed: false,
       confirmedAt: null
-    }, ...prev].slice(0, 300))
+    }, ...prev]).slice(0, 300))
     createActivityLog({
       type: 'Notifikasi',
       title: `Notifikasi terkirim: ${title}`,
@@ -5969,7 +6433,6 @@ function App() {
     // Automatically open app if autoOpenOnAlert is set
     if (autoOpenOnAlert) {
       focusElectronWindow()
-      console.log('App automatically focused due to alerts!')
     }
   }
 
@@ -6988,16 +7451,25 @@ function App() {
       alert('Akun Anda tidak punya izin menambah reservasi.')
       return
     }
+    const shouldEnforceBookingAvailability = isPublicSchedulingMode && !session
     if (!bookingClient.trim() || !bookingTitle.trim()) return
-    if (isPublicBookingMode && !bookingWhatsapp.trim()) {
+    if (isPublicSchedulingMode && !bookingWhatsapp.trim()) {
       alert('Nomor WhatsApp wajib diisi untuk reservasi 1:1.')
       return
     }
-    if (!isDateAllowed(bookingDate)) {
+    if (isPublicMentoringMode && !session && !publicBookingOwnerUserId) {
+      alert('Link mentoring publik ini belum terhubung ke owner workspace. Buka ulang link dari halaman booking settings owner, lalu coba lagi.')
+      return
+    }
+    if (isPublicMentoringMode && (!bookingMentoringNeed.trim() || !bookingMentoringGoal.trim())) {
+      alert('Kondisi saat ini dan target hasil mentoring wajib diisi.')
+      return
+    }
+    if (shouldEnforceBookingAvailability && !isDateAllowed(bookingDate)) {
       alert('Tanggal tersebut di luar hari reservasi yang diizinkan.')
       return
     }
-    if (!availableTimeSlotsForSelectedDate.includes(bookingTime)) {
+    if (shouldEnforceBookingAvailability && !availableTimeSlotsForSelectedDate.includes(bookingTime)) {
       alert('Jam reservasi sudah terisi. Pilih jam lain yang tersedia.')
       return
     }
@@ -7011,11 +7483,16 @@ function App() {
       email: bookingEmail || 'guest@dyatask.com',
       whatsapp: bookingWhatsapp.trim() || null,
       form_details: {
-        source: isPublicBookingMode ? 'public-1on1-form' : 'manual-booking',
+        source: isPublicMentoringMode ? 'public-1on1-mentoring-form' : isPublicBookingMode ? 'public-1on1-form' : 'manual-booking',
+        bookingKind: isPublicMentoringMode ? 'mentoring' : 'consultation',
+        shareToken: activePublicSchedulingToken || shareToken || '',
+        ownerUserId: isPublicMentoringMode ? (publicBookingOwnerUserId || '') : '',
         clientName: bookingClient.trim(),
         email: (bookingEmail || '').trim(),
         whatsapp: bookingWhatsapp.trim(),
         title: bookingTitle.trim(),
+        mentoringNeed: bookingMentoringNeed.trim(),
+        mentoringGoal: bookingMentoringGoal.trim(),
         date: bookingDate,
         time: bookingTime
       },
@@ -7032,8 +7509,23 @@ function App() {
       p_form_details: newBookingObj.form_details
     }
 
-    const { data, error } = isPublicBookingMode && !session
-      ? await supabase.rpc('create_public_appointment', publicBookingPayload)
+    const publicMentoringPayload = {
+      p_owner_user_id: publicBookingOwnerUserId || null,
+      p_client_name: newBookingObj.client_name,
+      p_title: newBookingObj.title,
+      p_email: newBookingObj.email,
+      p_date: newBookingObj.date,
+      p_time: newBookingObj.time,
+      p_whatsapp: newBookingObj.whatsapp,
+      p_form_details: newBookingObj.form_details
+    }
+
+    const { data, error } = isPublicSchedulingMode && !session
+      ? (
+        isPublicMentoringMode
+          ? await supabase.rpc('create_public_mentoring_booking', publicMentoringPayload)
+          : await supabase.rpc('create_public_appointment', publicBookingPayload)
+      )
       : await supabase
         .from('appointments')
         .insert([newBookingObj])
@@ -7046,7 +7538,25 @@ function App() {
 
     const createdRow = Array.isArray(data) ? data[0] : data
 
-    if (createdRow) {
+    if (createdRow?.appointment || createdRow?.order) {
+      const appointmentRow = createdRow.appointment || {}
+      const createdBooking = {
+        id: appointmentRow.id,
+        clientName: appointmentRow.client_name,
+        title: appointmentRow.title,
+        time: appointmentRow.time,
+        date: appointmentRow.date,
+        status: appointmentRow.status,
+        email: appointmentRow.email,
+        whatsapp: appointmentRow.whatsapp,
+        formDetails: appointmentRow.form_details || {},
+        createdAt: appointmentRow.created_at || new Date().toISOString()
+      }
+      setAppointments(prev => [createdBooking, ...prev.filter(item => item.id !== createdBooking.id)])
+      if (createdRow.order?.id) {
+        setSpreadsheetOrders(prev => [mapSpreadsheetOrderRow(createdRow.order), ...prev.filter(item => item.id !== createdRow.order.id)])
+      }
+    } else if (createdRow) {
       const createdBooking = {
         id: createdRow.id,
         clientName: createdRow.client_name,
@@ -7064,7 +7574,7 @@ function App() {
 
     const googleSyncResult = await syncBookingToGoogleCalendar(newBookingObj)
 
-    if (isPublicBookingMode) {
+    if (isPublicSchedulingMode) {
       localStorage.setItem('dyatask_public_booking_event', JSON.stringify({
         id: Date.now(),
         clientName: newBookingObj.client_name,
@@ -7078,6 +7588,8 @@ function App() {
         email: newBookingObj.email,
         whatsapp: bookingWhatsapp,
         title: newBookingObj.title,
+        mentoringNeed: bookingMentoringNeed.trim(),
+        mentoringGoal: bookingMentoringGoal.trim(),
         date: newBookingObj.date,
         time: newBookingObj.time
       })
@@ -7088,6 +7600,8 @@ function App() {
     setBookingTitle('')
     setBookingEmail('')
     setBookingWhatsapp('')
+    setBookingMentoringNeed('')
+    setBookingMentoringGoal('')
     setShowQuickBookingModal(false)
 
     // Log sync
@@ -7645,14 +8159,7 @@ function App() {
         order.id === editingOrderId
           ? {
               ...order,
-              customerName: resolvedData.customer_name,
-              orderName: resolvedData.order_name,
-              orderType: resolvedData.order_type,
-              budget: Number(resolvedData.budget || 0),
-              status: resolvedData.status,
-              paymentStatus: resolvedData.payment_status || paymentValue,
-              dueDate: resolvedData.due_date,
-              updatedAt: resolvedData.updated_at
+              ...mapSpreadsheetOrderRow({ ...resolvedData, payment_status: resolvedData.payment_status || paymentValue })
             }
           : order
       )))
@@ -7713,19 +8220,7 @@ function App() {
 
     setOrderPaymentStatusMap(prev => ({ ...prev, [resolvedData.id]: paymentValue }))
 
-    setSpreadsheetOrders(prev => [{
-      id: resolvedData.id,
-      customerName: resolvedData.customer_name,
-      orderName: resolvedData.order_name,
-      orderType: resolvedData.order_type,
-      budget: Number(resolvedData.budget || 0),
-      status: resolvedData.status,
-      paymentStatus: resolvedData.payment_status || paymentValue,
-      dueDate: resolvedData.due_date,
-      publicToken: resolvedData.public_token,
-      createdAt: resolvedData.created_at,
-      updatedAt: resolvedData.updated_at
-    }, ...prev])
+    setSpreadsheetOrders(prev => [mapSpreadsheetOrderRow({ ...resolvedData, payment_status: resolvedData.payment_status || paymentValue }), ...prev])
     setSelectedOrderId(resolvedData.id)
     setNewOrderCustomer('')
     setNewOrderName('')
@@ -7768,13 +8263,14 @@ function App() {
       alert('Akun Anda tidak punya izin menambah timeline order.')
       return
     }
-    if (!actorUserId || !selectedSpreadsheetOrder) return
+    const activeTimelineOrder = activeTab === 'mentoringSchedule' ? selectedMentoringOrder : selectedSpreadsheetOrder
+    if (!actorUserId || !activeTimelineOrder) return
     if (!timelineInputTitle.trim()) return
 
     const { data, error } = await supabase
       .from('spreadsheet_order_timeline')
       .insert([{
-        order_id: selectedSpreadsheetOrder.id,
+        order_id: activeTimelineOrder.id,
         title: timelineInputTitle.trim(),
         note: timelineInputNote.trim(),
         progress_percent: Number(timelineInputProgress || 0),
@@ -7848,6 +8344,412 @@ function App() {
         updatedBy: item.updated_by || 'system'
       }))
     ])
+  }
+
+  const handleApplyMentoringTimelineTemplate = async () => {
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin menambah timeline mentoring.')
+      return
+    }
+    if (!actorUserId || !selectedMentoringOrder) return
+
+    const targetOrder = await ensurePersistableMentoringOrder(selectedMentoringOrder)
+    if (!targetOrder) return
+
+    const existingTitles = new Set(
+      selectedMentoringTimeline.map(item => String(item.title || '').trim().toLowerCase()).filter(Boolean)
+    )
+    const templateItems = MENTORING_TIMELINE_TEMPLATE.filter(item => !existingTitles.has(String(item.title || '').trim().toLowerCase()))
+
+    if (!templateItems.length) {
+      alert('Template timeline mentoring sudah terpasang semua di sesi ini.')
+      return
+    }
+
+    const payload = templateItems.map(item => ({
+      order_id: targetOrder.id,
+      title: item.title,
+      note: item.note,
+      progress_percent: Number(item.progressPercent || 0),
+      updated_by: session?.user?.email || actorUserId || 'system'
+    }))
+
+    const { data, error } = await supabase
+      .from('spreadsheet_order_timeline')
+      .insert(payload)
+      .select()
+
+    if (error) {
+      alert('Gagal menerapkan template timeline mentoring: ' + error.message)
+      return
+    }
+
+    setOrderTimelineItems(prev => [
+      ...prev,
+      ...(data || []).map(item => ({
+        id: item.id,
+        orderId: item.order_id,
+        title: item.title,
+        note: item.note || '',
+        progressPercent: Number(item.progress_percent || 0),
+        createdAt: item.created_at,
+        updatedBy: item.updated_by || 'system'
+      }))
+    ])
+  }
+
+  const ensurePersistableMentoringOrder = async (order) => {
+    if (!order?.isSyntheticMentoring) return order
+    if (!scopedUserId) {
+      alert('User owner tidak ditemukan untuk menyimpan sesi mentoring.')
+      return null
+    }
+
+    const { data, error } = await supabase
+      .from('spreadsheet_orders')
+      .insert([{
+        user_id: scopedUserId,
+        customer_name: order.customerName,
+        order_name: order.orderName,
+        order_type: '1:1 Mentoring Session',
+        budget: Number(order.budget || 0),
+        status: order.status || 'new',
+        due_date: order.dueDate || null,
+        meta: order.meta || {}
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      alert('Gagal membentuk order mentoring dari booking: ' + error.message)
+      return null
+    }
+
+    const mappedOrder = mapSpreadsheetOrderRow({
+      ...data,
+      payment_status: data.payment_status || order.paymentStatus || 'belum_bayar'
+    })
+    setSpreadsheetOrders(prev => [mappedOrder, ...prev.filter(item => item.id !== mappedOrder.id)])
+    setSelectedOrderId(mappedOrder.id)
+    return mappedOrder
+  }
+
+  const handleSyncMentoringBookings = async () => {
+    if (mentoringOwnerCandidateIds.length === 0) {
+      alert('User owner tidak ditemukan untuk sinkronisasi mentoring.')
+      return
+    }
+
+    const readableNoteRows = await fetchReadableMentoringSessionNotes()
+    if (readableNoteRows.length > 0) {
+      setMentoringSessionNotesRows(readableNoteRows)
+      const firstNote = readableNoteRows[0]
+      setSelectedOrderId(firstNote.orderId || `mentoring-note-${firstNote.id}`)
+      alert(`${readableNoteRows.length} catatan mentoring berhasil dibaca dari Supabase.`)
+      return
+    }
+
+    let lastAppointmentError = null
+    const mergedAppointmentRows = new Map()
+    for (const ownerId of mentoringOwnerCandidateIds) {
+      const { data: appointmentRows, error: appointmentError } = await supabase
+        .rpc('get_public_mentoring_bookings_for_owner', {
+          p_owner_user_id: ownerId,
+          p_share_token: shareToken || null
+        })
+
+      if (appointmentError) {
+        lastAppointmentError = appointmentError
+        continue
+      }
+
+      ;(appointmentRows || []).forEach((row) => {
+        if (row?.id) mergedAppointmentRows.set(row.id, row)
+      })
+    }
+
+    if (mergedAppointmentRows.size === 0 && lastAppointmentError) {
+      alert('Gagal membaca reservasi mentoring: ' + lastAppointmentError.message)
+      return
+    }
+
+    const mappedAppointments = Array.from(mergedAppointmentRows.values()).map(a => ({
+      id: a.id,
+      clientName: a.client_name,
+      title: a.title,
+      time: a.time || a.booking_time,
+      date: a.date || a.booking_date,
+      status: a.status,
+      email: a.email,
+      whatsapp: a.whatsapp || '',
+      formDetails: a.form_details || {},
+      createdAt: a.created_at
+    }))
+    setAppointments(mappedAppointments)
+
+    const visibleMentoringAppointments = mappedAppointments.filter(item => {
+      const details = item.formDetails || {}
+      const source = String(details.source || '').trim().toLowerCase()
+      const bookingKind = String(details.bookingKind || details.type || '').trim().toLowerCase()
+      return source.includes('mentoring')
+        || bookingKind.includes('mentoring')
+        || Boolean(String(details.mentoringNeed || details.mentoring_need || '').trim())
+        || Boolean(String(details.mentoringGoal || details.mentoring_goal || '').trim())
+    })
+
+    if (visibleMentoringAppointments.length === 0) {
+      alert('Tidak ada reservasi mentoring yang terbaca untuk akun owner ini. Kemungkinan booking masuk ke owner/share link yang berbeda, atau policy Supabase belum mengizinkan akun ini membaca appointment tersebut.')
+      return
+    }
+
+    const existingAppointmentIds = new Set(
+      spreadsheetOrders
+        .map(order => String(order?.meta?.appointmentId || '').trim())
+        .filter(Boolean)
+    )
+
+    const createdOrders = []
+    for (const appointment of visibleMentoringAppointments) {
+      if (existingAppointmentIds.has(String(appointment.id))) continue
+
+      const formDetails = {
+        ...(appointment.formDetails || {}),
+        source: 'public-1on1-mentoring-form',
+        bookingKind: 'mentoring',
+        clientName: appointment.clientName,
+        email: appointment.email || appointment.formDetails?.email || '',
+        whatsapp: appointment.whatsapp || appointment.formDetails?.whatsapp || '',
+        title: appointment.title,
+        date: appointment.date,
+        time: appointment.time
+      }
+
+      const { data: orderData, error: orderError } = await supabase
+        .from('spreadsheet_orders')
+        .insert([{
+          user_id: scopedUserId || actorUserId,
+          customer_name: appointment.clientName,
+          order_name: appointment.title,
+          order_type: '1:1 Mentoring Session',
+          budget: 0,
+          status: 'new',
+          due_date: appointment.date,
+          meta: {
+            source: 'public-1on1-mentoring-form',
+            appointmentId: appointment.id,
+            formDetails,
+            session: {
+              date: appointment.date,
+              time: appointment.time
+            }
+          }
+        }])
+        .select()
+        .single()
+
+      if (orderError) {
+        alert(`Gagal membuat tracker mentoring untuk ${appointment.clientName}: ${orderError.message}`)
+        return
+      }
+
+      const mappedOrder = mapSpreadsheetOrderRow(orderData)
+      createdOrders.push(mappedOrder)
+      existingAppointmentIds.add(String(appointment.id))
+
+      const summary = [
+        `Kondisi awal: ${formDetails.mentoringNeed || formDetails.mentoring_need || '-'}`,
+        `Target hasil: ${formDetails.mentoringGoal || formDetails.mentoring_goal || '-'}`,
+        'Catatan ini dibuat otomatis dari form booking mentoring.'
+      ].join('\n')
+
+      const { data: noteData } = await supabase
+        .from('mentoring_session_notes')
+        .insert([{
+          user_id: scopedUserId || actorUserId,
+          order_id: mappedOrder.id,
+          appointment_id: appointment.id,
+          client_name: appointment.clientName,
+          session_date: appointment.date,
+          topic: appointment.title,
+          summary,
+          action_items: '',
+          next_step: 'Lakukan review kebutuhan client dan jadwalkan sesi mentoring pertama.',
+          progress_percent: 10,
+          updated_by: appointment.clientName || 'Client',
+          is_auto_generated: true
+        }])
+        .select()
+        .single()
+
+      if (noteData) {
+        setMentoringSessionNotesRows(prev => [mapMentoringSessionNoteRow(noteData), ...prev.filter(item => item.id !== noteData.id)])
+      }
+    }
+
+    if (createdOrders.length > 0) {
+      setSpreadsheetOrders(prev => [...createdOrders, ...prev.filter(item => !createdOrders.some(created => created.id === item.id))])
+      setSelectedOrderId(createdOrders[0].id)
+      alert(`${createdOrders.length} booking mentoring berhasil disinkronkan ke Catatan Sesi Mentoring.`)
+      return
+    }
+
+    alert('Booking mentoring sudah terbaca, tetapi tracker-nya sudah pernah dibuat. Reload halaman jika daftar belum berubah.')
+  }
+
+  const persistMentoringOrderMeta = async (order, nextMeta) => {
+    const persistableOrder = await ensurePersistableMentoringOrder(order)
+    if (!persistableOrder?.id) return null
+
+    const { data, error } = await supabase
+      .from('spreadsheet_orders')
+      .update({ meta: nextMeta })
+      .eq('id', persistableOrder.id)
+      .select()
+      .single()
+
+    if (error) {
+      alert('Gagal menyimpan catatan mentoring: ' + error.message)
+      return null
+    }
+
+    const mappedOrder = mapSpreadsheetOrderRow({
+      ...data,
+      payment_status: data.payment_status || persistableOrder.paymentStatus
+    })
+
+    setSpreadsheetOrders(prev => prev.map(item => (item.id === persistableOrder.id ? mappedOrder : item)))
+    return mappedOrder
+  }
+
+  const handleSaveMentoringSessionLog = async (e) => {
+    e.preventDefault()
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin menyimpan catatan mentoring.')
+      return
+    }
+    if (!selectedMentoringOrder) return
+    if (!mentoringSessionDate || !mentoringSessionTopic.trim() || !mentoringSessionSummary.trim()) {
+      alert('Tanggal sesi, fokus sesi, dan ringkasan mentoring wajib diisi.')
+      return
+    }
+
+    const createdAt = new Date().toISOString()
+    const newLog = {
+      id: `mentoring-log-${createdAt}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionDate: mentoringSessionDate,
+      topic: mentoringSessionTopic.trim(),
+      summary: mentoringSessionSummary.trim(),
+      actionItems: mentoringSessionActionItems.trim(),
+      nextStep: mentoringSessionNextStep.trim(),
+      progressPercent: Number(mentoringSessionProgress || 0),
+      updatedBy: mentoringActorName,
+      createdAt
+    }
+
+    const persistedOrder = await ensurePersistableMentoringOrder(selectedMentoringOrder)
+    if (!persistedOrder?.id) return
+    const appointmentId = String(
+      persistedOrder?.meta?.appointmentId
+      || selectedMentoringAppointmentId
+      || ''
+    ).trim() || null
+
+    const { data: noteData, error: noteError } = await supabase
+      .from('mentoring_session_notes')
+      .insert([{
+        user_id: scopedUserId,
+        order_id: persistedOrder.id,
+        appointment_id: appointmentId,
+        client_name: persistedOrder.customerName || '',
+        session_date: newLog.sessionDate,
+        topic: newLog.topic,
+        summary: newLog.summary,
+        action_items: newLog.actionItems,
+        next_step: newLog.nextStep,
+        progress_percent: Number(newLog.progressPercent || 0),
+        updated_by: mentoringActorName,
+        is_auto_generated: false
+      }])
+      .select()
+      .single()
+
+    if (noteError) {
+      alert('Gagal menyimpan catatan sesi mentoring: ' + noteError.message)
+      return
+    }
+
+    if (noteData) {
+      setMentoringSessionNotesRows(prev => [mapMentoringSessionNoteRow(noteData), ...prev.filter(item => item.id !== noteData.id)])
+    }
+
+    const timelineTitle = `Sesi Mentoring • ${formatLongDate(mentoringSessionDate)}`
+    const timelineNote = [
+      `Fokus sesi: ${newLog.topic}`,
+      `Ringkasan: ${newLog.summary}`,
+      newLog.actionItems ? `Action items: ${newLog.actionItems}` : '',
+      newLog.nextStep ? `Next step: ${newLog.nextStep}` : ''
+    ].filter(Boolean).join('\n')
+
+    const { data: timelineData, error: timelineError } = await supabase
+      .from('spreadsheet_order_timeline')
+      .insert([{
+        order_id: persistedOrder.id,
+        title: timelineTitle,
+        note: timelineNote,
+        progress_percent: Number(newLog.progressPercent || 0),
+        updated_by: mentoringActorName
+      }])
+      .select()
+      .single()
+
+    if (!timelineError && timelineData) {
+      setOrderTimelineItems(prev => [
+        ...prev,
+        {
+          id: timelineData.id,
+          orderId: timelineData.order_id,
+          title: timelineData.title,
+          note: timelineData.note || '',
+          progressPercent: Number(timelineData.progress_percent || 0),
+          createdAt: timelineData.created_at,
+          updatedBy: timelineData.updated_by || 'system'
+        }
+      ])
+    }
+
+    setMentoringSessionSummary('')
+    setMentoringSessionActionItems('')
+    setMentoringSessionNextStep('')
+    setMentoringSessionProgress(Math.min(100, Math.max(Number(newLog.progressPercent || 0), 50)))
+    alert(timelineError ? 'Catatan sesi tersimpan, tetapi timeline otomatis gagal ditambahkan.' : 'Catatan sesi mentoring berhasil disimpan.')
+  }
+
+  const handleDeleteMentoringSessionLog = async (logId) => {
+    if (!hasWritePermission('orders')) {
+      alert('Akun Anda tidak punya izin menghapus catatan mentoring.')
+      return
+    }
+    if (!logId) return
+    const ok = window.confirm('Hapus catatan sesi mentoring ini?')
+    if (!ok) return
+
+    const targetLog = mentoringSessionNotesRows.find(item => item.id === logId)
+    if (!targetLog?.persisted) {
+      alert('Catatan intake otomatis dari form tidak bisa dihapus langsung. Simpan catatan sesi baru untuk menimpa progresnya.')
+      return
+    }
+
+    const { error } = await supabase
+      .from('mentoring_session_notes')
+      .delete()
+      .eq('id', logId)
+
+    if (error) {
+      alert('Gagal menghapus catatan mentoring: ' + error.message)
+      return
+    }
+
+    setMentoringSessionNotesRows(prev => prev.filter(item => item.id !== logId))
   }
 
   const handleDeleteSpreadsheetOrder = async (order) => {
@@ -8400,6 +9302,7 @@ function App() {
     url.searchParams.set('invite', safeToken)
     if (safeUsername) url.searchParams.set('u', safeUsername)
     url.searchParams.delete('booking')
+    url.searchParams.delete('mentoring')
     url.searchParams.delete('track')
     return url.toString()
   }
@@ -9818,13 +10721,14 @@ function App() {
       : dueDaysLeft < 0
         ? `Terlambat ${Math.abs(dueDaysLeft)} hari`
         : `${dueDaysLeft} hari lagi`
+    const isMentoringTracking = MENTORING_ORDER_TYPES.includes(String(publicOrder?.order_type || '').trim())
 
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_12%_18%,rgba(143,117,216,0.24),transparent_30%),radial-gradient(circle_at_82%_70%,rgba(255,229,76,0.18),transparent_24%),linear-gradient(135deg,#fbfaff_0%,#f0ebff_48%,#fff8e2_100%)] text-[#463d66] flex items-center justify-center p-6 relative overflow-hidden">
         <div className="relative w-full max-w-4xl rounded-[2.25rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/45 p-6 lg:p-8">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#8f75d8]">Spreadsheet Order Tracker</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-[#8f75d8]">{isMentoringTracking ? '1:1 Mentoring Tracker' : 'Spreadsheet Order Tracker'}</p>
               <h1 className="text-2xl font-bold text-[#40375f] mt-1">View Progress</h1>
             </div>
             <img src={dyataskMiniLogo} alt="DyaTask" className="w-11 h-11 object-contain" />
@@ -9910,17 +10814,23 @@ function App() {
     )
   }
 
-  if (isPublicBookingMode) {
+  if (isPublicSchedulingMode) {
+    const publicSessionHeading = isPublicMentoringMode ? '1on1 Mentoring Session' : '1on1 Consultation'
+    const publicSessionSubheading = isPublicMentoringMode ? 'Mentoring track with action plan & progress timeline' : 'Nayanika Projects'
+    const publicSessionTopicLabel = isPublicMentoringMode ? 'Fokus mentoring' : 'Topik konsultasi'
+    const publicSessionSuccessLabel = isPublicMentoringMode ? 'Sesi mentoring berhasil dijadwalkan' : 'Reservasi berhasil dikirim'
     if (publicBookingSuccess && publicBookingSummary) {
       const waNumber = '6289619941101'
       const waText = [
         'Halo Admin DyaTask,',
         '',
-        'Client baru saja melakukan reservasi dari form publik:',
+        `Client baru saja melakukan ${isPublicMentoringMode ? 'booking 1:1 mentoring' : 'reservasi 1:1 consultation'} dari form publik:`,
         `Nama: ${publicBookingSummary.clientName}`,
         `Email: ${publicBookingSummary.email || '-'}`,
         `WhatsApp: ${publicBookingSummary.whatsapp || '-'}`,
-        `Topik: ${publicBookingSummary.title}`,
+        `${isPublicMentoringMode ? 'Fokus mentoring' : 'Topik'}: ${publicBookingSummary.title}`,
+        ...(publicBookingSummary.mentoringNeed ? [`Kebutuhan saat ini: ${publicBookingSummary.mentoringNeed}`] : []),
+        ...(publicBookingSummary.mentoringGoal ? [`Target hasil: ${publicBookingSummary.mentoringGoal}`] : []),
         `Jadwal: ${formatLongDate(publicBookingSummary.date)} ${publicBookingSummary.time} WIB`,
         '',
         'Notifikasi ini dikirim otomatis dari aplikasi booking DyaTask.'
@@ -9930,15 +10840,17 @@ function App() {
       return (
         <div className="min-h-screen bg-[radial-gradient(circle_at_15%_20%,rgba(143,117,216,0.26),transparent_30%),radial-gradient(circle_at_85%_70%,rgba(255,229,76,0.18),transparent_26%),linear-gradient(135deg,#fbfaff_0%,#f2edff_48%,#fff8df_100%)] text-[#40375f] flex items-center justify-center p-6 relative overflow-hidden">
           <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-[#8f75d8]/20 blur-3xl"></div>
-          <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-[#bba7ff]/25 blur-3xl"></div>
-          <div className="relative w-full max-w-xl rounded-[2rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/50 p-8 text-center">
-            <h1 className="text-2xl font-semibold mb-2 text-[#3f365f]">Reservasi Berhasil Dikirim</h1>
+        <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full bg-[#bba7ff]/25 blur-3xl"></div>
+        <div className="relative w-full max-w-xl rounded-[2rem] border border-white/70 bg-white shadow-2xl shadow-purple-200/50 p-8 text-center">
+            <h1 className="text-2xl font-semibold mb-2 text-[#3f365f]">{publicSessionSuccessLabel}</h1>
             <p className="text-purple-500 text-sm mb-6">
               Terima kasih, reservasi Anda sudah tercatat. Tim kami akan menindaklanjuti sesuai jadwal yang dipilih.
             </p>
             <div className="rounded-2xl border border-purple-100 bg-white p-4 text-left text-sm mb-6 shadow-sm">
               <p><span className="text-purple-400">Nama:</span> {publicBookingSummary.clientName}</p>
-              <p><span className="text-purple-400">Topik:</span> {publicBookingSummary.title}</p>
+              <p><span className="text-purple-400">{isPublicMentoringMode ? 'Fokus mentoring' : 'Topik'}:</span> {publicBookingSummary.title}</p>
+              {publicBookingSummary.mentoringNeed && <p><span className="text-purple-400">Kebutuhan saat ini:</span> {publicBookingSummary.mentoringNeed}</p>}
+              {publicBookingSummary.mentoringGoal && <p><span className="text-purple-400">Target hasil:</span> {publicBookingSummary.mentoringGoal}</p>}
               <p><span className="text-purple-400">WhatsApp:</span> {publicBookingSummary.whatsapp || '-'}</p>
               <p><span className="text-purple-400">Jadwal:</span> {formatLongDate(publicBookingSummary.date)} • {publicBookingSummary.time} WIB</p>
             </div>
@@ -9974,8 +10886,8 @@ function App() {
                 alt="DyaTask"
                 className="h-12 w-auto object-contain mb-5"
               />
-              <h1 className="text-3xl font-semibold mb-1 text-[#40375f]">1on1 Consultation</h1>
-              <p className="text-sm text-purple-400 mb-6">Nayanika Projects</p>
+              <h1 className="text-3xl font-semibold mb-1 text-[#40375f]">{publicSessionHeading}</h1>
+              <p className="text-sm text-purple-400 mb-6">{publicSessionSubheading}</p>
               <form onSubmit={handleAddBooking} className="space-y-3">
                 <p className="text-[11px] font-semibold text-purple-400">Kolom bertanda <span className="text-red-500">*</span> wajib diisi</p>
                 <div>
@@ -9998,10 +10910,38 @@ function App() {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
-                    Topik konsultasi <span className="text-red-500">*</span>
+                    {publicSessionTopicLabel} <span className="text-red-500">*</span>
                   </label>
-                  <input type="text" placeholder="Topik konsultasi" value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
+                  <input type="text" placeholder={isPublicMentoringMode ? 'Contoh: Growth strategy Instagram brand fashion' : 'Topik konsultasi'} value={bookingTitle} onChange={(e) => setBookingTitle(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm" required />
                 </div>
+                {isPublicMentoringMode && (
+                  <>
+                    <div>
+                      <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
+                        Kondisi / challenge saat ini <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        placeholder="Tulis kondisi bisnis, hambatan, atau tantangan yang sedang dihadapi..."
+                        value={bookingMentoringNeed}
+                        onChange={(e) => setBookingMentoringNeed(e.target.value)}
+                        className="w-full min-h-24 px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm resize-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#8f75d8]">
+                        Target hasil mentoring <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        placeholder="Tulis outcome yang ingin dicapai dari sesi mentoring ini..."
+                        value={bookingMentoringGoal}
+                        onChange={(e) => setBookingMentoringGoal(e.target.value)}
+                        className="w-full min-h-24 px-4 py-3 rounded-2xl border border-purple-100 bg-white text-sm text-[#40375f] placeholder:text-purple-300 focus:outline-none focus:ring-2 focus:ring-[#8f75d8]/30 focus:border-[#8f75d8]/50 shadow-sm resize-none"
+                        required
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="pt-4 border-t border-purple-100">
                   <p className="text-xs text-purple-400 mb-2">Tanggal terpilih <span className="text-red-500">*</span>: <span className="text-[#40375f] font-semibold">{publicSelectedDateLabel}</span></p>
                   <p className="text-xs text-purple-400 mb-4">Waktu terpilih <span className="text-red-500">*</span>: <span className="text-[#40375f] font-semibold">{bookingTime || '-'}</span></p>
@@ -10064,7 +11004,13 @@ function App() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-                  {bookingTimeSlots.map(slot => {
+                  {!publicBookingConfigLoaded && (
+                    <div className="text-xs text-[#8f75d8] border border-purple-100 bg-purple-50 rounded-2xl px-4 py-3 col-span-full">
+                      Memuat pengaturan jam reservasi...
+                    </div>
+                  )}
+                  {publicBookingConfigLoaded && bookingTimeSlots.map(slot => {
+                    const blockedReason = blockedTimeSlotReasonMapForSelectedDate.get(slot) || ''
                     const isBlocked = blockedTimeSlotSetForSelectedDate.has(slot)
                     const isSelected = bookingTime === slot && !isBlocked
                     return (
@@ -10073,24 +11019,35 @@ function App() {
                         type="button"
                         disabled={isBlocked}
                         onClick={() => setBookingTime(slot)}
-                        className={`w-full px-5 py-3 rounded-2xl border text-sm font-semibold transition-all ${
+                        className={`w-full min-h-[76px] px-4 py-3 rounded-2xl border transition-all text-left ${
                           isSelected
                             ? 'border-[#8f75d8] bg-[#8f75d8] text-white shadow-md shadow-purple-300/40'
                             : isBlocked
-                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 cursor-not-allowed opacity-70 line-through'
+                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 cursor-not-allowed opacity-80'
                               : 'border-purple-100 bg-white hover:bg-purple-50 text-purple-600'
                         }`}
                       >
-                        {slot}
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <span className={`text-sm font-semibold ${isBlocked ? 'line-through' : ''}`}>{slot}</span>
+                          {isBlocked ? (
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-400">
+                              {blockedReason}
+                            </span>
+                          ) : (
+                            <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-purple-300'}`}>
+                              Tersedia
+                            </span>
+                          )}
+                        </div>
                       </button>
                     )
                   })}
-                  {!bookingTimeSlots.length && (
+                  {publicBookingConfigLoaded && !bookingTimeSlots.length && (
                     <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-2xl px-4 py-3 col-span-full">
                       Belum ada jam reservasi yang diaktifkan untuk hari ini.
                     </div>
                   )}
-                  {!!bookingTimeSlots.length && !availableTimeSlotsForSelectedDate.length && (
+                  {!!bookingTimeSlots.length && publicBookingConfigLoaded && !availableTimeSlotsForSelectedDate.length && (
                     <div className="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-2xl px-4 py-3 col-span-full">
                       Semua slot di tanggal ini sudah terisi atau bentrok dengan jadwal lain.
                     </div>
@@ -10673,6 +11630,15 @@ function App() {
                 >
                   <Star size={20} />
                   {!sidebarCollapsed && <span>User Feedback</span>}
+                  {!sidebarCollapsed && <span className="ml-auto rounded-full bg-yellow-200/30 px-2 py-0.5 text-[10px] font-extrabold text-yellow-50">DEV</span>}
+                </div>
+                <div
+                  data-mobile-secondary="true"
+                  className={`nav-link ${activeTab === 'mentoringSessions' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('mentoringSessions')}
+                >
+                  <BookOpen size={20} />
+                  {!sidebarCollapsed && <span>Catatan Sesi Mentoring</span>}
                   {!sidebarCollapsed && <span className="ml-auto rounded-full bg-yellow-200/30 px-2 py-0.5 text-[10px] font-extrabold text-yellow-50">DEV</span>}
                 </div>
               </div>
@@ -12868,39 +13834,426 @@ function App() {
           {activeTab === 'mentoringSchedule' && (
             <div className="mobile-page space-y-5">
               <div className="glass-panel p-5">
-                <h3 className="text-xl font-extrabold text-[#4f4574]">Pages Mentoring / Speaker Event Schedule</h3>
-                <p className="text-sm text-purple-400 mt-1">Catat jadwal kelas, mentoring, dan event speaker yang akan datang atau sedang berjalan.</p>
+                <h3 className="text-xl font-extrabold text-[#4f4574]">1:1 Mentoring Tracker</h3>
+                <p className="text-sm text-purple-400 mt-1">Pantau booking mentoring publik, detail form client, dan progress follow up dalam satu halaman yang terhubung ke kalender.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-panel p-4">
-                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Total Sesi Terjadwal</p>
-                  <p className="text-2xl font-extrabold mt-2">{appointments.length}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Total Session Order</p>
+                  <p className="text-2xl font-extrabold mt-2">{combinedMentoringOrders.length}</p>
+                  <p className="mt-1 text-xs text-purple-400">Semua booking mentoring yang sudah masuk ke tracker.</p>
                 </div>
                 <div className="glass-panel p-4">
                   <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Sesi Upcoming</p>
-                  <p className="text-2xl font-extrabold mt-2">{upcomingMeetingCount}</p>
+                  <p className="text-2xl font-extrabold mt-2">{combinedMentoringOrders.filter(order => String(order.meta?.session?.date || order.dueDate || '') >= todayString).length}</p>
+                  <p className="mt-1 text-xs text-purple-400">Session yang tanggalnya belum lewat.</p>
                 </div>
                 <div className="glass-panel p-4">
-                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Task Event Aktif</p>
-                  <p className="text-2xl font-extrabold mt-2">{openTaskCount}</p>
-                </div>
-              </div>
-              <div className="glass-panel p-5">
-                <h4 className="text-sm font-bold text-[#4f4574] mb-3">Jadwal Kelas / Mentoring / Speaker</h4>
-                <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
-                  {todayCalendarItems.length === 0 ? (
-                    <p className="text-sm text-purple-400">Belum ada jadwal.</p>
-                  ) : todayCalendarItems
-                    .filter(item => ['appointment', 'google_event', 'task'].includes(item.source))
-                    .map(item => (
-                      <div key={`${item.source}-${item.id}`} className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
-                        <p className="text-sm font-bold text-[#4f4574] truncate">{item.title}</p>
-                        <p className="text-xs text-purple-400 mt-0.5">{formatLongDate(item.date)} • {item.time || 'All day'} • {item.source === 'google_event' ? 'Google Calendar' : item.source === 'appointment' ? 'Mentoring' : 'Task'}</p>
-                      </div>
-                    ))}
+                  <p className="text-[11px] uppercase tracking-wider text-purple-400 font-bold">Timeline Aktif</p>
+                  <p className="text-2xl font-extrabold mt-2">{selectedMentoringTimeline.length}</p>
+                  <p className="mt-1 text-xs text-purple-400">Milestone pada sesi mentoring yang sedang dipilih.</p>
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
+                <aside className="glass-panel p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-bold text-[#4f4574]">Client Mentoring</h4>
+                      <p className="text-xs text-[#8f75d8] mt-1">List booking 1:1 mentoring yang sudah menjadi trackable order.</p>
+                    </div>
+                    <span className="rounded-full bg-purple-100 px-2.5 py-1 text-[10px] font-bold text-[#8f75d8]">
+                      {combinedMentoringOrders.length} sesi
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-2 max-h-[560px] overflow-y-auto pr-1">
+                    {combinedMentoringOrders.length === 0 ? (
+                      <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">
+                        Belum ada booking mentoring yang masuk. Gunakan link form mentoring publik untuk mulai menerima booking.
+                      </div>
+                    ) : combinedMentoringOrders.map(order => {
+                      const details = order.meta?.formDetails || {}
+                      const sessionMeta = order.meta?.session || {}
+                      const dateLabel = sessionMeta.date ? formatLongDate(sessionMeta.date) : formatLongDate(order.dueDate)
+                      const timeLabel = sessionMeta.time || '-'
+                      const isSelected = selectedMentoringOrder?.id === order.id
+                      return (
+                        <div
+                          key={order.id}
+                          onClick={() => setSelectedOrderId(order.id)}
+                          className={`rounded-xl border p-3 cursor-pointer transition-all ${isSelected ? 'border-[#8f75d8] bg-[#f5f0ff]' : 'border-purple-100 bg-white hover:bg-[#faf7ff]'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-[#4f4574] truncate">{order.customerName}</p>
+                              <p className="text-[11px] text-[#8f75d8] truncate">{order.orderName}</p>
+                            </div>
+                            <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-[#8f75d8]">{order.status}</span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-slate-500">{dateLabel} • {timeLabel}</p>
+                          <p className="mt-1 text-[11px] text-slate-500 truncate">{details.whatsapp || details.email || 'Kontak belum lengkap'}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </aside>
+
+                <section className="glass-panel p-5">
+                  {!selectedMentoringOrder ? (
+                    <div className="text-sm text-[#8f75d8]">Pilih sesi mentoring dari panel kiri.</div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-xl font-bold text-[#4f4574]">{selectedMentoringOrder.orderName}</h3>
+                          <p className="text-sm text-[#8f75d8] mt-1">{selectedMentoringOrder.customerName} • {selectedMentoringOrder.orderType}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Jadwal sesi: {selectedMentoringSessionMeta.date ? formatLongDate(selectedMentoringSessionMeta.date) : formatLongDate(selectedMentoringOrder.dueDate)} • {selectedMentoringSessionMeta.time || '-'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {selectedMentoringFormDetails.whatsapp && (
+                            <a
+                              href={buildWhatsAppLink(selectedMentoringFormDetails.whatsapp)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold inline-flex items-center gap-1"
+                            >
+                              <MessageSquare size={12} />
+                              WhatsApp
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleApplyMentoringTimelineTemplate()}
+                            className="px-3 py-2 rounded-xl bg-[#8f75d8] text-white text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <Plus size={12} />
+                            Template Timeline
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await copyTextToClipboard(selectedMentoringPublicLink)
+                                alert('Link tracking mentoring berhasil disalin.')
+                              } catch (error) {
+                                alert(`Gagal menyalin link: ${error.message}`)
+                              }
+                            }}
+                            className="px-3 py-2 rounded-xl bg-white border border-purple-200 text-[#8f75d8] text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <Copy size={12} />
+                            Copy Link Tracker
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Status Session</p>
+                          <p className="text-lg font-extrabold mt-1">{selectedMentoringOrder.status}</p>
+                        </div>
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Biaya</p>
+                          <p className="text-lg font-extrabold mt-1">{formatCurrencyIDR(selectedMentoringOrder.budget || 0)}</p>
+                        </div>
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Progress Terakhir</p>
+                          <p className="text-lg font-extrabold mt-1">{selectedMentoringTimeline.length ? `${selectedMentoringTimeline[selectedMentoringTimeline.length - 1].progressPercent}%` : '0%'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-purple-100 bg-white p-4">
+                          <p className="text-[10px] uppercase tracking-wider text-purple-400 font-bold">Tracking Token</p>
+                          <p className="text-sm font-extrabold mt-1 truncate">{selectedMentoringOrder.publicToken}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold mb-3">Client Form</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Nama</p>
+                            <p className="mt-1 font-semibold text-[#4f4574]">{selectedMentoringFormDetails.clientName || selectedMentoringOrder.customerName || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Email</p>
+                            <p className="mt-1 font-semibold text-[#4f4574]">{selectedMentoringFormDetails.email || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">WhatsApp</p>
+                            <p className="mt-1 font-semibold text-[#4f4574]">{selectedMentoringFormDetails.whatsapp || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Fokus Mentoring</p>
+                            <p className="mt-1 font-semibold text-[#4f4574]">{selectedMentoringFormDetails.title || selectedMentoringOrder.orderName || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 md:col-span-2">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Kondisi / Challenge Saat Ini</p>
+                            <p className="mt-1 font-semibold text-[#4f4574] whitespace-pre-line">{selectedMentoringFormDetails.mentoringNeed || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 md:col-span-2">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Target Hasil Mentoring</p>
+                            <p className="mt-1 font-semibold text-[#4f4574] whitespace-pre-line">{selectedMentoringFormDetails.mentoringGoal || '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleAddOrderTimeline} className="rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold mb-2">Tambah Update Timeline Mentoring</p>
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_120px] gap-2">
+                          <input value={timelineInputTitle} onChange={(e) => setTimelineInputTitle(e.target.value)} placeholder="Judul update progress" className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                          <input type="number" min="0" max="100" value={timelineInputProgress} onChange={(e) => setTimelineInputProgress(e.target.value)} className="px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        </div>
+                        <textarea value={timelineInputNote} onChange={(e) => setTimelineInputNote(e.target.value)} placeholder="Catatan follow up, insight, atau action plan..." className="mt-2 w-full min-h-20 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                        <button type="submit" className="mt-2 px-4 py-2 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">Tambah Timeline</button>
+                      </form>
+
+                      <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                        {selectedMentoringTimeline.length === 0 ? (
+                          <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">Timeline mentoring belum ada update.</div>
+                        ) : selectedMentoringTimeline.map((item, idx) => (
+                          <div key={item.id} className="rounded-2xl border border-purple-100 bg-white p-4 relative">
+                            {idx < selectedMentoringTimeline.length - 1 && <div className="absolute left-[19px] top-11 bottom-[-14px] w-[2px] bg-purple-100" />}
+                            <div className="flex items-start gap-3">
+                              <span className="mt-1 w-3 h-3 rounded-full bg-[#8f75d8] shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] text-[#8f75d8] font-semibold">{formatLongDateTime(item.createdAt)}</p>
+                                {editingTimelineId === item.id ? (
+                                  <div className="mt-1 space-y-2">
+                                    <input value={editTimelineTitle} onChange={(e) => setEditTimelineTitle(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs" placeholder="Judul timeline" />
+                                    <textarea value={editTimelineNote} onChange={(e) => setEditTimelineNote(e.target.value)} className="w-full min-h-16 px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs" placeholder="Catatan timeline" />
+                                    <div className="flex items-center gap-2">
+                                      <input type="number" min="0" max="100" value={editTimelineProgress} onChange={(e) => setEditTimelineProgress(e.target.value)} className="w-24 px-3 py-2 rounded-xl border border-purple-100 bg-white text-xs" />
+                                      <span className="text-xs text-[#8f75d8]">%</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button type="button" onClick={() => handleSaveTimelineEdit(item.id)} className="px-3 py-1.5 rounded-lg bg-[#8f75d8] text-white text-[11px] font-bold">Simpan</button>
+                                      <button type="button" onClick={cancelEditTimeline} className="px-3 py-1.5 rounded-lg bg-purple-50 text-[#8f75d8] text-[11px] font-bold">Batal</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <h4 className="text-sm font-bold text-[#4f4574] mt-1">{item.title}</h4>
+                                    {item.note && <p className="text-xs text-slate-600 mt-1 whitespace-pre-line">{formatTextDates(item.note)}</p>}
+                                    <div className="mt-2 h-2 rounded-full bg-purple-100 overflow-hidden">
+                                      <div className="h-full bg-[#8f75d8]" style={{ width: `${Math.max(0, Math.min(100, Number(item.progressPercent || 0)))}%` }} />
+                                    </div>
+                                    <div className="mt-1 flex items-center justify-between">
+                                      <p className="text-[11px] text-[#8f75d8]">Progress {Number(item.progressPercent || 0)}%</p>
+                                      <div className="flex items-center gap-2">
+                                        <button type="button" onClick={() => startEditTimeline(item)} className="text-[11px] font-bold text-blue-600 hover:underline">Update Progress</button>
+                                        <button type="button" onClick={() => handleDeleteTimelineItem(item.id)} className="text-[11px] font-bold text-red-600 hover:underline">Hapus</button>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'mentoringSessions' && (
+            <div className="mobile-page space-y-5">
+              <div className="glass-panel p-5">
+                <h3 className="text-xl font-extrabold text-[#4f4574]">Catatan Sesi Mentoring</h3>
+                <p className="text-sm text-purple-400 mt-1">Halaman khusus untuk mencatat hasil sesi, action items, dan progress mentoring per client.</p>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-5">
+                <aside className="glass-panel p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-bold text-[#4f4574]">Client Mentoring</h4>
+                      <p className="text-xs text-[#8f75d8] mt-1">Pilih client untuk membuka catatan sesi dan progres mentoringnya.</p>
+                    </div>
+                    <span className="rounded-full bg-purple-100 px-2.5 py-1 text-[10px] font-bold text-[#8f75d8]">
+                      {combinedMentoringOrders.length} client
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-2 max-h-[620px] overflow-y-auto pr-1">
+                    {combinedMentoringOrders.length === 0 ? (
+                      <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">
+                        <p>Belum ada sesi mentoring. Mulai dari form publik mentoring untuk membuat client pertama.</p>
+                        <button
+                          type="button"
+                          onClick={handleSyncMentoringBookings}
+                          className="mt-3 w-full rounded-xl bg-[#8f75d8] px-3 py-2 text-[11px] font-bold text-white hover:bg-[#8069c8]"
+                        >
+                          Sinkronkan Booking Mentoring
+                        </button>
+                      </div>
+                    ) : combinedMentoringOrders.map(order => {
+                      const details = order.meta?.formDetails || {}
+                      const logs = Array.isArray(order.meta?.sessionLogs) ? order.meta.sessionLogs : []
+                      const isSelected = selectedMentoringOrder?.id === order.id
+                      return (
+                        <button
+                          key={order.id}
+                          type="button"
+                          onClick={() => setSelectedOrderId(order.id)}
+                          className={`w-full text-left rounded-2xl border p-3 transition-all ${isSelected ? 'border-[#8f75d8] bg-[#f5f0ff]' : 'border-purple-100 bg-white hover:bg-[#faf7ff]'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-[#4f4574] truncate">{order.customerName}</p>
+                              <p className="text-[11px] text-[#8f75d8] truncate">{details.title || order.orderName}</p>
+                            </div>
+                            <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-[#8f75d8]">{logs.length} note</span>
+                          </div>
+                          <p className="mt-2 text-[11px] text-slate-500">{formatLongDate(order.meta?.session?.date || order.dueDate)} • {order.meta?.session?.time || '-'}</p>
+                          <p className="mt-1 text-[11px] text-slate-500 truncate">{details.whatsapp || details.email || 'Kontak belum lengkap'}</p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </aside>
+
+                <section className="glass-panel p-5">
+                  {!selectedMentoringOrder ? (
+                    <div className="text-sm text-[#8f75d8]">Pilih client mentoring dari panel kiri.</div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-xl font-bold text-[#4f4574]">{selectedMentoringOrder.customerName}</h3>
+                          <p className="text-sm text-[#8f75d8] mt-1">{selectedMentoringFormDetails.title || selectedMentoringOrder.orderName}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Jadwal awal: {selectedMentoringSessionMeta.date ? formatLongDate(selectedMentoringSessionMeta.date) : formatLongDate(selectedMentoringOrder.dueDate)} • {selectedMentoringSessionMeta.time || '-'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {selectedMentoringFormDetails.whatsapp && (
+                            <a
+                              href={buildWhatsAppLink(selectedMentoringFormDetails.whatsapp)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold inline-flex items-center gap-1"
+                            >
+                              <MessageSquare size={12} />
+                              Hubungi Client
+                            </a>
+                          )}
+                          <span className="px-3 py-2 rounded-xl bg-purple-50 border border-purple-100 text-[#8f75d8] text-xs font-bold">
+                            {selectedMentoringSessionLogs.length} catatan sesi
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                        <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold mb-3">Ringkasan Client</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Email</p>
+                            <p className="mt-1 font-semibold text-[#4f4574]">{selectedMentoringFormDetails.email || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">WhatsApp</p>
+                            <p className="mt-1 font-semibold text-[#4f4574]">{selectedMentoringFormDetails.whatsapp || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 md:col-span-2">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Kondisi Saat Ini</p>
+                            <p className="mt-1 font-semibold text-[#4f4574] whitespace-pre-line">{selectedMentoringFormDetails.mentoringNeed || '-'}</p>
+                          </div>
+                          <div className="rounded-xl border border-purple-100 bg-white px-3 py-2.5 md:col-span-2">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Target Hasil Mentoring</p>
+                            <p className="mt-1 font-semibold text-[#4f4574] whitespace-pre-line">{selectedMentoringFormDetails.mentoringGoal || '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleSaveMentoringSessionLog} className="rounded-2xl border border-purple-100 bg-[#fcfbff] p-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.14em] text-[#8f75d8] font-bold">Catat Sesi Mentoring</p>
+                            <p className="text-[11px] text-slate-500 mt-1">Simpan hasil sesi per user agar progress mentoring bisa ditrack rapih.</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Tanggal sesi</label>
+                            <input type="date" value={mentoringSessionDate} onChange={(e) => setMentoringSessionDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Fokus sesi</label>
+                            <input value={mentoringSessionTopic} onChange={(e) => setMentoringSessionTopic(e.target.value)} placeholder="Contoh: Breakdown funnel konten dan audit positioning" className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" required />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Ringkasan sesi</label>
+                            <textarea value={mentoringSessionSummary} onChange={(e) => setMentoringSessionSummary(e.target.value)} placeholder="Tuliskan insight utama, keputusan penting, dan poin mentoring yang dibahas..." className="w-full min-h-24 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" required />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Action items client</label>
+                            <textarea value={mentoringSessionActionItems} onChange={(e) => setMentoringSessionActionItems(e.target.value)} placeholder="Checklist pekerjaan atau eksperimen yang harus dijalankan client setelah sesi." className="w-full min-h-20 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Next step / follow up</label>
+                            <textarea value={mentoringSessionNextStep} onChange={(e) => setMentoringSessionNextStep(e.target.value)} placeholder="Langkah lanjutan dari mentor, deadline review, atau agenda sesi berikutnya." className="w-full min-h-20 px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs resize-none" />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Progress mentoring</label>
+                            <input type="number" min="0" max="100" value={mentoringSessionProgress} onChange={(e) => setMentoringSessionProgress(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-purple-100 bg-white text-xs" />
+                          </div>
+                        </div>
+                        <button type="submit" className="mt-3 px-4 py-2.5 rounded-xl bg-[#8f75d8] hover:bg-[#8069c8] text-white text-xs font-bold">
+                          Simpan Catatan Sesi
+                        </button>
+                      </form>
+
+                      <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                        {selectedMentoringSessionLogs.length === 0 ? (
+                          <div className="text-xs text-[#8f75d8] border border-dashed border-purple-200 rounded-xl p-3">
+                            Belum ada catatan sesi untuk client ini.
+                          </div>
+                        ) : selectedMentoringSessionLogs.map((logItem) => (
+                          <div key={logItem.id} className="rounded-2xl border border-purple-100 bg-white p-4">
+                            <div className="flex flex-col md:flex-row md:items-start justify-between gap-2">
+                              <div>
+                                <p className="text-[11px] text-[#8f75d8] font-semibold">{formatLongDate(logItem.sessionDate)} • {logItem.updatedBy || 'Owner'}</p>
+                                <h4 className="text-sm font-bold text-[#4f4574] mt-1">{logItem.topic}</h4>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-bold text-[#8f75d8]">
+                                  Progress {Number(logItem.progressPercent || 0)}%
+                                </span>
+                                <button type="button" onClick={() => handleDeleteMentoringSessionLog(logItem.id)} className="text-[11px] font-bold text-red-600 hover:underline">
+                                  Hapus
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 gap-3 text-xs">
+                              <div className="rounded-xl border border-purple-100 bg-[#fcfbff] px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Ringkasan sesi</p>
+                                <p className="mt-1 text-[#4f4574] whitespace-pre-line">{logItem.summary}</p>
+                              </div>
+                              {logItem.actionItems && (
+                                <div className="rounded-xl border border-purple-100 bg-[#fcfbff] px-3 py-2.5">
+                                  <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Action items</p>
+                                  <p className="mt-1 text-[#4f4574] whitespace-pre-line">{logItem.actionItems}</p>
+                                </div>
+                              )}
+                              {logItem.nextStep && (
+                                <div className="rounded-xl border border-purple-100 bg-[#fcfbff] px-3 py-2.5">
+                                  <p className="text-[10px] uppercase tracking-[0.14em] text-purple-400 font-bold">Next step</p>
+                                  <p className="mt-1 text-[#4f4574] whitespace-pre-line">{logItem.nextStep}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
             </div>
           )}
 
@@ -15395,6 +16748,7 @@ function App() {
                     ['designOrders', 'Pages Design Order'],
                     ['generalOrders', 'Pages Orderan (General)'],
                     ['mentoringSchedule', 'Pages Mentoring/Speaker Event Schedule'],
+                    ['mentoringSessions', 'Catatan Sesi Mentoring'],
                     ['contentPlanner', 'Content Planner'],
                     ['invoiceFollowUp', 'Invoice Payment & Follow Up'],
                     ['invoiceGenerator', 'Invoice Generator'],
@@ -15706,12 +17060,35 @@ function App() {
                           className="w-full px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-[10px] focus:outline-none focus:ring-2 focus:ring-purple-300/50"
                         />
                       </div>
-                      <div className="flex gap-2">
-                        <input readOnly value={sharedFormLink} className="flex-1 px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-[10px]" />
-                        <button type="button" onClick={copyShareLink} className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-[10px] font-bold inline-flex items-center gap-1">
-                          <Copy size={10} />
-                          {copiedShareLink ? 'Tersalin' : 'Copy'}
-                        </button>
+                      <div className="space-y-2">
+                        <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-400 dark:text-purple-300">Link Form 1:1 Consultation</label>
+                        <div className="flex gap-2">
+                          <input readOnly value={sharedFormLink} className="flex-1 px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-[10px]" />
+                          <button type="button" onClick={copyShareLink} className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-[10px] font-bold inline-flex items-center gap-1">
+                            <Copy size={10} />
+                            {copiedShareLink ? 'Tersalin' : 'Copy'}
+                          </button>
+                        </div>
+                        <label className="block text-[10px] uppercase tracking-wider font-bold text-purple-400 dark:text-purple-300">Link Form 1:1 Mentoring</label>
+                        <div className="flex gap-2">
+                          <input readOnly value={sharedMentoringFormLink} className="flex-1 px-2 py-2 rounded-lg border border-purple-100 dark:border-indigo-900 bg-white dark:bg-indigo-950/30 text-[10px]" />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await copyTextToClipboard(sharedMentoringFormLink)
+                                setCopiedShareLink(true)
+                                setTimeout(() => setCopiedShareLink(false), 1600)
+                              } catch (error) {
+                                alert(`Gagal menyalin link: ${error.message}`)
+                              }
+                            }}
+                            className="px-3 py-2 rounded-lg bg-[#8f75d8] text-white text-[10px] font-bold inline-flex items-center gap-1"
+                          >
+                            <Copy size={10} />
+                            {copiedShareLink ? 'Tersalin' : 'Copy'}
+                          </button>
+                        </div>
                       </div>
                       <p className="text-[10px] text-purple-400 dark:text-purple-300 leading-relaxed">
                         Untuk app DMG, isi domain publik agar link tidak memakai path lokal <span className="font-mono">file://</span>.
@@ -16038,7 +17415,7 @@ function App() {
       {activeTab !== 'workspaceChat' && !workspaceChatModalOpen && (
         <button
           type="button"
-          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'userFeedback', 'socialMediaOrders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
+          className={`mobile-more-trigger ${showMobileMoreMenu || ['notes', 'integrations', 'settings', 'userMonitoring', 'userFeedback', 'socialMediaOrders', 'designOrders', 'generalOrders', 'mentoringSchedule', 'mentoringSessions', 'contentPlanner', 'invoiceFollowUp', 'invoiceGenerator', 'reports'].includes(activeTab) ? 'active' : ''}`}
           onClick={() => setShowMobileMoreMenu(prev => !prev)}
           aria-label="Buka menu lainnya"
         >
@@ -16090,6 +17467,7 @@ function App() {
                 designOrders: 'Pages Design Order',
                 generalOrders: 'Pages Orderan (General)',
                 mentoringSchedule: 'Pages Mentoring/Speaker',
+                mentoringSessions: 'Catatan Sesi Mentoring',
                 contentPlanner: 'Content Planner',
                 invoiceFollowUp: 'Invoice Payment & Follow Up',
                 invoiceGenerator: 'Invoice Generator',
@@ -16100,6 +17478,7 @@ function App() {
                 designOrders: <Palette size={18} />,
                 generalOrders: <Clipboard size={18} />,
                 mentoringSchedule: <Mic2 size={18} />,
+                mentoringSessions: <BookOpen size={18} />,
                 contentPlanner: <CalendarClock size={18} />,
                 invoiceFollowUp: <Mail size={18} />,
                 invoiceGenerator: <FileText size={18} />,
@@ -16130,6 +17509,10 @@ function App() {
                 <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('userFeedback'); setShowMobileMoreMenu(false) }}>
                   <Star size={18} />
                   <span>User Feedback</span>
+                </button>
+                <button type="button" className="mobile-more-item" onClick={() => { setActiveTab('mentoringSessions'); setShowMobileMoreMenu(false) }}>
+                  <BookOpen size={18} />
+                  <span>Catatan Sesi Mentoring</span>
                 </button>
               </>
             )}
@@ -16184,6 +17567,21 @@ function App() {
           className="mobile-feedback-trigger fixed z-[81] inline-flex items-center justify-center"
         >
           {showUserFeedbackModal ? <X size={18} /> : <Star size={18} />}
+        </button>
+      )}
+
+      {isMobileTabletView && floatingMenuEnabled && !isWorkspaceChatOpen && (
+        <button
+          type="button"
+          onClick={() => {
+            setShowMobileMoreMenu(false)
+            setWorkspaceChatModalOpen(false)
+            setShowQuickBookingModal(true)
+          }}
+          aria-label="Tambah jadwal"
+          className="mobile-event-trigger fixed right-4 z-[81] inline-flex items-center justify-center"
+        >
+          <CalendarClock size={18} />
         </button>
       )}
 
@@ -16853,22 +18251,20 @@ function App() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Jam</label>
-                  <select value={bookingTime} onChange={(e) => setBookingTime(e.target.value)} className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" disabled={!availableTimeSlotsForSelectedDate.length}>
-                    {availableTimeSlotsForSelectedDate.map(slot => (
-                      <option key={slot} value={slot}>{slot}</option>
-                    ))}
-                  </select>
+                  <input
+                    type="time"
+                    value={bookingTime}
+                    onChange={(e) => setBookingTime(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all"
+                  />
                 </div>
               </div>
-              {!availableTimeSlotsForSelectedDate.length && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">Tidak ada slot jam tersedia untuk tanggal ini.</p>
-              )}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-[0.14em] text-slate-300 dark:text-slate-400 mb-2">Email</label>
                 <input type="email" value={bookingEmail} onChange={(e) => setBookingEmail(e.target.value)} placeholder="nama@email.com (opsional)" className="w-full px-4 py-3 rounded-2xl border border-purple-100 dark:border-indigo-900 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300/50 focus:border-purple-300 transition-all" />
               </div>
               <div className="pt-2 space-y-3">
-                <button type="submit" disabled={!availableTimeSlotsForSelectedDate.length} className="w-full py-3 rounded-2xl bg-purple-300 hover:bg-purple-400 disabled:opacity-50 text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Simpan Jadwal</button>
+                <button type="submit" className="w-full py-3 rounded-2xl bg-purple-300 hover:bg-purple-400 text-white text-[11px] tracking-[0.2em] uppercase font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.99]">Simpan Jadwal</button>
                 <button type="button" onClick={() => setShowQuickBookingModal(false)} className="w-full text-center text-[11px] tracking-[0.18em] uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-semibold transition-all">Cancel</button>
               </div>
             </form>
